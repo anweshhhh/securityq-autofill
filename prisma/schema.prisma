@@ -1,0 +1,73 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DocumentStatus {
+  DRAFT
+  INGESTED
+  ARCHIVED
+}
+
+model Organization {
+  id              String            @id @default(cuid())
+  name            String
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  documents       Document[]
+  questionnaires  Questionnaire[]
+  approvedAnswers ApprovedAnswer[]
+}
+
+model Document {
+  id             String         @id @default(cuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+  title          String
+  status         DocumentStatus @default(DRAFT)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  chunks         DocumentChunk[]
+}
+
+model DocumentChunk {
+  id         String                @id @default(cuid())
+  documentId String
+  document   Document              @relation(fields: [documentId], references: [id])
+  content    String
+  embedding  Unsupported("vector")?
+  createdAt  DateTime              @default(now())
+}
+
+model Questionnaire {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  questions      Question[]
+}
+
+model Question {
+  id              String        @id @default(cuid())
+  questionnaireId String
+  questionnaire   Questionnaire @relation(fields: [questionnaireId], references: [id])
+  text            String
+  createdAt       DateTime      @default(now())
+  approvedAnswers ApprovedAnswer[]
+}
+
+model ApprovedAnswer {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  questionId     String
+  question       Question     @relation(fields: [questionId], references: [id])
+  answer         String
+  createdAt      DateTime     @default(now())
+}
