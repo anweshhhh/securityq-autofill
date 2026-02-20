@@ -117,3 +117,40 @@ This structure reduced ambiguity and kept the change reviewable. It blocked scop
 - Required implementation checklist (UI, API, chunking, storage, tests, docs)
 - Acceptance criteria tied to runnable commands and concrete outcomes
 - Output shaping (changed files, runbook, exact commit message)
+
+## Day 3 Summary
+
+### What we shipped
+
+- OpenAI embedding integration (`text-embedding-3-small`) for document chunks
+- Embedding storage in pgvector `vector(1536)` plus cosine-distance vector index
+- Retrieval layer for top-k similar chunks with deterministic ordering (similarity, then `chunkId`)
+- `POST /api/questions/answer` endpoint for evidence-grounded single-question answering
+- Strict fallback behavior when evidence is insufficient:
+  - `answer: "Not found in provided documents."`
+  - empty citations
+  - `confidence: "low"`
+  - `needsReview: true`
+- `/ask` UI page to submit one question and render JSON response
+- `/api/documents/embed` endpoint to embed all chunks missing embeddings
+
+### Prompt pattern used and why it worked
+
+- Single PR-sized scope with explicit non-goals
+- Clear acceptance criteria tied to local verification
+- Explicit output schema and exact fallback text
+- Test requirements that forced deterministic behavior (mocked OpenAI, ordered retrieval)
+
+This pattern prevented scope drift and kept changes runnable end-to-end while enforcing evidence-first response behavior.
+
+### How to verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate deploy`
+3. Upload a `.txt` or `.md` file at `http://localhost:3000/documents`
+4. Run embeddings: `curl -X POST http://localhost:3000/api/documents/embed`
+5. Ask one question at `http://localhost:3000/ask`
+6. Confirm response is either:
+   - Answer with at least one citation, or
+   - `Not found in provided documents.` with empty citations
+7. `npm test`

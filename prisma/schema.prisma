@@ -42,7 +42,7 @@ model DocumentChunk {
   document   Document @relation(fields: [documentId], references: [id])
   chunkIndex Int
   content    String
-  embedding  Unsupported("vector")?
+  embedding  Unsupported("vector(1536)")?
   createdAt  DateTime @default(now())
 
   @@unique([documentId, chunkIndex])

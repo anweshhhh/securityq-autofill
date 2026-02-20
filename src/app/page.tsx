@@ -12,6 +12,9 @@ export default function Home() {
           <Link href="/documents">Go to Documents</Link>
         </li>
         <li>
+          <Link href="/ask">Go to Ask</Link>
+        </li>
+        <li>
           <a href="/api/health" target="_blank" rel="noreferrer">
             Open API Health
           </a>
