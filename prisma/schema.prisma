@@ -8,9 +8,9 @@ datasource db {
 }
 
 enum DocumentStatus {
-  DRAFT
-  INGESTED
-  ARCHIVED
+  UPLOADED
+  CHUNKED
+  ERROR
 }
 
 model Organization {
@@ -27,20 +27,25 @@ model Document {
   id             String         @id @default(cuid())
   organizationId String
   organization   Organization   @relation(fields: [organizationId], references: [id])
-  title          String
-  status         DocumentStatus @default(DRAFT)
+  name           String
+  originalName   String
+  mimeType       String
+  status         DocumentStatus @default(UPLOADED)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   chunks         DocumentChunk[]
 }
 
 model DocumentChunk {
-  id         String                @id @default(cuid())
+  id         String   @id @default(cuid())
   documentId String
-  document   Document              @relation(fields: [documentId], references: [id])
+  document   Document @relation(fields: [documentId], references: [id])
+  chunkIndex Int
   content    String
   embedding  Unsupported("vector")?
-  createdAt  DateTime              @default(now())
+  createdAt  DateTime @default(now())
+
+  @@unique([documentId, chunkIndex])
 }
 
 model Questionnaire {

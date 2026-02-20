@@ -48,3 +48,49 @@ This prompt style was chosen to reduce ambiguity and prevent scope creep. It pus
 - Input format support: CSV-only first, or CSV + XLSX from the start
 - Document types to support first (for example: SOC 2, SIG, CAIQ, vendor security questionnaires)
 - Retrieval and chunking defaults for early document ingestion
+
+## Day 2 Summary
+
+### What we built
+
+We shipped a document ingestion MVP for `.txt` and `.md` files end-to-end:
+
+- `/documents` page with upload + document list (status and chunk count)
+- `POST /api/documents/upload` for multipart upload (`file` field)
+- `GET /api/documents` for listing ingested documents
+- Deterministic chunker with overlap and stable `chunkIndex` starting at `0`
+- Default organization bootstrap (create-on-first-use, no auth yet)
+- Route and chunker tests, including DB cleanup for test-created rows
+
+### Prompt pattern used (exact structure)
+
+The prompt used this pattern:
+
+- Single PR-sized change request
+- Clear product goal reminder (evidence-first is non-negotiable)
+- Strict scope for Day 2 only
+- Concrete implementation checklist (UI, API, chunker, org handling, tests, docs)
+- Acceptance criteria with runnable checks
+- Output shaping (changed files, runbook, exact commit message)
+
+### Why this prompt was optimized
+
+This structure reduced ambiguity and kept the change reviewable. It blocked scope creep by naming what not to build, and it forced runnable outcomes by defining concrete pass conditions.
+
+### What to verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate dev --name day2-document-ingestion` (only if schema changed)
+3. `npm test`
+4. `npm run dev`
+5. Open `http://localhost:3000/documents`
+6. Upload a `.txt` or `.md` file and confirm:
+   - document status becomes `CHUNKED`
+   - chunk rows are created with sequential `chunkIndex`
+   - `GET /api/documents` reports the right `chunkCount`
+
+### Next decisions for Day 3
+
+- Embeddings model/provider choice for chunk vectors
+- File support expansion order: PDF and DOCX parsing
+- Retrieval design for evidence selection and citation formatting
