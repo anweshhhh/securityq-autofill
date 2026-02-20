@@ -99,3 +99,21 @@ This structure reduced ambiguity and kept the change reviewable. It blocked scop
 
 - Added simple navigation links on the homepage to `/documents`, `/api/health`, and `/api/documents`.
 - Added a `Back to Home` link on `/documents` for faster manual testing during development.
+
+## Day 2 Record (Consolidated)
+
+### What shipped
+
+- Document ingestion MVP for `.txt` and `.md`
+- Upload + list flow in `/documents`
+- `POST /api/documents/upload` and `GET /api/documents`
+- Deterministic chunking with stable `chunkIndex` for evidence references
+- Default organization creation for no-auth MVP mode
+- Tests for chunking and upload route behavior
+
+### Prompt pattern used
+
+- One PR-sized change with explicit constraints and no extras
+- Required implementation checklist (UI, API, chunking, storage, tests, docs)
+- Acceptance criteria tied to runnable commands and concrete outcomes
+- Output shaping (changed files, runbook, exact commit message)
