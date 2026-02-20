@@ -94,3 +94,8 @@ This structure reduced ambiguity and kept the change reviewable. It blocked scop
 - Embeddings model/provider choice for chunk vectors
 - File support expansion order: PDF and DOCX parsing
 - Retrieval design for evidence selection and citation formatting
+
+### Day 2 follow-up polish
+
+- Added simple navigation links on the homepage to `/documents`, `/api/health`, and `/api/documents`.
+- Added a `Back to Home` link on `/documents` for faster manual testing during development.
