@@ -1,17 +1,25 @@
 # securityq-autofill
 
-Minimal Next.js + Postgres (pgvector) + Prisma scaffold.
+Security Questionnaire Autofill + Evidence Finder (MVP scaffold).
 
-## Build Log
+## Project Context
 
-[Build log and day-by-day summaries](docs/build-log.md)
+- [Project context snapshot](context.md)
+- [Build log and day-by-day summaries](docs/build-log.md)
 
-## Day 1 - Runbook
+## Current Pages and APIs
+
+- Home: `http://localhost:3000/`
+- Documents UI: `http://localhost:3000/documents`
+- Health API: `http://localhost:3000/api/health`
+- Documents API: `http://localhost:3000/api/documents`
+
+## Local Runbook
 
 ```bash
 docker compose up -d
 npm install
-npx prisma migrate dev --name init
+npx prisma migrate deploy
 npm test
 npm run dev
 ```
