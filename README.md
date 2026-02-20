@@ -2,6 +2,10 @@
 
 Minimal Next.js + Postgres (pgvector) + Prisma scaffold.
 
+## Build Log
+
+[Build log and day-by-day summaries](docs/build-log.md)
+
 ## Day 1 - Runbook
 
 ```bash
