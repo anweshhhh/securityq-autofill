@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 
 type DocumentRow = {
@@ -84,6 +85,9 @@ export default function DocumentsPage() {
 
   return (
     <main>
+      <p>
+        <Link href="/">Back to Home</Link>
+      </p>
       <h1>Documents</h1>
 
       <form onSubmit={handleSubmit}>
