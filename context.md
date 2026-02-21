@@ -132,3 +132,24 @@ Current required variables:
 
 - Day 5: evidence-aware answer approval workflow and reviewer UX
 - Day 6: XLSX support + larger questionnaire performance improvements
+
+## 10) Day 5 New-Chat Bootstrap Prompt
+
+Use this in a new Codex chat to restore full working context quickly:
+
+```text
+Use /Users/anweshsingh/Downloads/Attestly/securityq-autofill/context.md and /Users/anweshsingh/Downloads/Attestly/securityq-autofill/docs/build-log.md as source of truth, then implement Day 5 as one PR-sized change.
+
+Non-negotiables:
+- Evidence-first remains strict:
+  - FOUND => cited answer
+  - PARTIAL => confirmed + not specified with citations
+  - NOT_FOUND => exact "Not found in provided documents."
+- Reuse shared answer logic; do not fork behavior between /api/questions/answer and questionnaire autofill.
+- Keep deterministic guardrails, tests, and debugability.
+
+Before coding:
+1) Summarize current architecture in 8-12 bullets from those docs.
+2) List acceptance criteria as runnable checks.
+3) Then implement only Day 5 scope.
+```

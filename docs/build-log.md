@@ -685,3 +685,51 @@ This makes retrieval/routing failures visible directly from `/ask`, so we can di
 7. In `/ask`, verify:
    - backup question includes RTO/RPO in `Confirmed from provided documents` when present
    - SDLC question with dependency-scanning evidence returns partial (not NOT_FOUND) with citations
+
+## Day 4 Summary (Final / Approved Candidate)
+
+### What we shipped
+
+- CSV questionnaire import with question-column selection
+- Persisted `Questionnaire` + `Question` rows and batch autofill
+- CSV export with `Answer`, `Citations`, `Confidence`, `Needs Review`
+- Strict evidence-first outcomes:
+  - `Not found in provided documents.` when no evidence
+  - partial answers with:
+    - `Confirmed from provided documents:` (only cited facts)
+    - `Not specified in provided documents:` (missing asks)
+- Deterministic quality guardrails:
+  - claim bounding (no unsupported tokens)
+  - formatting enforcement (no raw snippet dumps)
+  - relevance gating
+  - category routing (`BACKUP_DR`, `SDLC`, etc.) with must-match filters
+- `/ask` debug toggle with retrieval diagnostics:
+  - category
+  - similarity and overlap
+  - post-filter chunks
+  - dropped reasons
+
+### Prompt pattern used (and why it worked)
+
+We iterated with PR-sized prompts focused on:
+
+- observable failures (paste output -> fix specific failure)
+- deterministic guardrails (code rules over prompt-only behavior)
+- debug-first diagnosis (retrieval debug output to stop guessing)
+
+This worked well for RAG because model behavior became inspectable and testable.
+
+### Key learning edge
+
+A strong evidence product depends first on:
+
+- retrieval correctness (routing + relevance)
+- strict output validation
+- debug visibility
+- deterministic safety rules
+
+### Day 5 decision handoff
+
+- Keep shared answering logic as the single source of truth
+- Add reviewer/approval workflow without weakening evidence guardrails
+- Preserve deterministic outcomes and debug observability as features expand

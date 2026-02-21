@@ -934,30 +934,47 @@ function extractConfirmedFacts(
 }
 
 function extractBackupDrFacts(citations: Citation[]): string[] {
-  const patterns = [
-    /(?:backups?\s+(?:are|is)\s+(?:performed|run|taken)[^.!?\n]*[.!?]?)/i,
-    /(?:disaster recovery|recovery)[^.!?\n]{0,100}(?:tested|testing|exercise)[^.!?\n]*[.!?]?/i,
-    /(?:rpo[^.!?\n]{0,40}(?:\d+[^.!?\n]{0,20}(?:hours?|hrs?|days?))[^.!?\n]*[.!?]?)/i,
-    /(?:rto[^.!?\n]{0,40}(?:\d+[^.!?\n]{0,20}(?:hours?|hrs?|days?))[^.!?\n]*[.!?]?)/i
-  ];
+  const facts = new Set<string>();
 
-  const facts: string[] = [];
   for (const citation of citations) {
-    const snippet = citation.quotedSnippet;
-    for (const pattern of patterns) {
-      const match = snippet.match(pattern)?.[0]?.trim();
-      if (match) {
-        facts.push(match);
-      }
+    const snippet = normalizeWhitespace(citation.quotedSnippet);
+
+    const backupFrequency = snippet.match(
+      /\bbackups?\b[^.!?\n]{0,80}\b(?:daily|weekly|monthly|quarterly|annually|hourly|every\s+\d+[^.!?\n]*)/i
+    )?.[0];
+    if (backupFrequency) {
+      facts.add(sanitizeFact(backupFrequency));
+    }
+
+    const drTesting = snippet.match(
+      /\bdisaster recovery\b[^.!?\n]{0,120}\b(?:tested|testing|exercise)\b[^.!?\n]{0,80}/i
+    )?.[0];
+    if (drTesting) {
+      facts.add(sanitizeFact(drTesting));
+    }
+
+    const rpoValue = snippet.match(/\brpo\b[^0-9]{0,20}(\d+\s*(?:hours?|hrs?|h|days?|d))/i)?.[1];
+    if (rpoValue) {
+      facts.add(`Target RPO: ${rpoValue}`);
+    }
+
+    const rtoValue = snippet.match(/\brto\b[^0-9]{0,20}(\d+\s*(?:hours?|hrs?|h|days?|d))/i)?.[1];
+    if (rtoValue) {
+      facts.add(`Target RTO: ${rtoValue}`);
     }
   }
 
-  return Array.from(new Set(facts)).slice(0, 6);
+  return Array.from(facts).slice(0, 6);
+}
+
+function defaultMissingLabels(labels: string[]): string[] {
+  return labels.length > 0 ? labels : ["additional requested details"];
 }
 
 function sanitizeFact(fact: string): string {
   return fact
     .replace(/^#+\s*/g, "")
+    .replace(/^[-•]+\s*/g, "")
     .replace(/^\*+\s*/g, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -968,6 +985,43 @@ function formatPartialAnswer(confirmedFacts: string[], missingLabels: string[]):
   const normalizedMissing = missingLabels.map((label) => `- ${label}`).join("\n");
 
   return `${PARTIAL_TEMPLATE_HEADER}\n${normalizedFacts}\n${PARTIAL_TEMPLATE_MISSING}\n${normalizedMissing}`;
+}
+
+function buildDeterministicPartialFromCitations(params: {
+  question: string;
+  category: QuestionCategory;
+  citations: Citation[];
+}): EvidenceAnswer | null {
+  if (params.citations.length === 0) {
+    return null;
+  }
+
+  const coverage = evaluateAsksCoverage(params.question, params.category, params.citations);
+  let confirmedFacts = extractConfirmedFacts(coverage.coveredAsks, params.citations, params.question);
+
+  if (params.category === "BACKUP_DR") {
+    const backupFacts = extractBackupDrFacts(params.citations);
+    if (backupFacts.length > 0) {
+      confirmedFacts = backupFacts;
+    }
+  }
+
+  if (confirmedFacts.length === 0) {
+    return null;
+  }
+
+  const missingLabels = coverage.missingAsks.map((ask) => ask.label);
+  const answer = formatPartialAnswer(
+    confirmedFacts,
+    defaultMissingLabels(missingLabels)
+  );
+
+  return {
+    answer,
+    citations: params.citations,
+    confidence: missingLabels.length <= 1 ? "med" : "low",
+    needsReview: true
+  };
 }
 
 function buildFullAnswer(confirmedFacts: string[]): string {
@@ -1226,7 +1280,10 @@ export function normalizeAnswerOutput(params: {
   const missingLabels = coverage.missingAsks.map((ask) => ask.label);
 
   if (params.category === "BACKUP_DR") {
-    confirmedFacts = Array.from(new Set([...confirmedFacts, ...extractBackupDrFacts(citations)])).slice(0, 6);
+    const backupFacts = extractBackupDrFacts(citations);
+    if (backupFacts.length > 0) {
+      confirmedFacts = backupFacts;
+    }
   }
 
   const modelClaimCheck = applyClaimCheckGuardrails({
@@ -1265,7 +1322,7 @@ export function normalizeAnswerOutput(params: {
     outcome = "PARTIAL";
     answer = formatPartialAnswer(
       confirmedFacts,
-      missingLabels.length > 0 ? missingLabels : ["additional detail context"]
+      defaultMissingLabels(missingLabels)
     );
   }
 
@@ -1382,14 +1439,6 @@ function selectCitationsForNormalization(
   category: QuestionCategory,
   attempt: AttemptResult
 ): Citation[] {
-  if (
-    attempt.modelHadFormatViolation &&
-    attempt.modelAnswer.trim() === NOT_FOUND_TEXT &&
-    attempt.citationsFromModel.length === 0
-  ) {
-    return [];
-  }
-
   const merged = dedupeCitations([...attempt.citationsFromModel, ...attempt.fallbackCitations]);
   return selectRelevantCitations(question, category, merged);
 }
@@ -1584,7 +1633,7 @@ export async function answerQuestionWithEvidence(params: {
 
   const overlapByChunk = new Map(attempt.scoredChunks.map((chunk) => [chunk.chunkId, chunk.overlapScore]));
 
-  const normalized = normalizeAnswerOutput({
+  let normalized = normalizeAnswerOutput({
     question,
     category,
     modelAnswer: attempt.modelAnswer,
@@ -1594,6 +1643,18 @@ export async function answerQuestionWithEvidence(params: {
     citations,
     overlapScores: citations.map((citation) => overlapByChunk.get(citation.chunkId) ?? 0)
   });
+
+  if (normalized.answer === NOT_FOUND_TEXT && citations.length > 0) {
+    const deterministicPartial = buildDeterministicPartialFromCitations({
+      question,
+      category,
+      citations
+    });
+
+    if (deterministicPartial) {
+      normalized = deterministicPartial;
+    }
+  }
 
   if (!debugEnabled) {
     return normalized;

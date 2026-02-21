@@ -73,14 +73,30 @@ function findAnchorLineIndex(lines: string[], anchorTokens: string[]): number {
     return -1;
   }
 
+  let bestIndex = -1;
+  let bestScore = 0;
+
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    if (anchorTokens.some((token) => lineContainsToken(line, token))) {
-      return index;
+    let score = 0;
+
+    for (const token of anchorTokens) {
+      if (lineContainsToken(line, token)) {
+        score += 1;
+      }
+    }
+
+    if (score > 0 && isHeadingLine(line)) {
+      score += 1;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = index;
     }
   }
 
-  return -1;
+  return bestIndex;
 }
 
 function findHeadingLineIndex(lines: string[], fromIndex: number): number {

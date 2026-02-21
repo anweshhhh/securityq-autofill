@@ -282,7 +282,7 @@ describe("answering quality guardrails", () => {
     expect(result.confidence).toBe("low");
   });
 
-  it("falls back to NOT_FOUND when model returns fragment output twice", async () => {
+  it("falls back to deterministic partial answer when model returns fragment output twice", async () => {
     mockSingleChunk(
       "Backup frequency is daily. Disaster recovery tests are conducted annually. RPO is 24 hours and RTO is 24 hours."
     );
@@ -307,11 +307,10 @@ describe("answering quality guardrails", () => {
     });
 
     expect(generateGroundedAnswerMock).toHaveBeenCalledTimes(2);
-    expect(result).toEqual({
-      answer: "Not found in provided documents.",
-      citations: [],
-      confidence: "low",
-      needsReview: true
-    });
+    expect(result.answer).toContain("Confirmed from provided documents:");
+    expect(result.answer.toLowerCase()).toContain("backup frequency is daily");
+    expect(result.answer.toLowerCase()).toContain("target rpo: 24 hours");
+    expect(result.citations.length).toBeGreaterThan(0);
+    expect(result.needsReview).toBe(true);
   });
 });
