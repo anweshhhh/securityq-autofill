@@ -1,34 +1,14 @@
 import { NextResponse } from "next/server";
 import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
-import { prisma } from "@/lib/prisma";
+import { listQuestionnairesForOrganization } from "@/lib/questionnaireService";
 
 export async function GET() {
   try {
     const organization = await getOrCreateDefaultOrganization();
-
-    const questionnaires = await prisma.questionnaire.findMany({
-      where: { organizationId: organization.id },
-      orderBy: { createdAt: "desc" },
-      include: {
-        questions: {
-          select: {
-            id: true,
-            answer: true
-          }
-        }
-      }
-    });
+    const questionnaires = await listQuestionnairesForOrganization(organization.id);
 
     return NextResponse.json({
-      questionnaires: questionnaires.map((questionnaire) => ({
-        id: questionnaire.id,
-        name: questionnaire.name,
-        createdAt: questionnaire.createdAt,
-        questionCount: questionnaire.questions.length,
-        answeredCount: questionnaire.questions.filter(
-          (question) => Boolean(question.answer && question.answer.trim())
-        ).length
-      }))
+      questionnaires
     });
   } catch (error) {
     console.error("Failed to list questionnaires", error);

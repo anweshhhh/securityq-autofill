@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isCsvFile, parseCsvFile, suggestQuestionColumn } from "@/lib/csv";
+import { buildCsvPreview, isCsvFile, parseCsvFile } from "@/lib/csv";
 
 export async function POST(request: Request) {
   try {
@@ -15,14 +15,19 @@ export async function POST(request: Request) {
     }
 
     const parsed = await parseCsvFile(fileEntry);
+    const preview = buildCsvPreview(parsed);
 
     return NextResponse.json({
-      headers: parsed.headers,
-      rowCount: parsed.rows.length,
-      suggestedQuestionColumn: suggestQuestionColumn(parsed.headers)
+      headers: preview.headers,
+      rowCount: preview.totalRowCount,
+      previewRows: preview.previewRows,
+      suggestedQuestionColumn: preview.suggestedQuestionColumn
     });
   } catch (error) {
     console.error("Failed to read CSV headers", error);
-    return NextResponse.json({ error: "Failed to read CSV headers" }, { status: 400 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to read CSV headers" },
+      { status: 400 }
+    );
   }
 }

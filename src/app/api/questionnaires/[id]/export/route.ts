@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import type { Citation } from "@/lib/answering";
 import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
+import { buildQuestionnaireExportCsv } from "@/lib/export";
 import { prisma } from "@/lib/prisma";
-import { buildQuestionnaireExportCsv } from "@/lib/questionnaireExport";
 
 function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
@@ -82,8 +82,8 @@ export async function GET(_request: Request, context: { params: { id: string } }
     }
 
     const headers = toStringArray(questionnaire.sourceHeaders);
-    const exportHeaders =
-      headers.length > 0 ? headers : toStringArray(Object.keys(toStringRecord(questionnaire.questions[0]?.sourceRow)));
+    const fallbackHeaders = Object.keys(toStringRecord(questionnaire.questions[0]?.sourceRow));
+    const exportHeaders = headers.length > 0 ? headers : fallbackHeaders;
 
     const csv = buildQuestionnaireExportCsv(
       exportHeaders,

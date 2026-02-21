@@ -199,3 +199,39 @@ This kept backend behavior consistent and testable while adding the minimum Day 
 6. Upload a CSV and select the question column
 7. Click `Autofill`
 8. Click `Download CSV` and confirm added columns + citations
+
+## Day 4 (Hardened)
+
+### What changed
+
+- Hardened CSV parsing for BOM, quoted commas/newlines, duplicate headers, and size limits
+- Added CSV preview (first rows) + smarter question-column suggestion heuristics
+- Stored deterministic export metadata:
+  - ordered original headers on questionnaire
+  - full original row JSON on each question
+  - selected question column key
+- Converted autofill into resumable batches:
+  - DB-backed run state (`PENDING/RUNNING/COMPLETED/FAILED`)
+  - progress counters (`processedCount`, `totalCount`, `foundCount`, `notFoundCount`)
+  - `lastError`, `startedAt`, `finishedAt`
+  - small per-call batch processing and safe resume
+- Added embedding readiness checks before autofill with actionable error messages
+- Added rate spacing between model calls to reduce API pressure
+- Improved export formatting with compact, truncated citation strings and strict CSV escaping
+
+### Why this pattern worked
+
+- Focused hardening pass (no feature sprawl) let us fix correctness and reliability gaps quickly
+- Reusing the shared Day 3 answer service kept single-question and batch behavior aligned
+- Deterministic persistence (headers + row JSON + row index) made export reproducible and testable
+
+### Verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate deploy`
+3. `npm test`
+4. `npm run dev`
+5. Open `http://localhost:3000/questionnaires`
+6. Upload a tricky CSV (quoted commas/newlines), verify preview and column selection
+7. Click `Autofill/Resume` and watch status/progress move to `COMPLETED`
+8. Download CSV and confirm original columns + appended answer/citation fields

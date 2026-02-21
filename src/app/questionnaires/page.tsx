@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+
+type PreviewRow = Record<string, string>;
 
 type QuestionnaireRow = {
   id: string;
@@ -9,19 +11,45 @@ type QuestionnaireRow = {
   createdAt: string;
   questionCount: number;
   answeredCount: number;
+  foundCount: number;
+  notFoundCount: number;
+  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+  progressPercent: number;
+  lastError: string | null;
 };
+
+type AutofillProgress = {
+  questionnaireId: string;
+  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+  processedCount: number;
+  totalCount: number;
+  foundCount: number;
+  notFoundCount: number;
+  progressPercent: number;
+  lastError: string | null;
+  error?: string;
+};
+
+const POLL_INTERVAL_MS = 450;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export default function QuestionnairesPage() {
   const [questionnaires, setQuestionnaires] = useState<QuestionnaireRow[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
+  const [previewRows, setPreviewRows] = useState<PreviewRow[]>([]);
   const [questionColumn, setQuestionColumn] = useState("");
   const [name, setName] = useState("");
   const [message, setMessage] = useState("");
   const [isLoadingList, setIsLoadingList] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [autofillId, setAutofillId] = useState<string | null>(null);
+  const [activeAutofillId, setActiveAutofillId] = useState<string | null>(null);
+
+  const previewHeaders = useMemo(() => headers, [headers]);
 
   async function fetchQuestionnaires() {
     setIsLoadingList(true);
@@ -29,7 +57,7 @@ export default function QuestionnairesPage() {
     try {
       const response = await fetch("/api/questionnaires", { cache: "no-store" });
       const payload = (await response.json()) as {
-        questionnaires: QuestionnaireRow[];
+        questionnaires?: QuestionnaireRow[];
         error?: string;
       };
 
@@ -37,7 +65,7 @@ export default function QuestionnairesPage() {
         throw new Error(payload.error ?? "Failed to load questionnaires");
       }
 
-      setQuestionnaires(payload.questionnaires);
+      setQuestionnaires(payload.questionnaires ?? []);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to load questionnaires");
     } finally {
@@ -52,6 +80,7 @@ export default function QuestionnairesPage() {
   async function handleFileSelect(file: File | null) {
     setSelectedFile(file);
     setHeaders([]);
+    setPreviewRows([]);
     setQuestionColumn("");
     setMessage("");
 
@@ -72,20 +101,22 @@ export default function QuestionnairesPage() {
 
       const payload = (await response.json()) as {
         headers?: string[];
-        suggestedQuestionColumn?: string;
         rowCount?: number;
+        previewRows?: PreviewRow[];
+        suggestedQuestionColumn?: string;
         error?: string;
       };
 
       if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to parse CSV headers");
+        throw new Error(payload.error ?? "Failed to parse CSV");
       }
 
       setHeaders(payload.headers ?? []);
+      setPreviewRows(payload.previewRows ?? []);
       setQuestionColumn(payload.suggestedQuestionColumn ?? payload.headers?.[0] ?? "");
       setMessage(`Parsed ${payload.rowCount ?? 0} rows`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to parse CSV headers");
+      setMessage(error instanceof Error ? error.message : "Failed to parse CSV");
     } finally {
       setIsParsing(false);
     }
@@ -100,7 +131,7 @@ export default function QuestionnairesPage() {
     }
 
     if (!questionColumn) {
-      setMessage("Select a question column");
+      setMessage("Select the question column");
       return;
     }
 
@@ -124,7 +155,7 @@ export default function QuestionnairesPage() {
       };
 
       if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to import questionnaire");
+        throw new Error(payload.error ?? "Import failed");
       }
 
       setMessage(
@@ -132,45 +163,54 @@ export default function QuestionnairesPage() {
       );
       setSelectedFile(null);
       setHeaders([]);
+      setPreviewRows([]);
       setQuestionColumn("");
       setName("");
 
       await fetchQuestionnaires();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to import questionnaire");
+      setMessage(error instanceof Error ? error.message : "Import failed");
     } finally {
       setIsImporting(false);
     }
   }
 
-  async function handleAutofill(questionnaireId: string) {
-    setAutofillId(questionnaireId);
+  async function runAutofillUntilDone(questionnaireId: string) {
+    setActiveAutofillId(questionnaireId);
     setMessage("");
 
     try {
-      const response = await fetch(`/api/questionnaires/${questionnaireId}/autofill`, {
-        method: "POST"
-      });
+      while (true) {
+        const response = await fetch(`/api/questionnaires/${questionnaireId}/autofill`, {
+          method: "POST"
+        });
 
-      const payload = (await response.json()) as {
-        completedCount?: number;
-        notFoundCount?: number;
-        error?: string;
-      };
+        const payload = (await response.json()) as AutofillProgress;
 
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to autofill questionnaire");
+        if (!response.ok) {
+          throw new Error(payload.error ?? "Autofill failed");
+        }
+
+        setMessage(
+          `Autofill ${payload.status}: ${payload.processedCount}/${payload.totalCount} (${payload.progressPercent}%)`
+        );
+
+        await fetchQuestionnaires();
+
+        if (payload.status === "COMPLETED") {
+          break;
+        }
+
+        if (payload.status === "FAILED") {
+          throw new Error(payload.lastError ?? "Autofill failed");
+        }
+
+        await sleep(POLL_INTERVAL_MS);
       }
-
-      setMessage(
-        `Autofill complete: ${payload.completedCount ?? 0} questions processed, ${payload.notFoundCount ?? 0} not found`
-      );
-
-      await fetchQuestionnaires();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to autofill questionnaire");
+      setMessage(error instanceof Error ? error.message : "Autofill failed");
     } finally {
-      setAutofillId(null);
+      setActiveAutofillId(null);
     }
   }
 
@@ -179,6 +219,7 @@ export default function QuestionnairesPage() {
       <p>
         <Link href="/">Back to Home</Link>
       </p>
+
       <h1>Questionnaires</h1>
 
       <form onSubmit={handleImport}>
@@ -217,11 +258,35 @@ export default function QuestionnairesPage() {
         </div>
 
         <button type="submit" disabled={isParsing || isImporting || !selectedFile}>
-          {isImporting ? "Importing..." : "Import CSV"}
+          {isImporting ? "Importing..." : "Create Questionnaire"}
         </button>
       </form>
 
       {message ? <p>{message}</p> : null}
+
+      {previewRows.length > 0 ? (
+        <section>
+          <h2>Preview (first {previewRows.length} rows)</h2>
+          <table>
+            <thead>
+              <tr>
+                {previewHeaders.map((header) => (
+                  <th key={header}>{header}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {previewRows.map((row, rowIndex) => (
+                <tr key={`preview-${rowIndex}`}>
+                  {previewHeaders.map((header) => (
+                    <td key={`${rowIndex}-${header}`}>{row[header]}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
 
       <h2>Saved Questionnaires</h2>
       {isLoadingList ? <p>Loading...</p> : null}
@@ -230,31 +295,37 @@ export default function QuestionnairesPage() {
         <thead>
           <tr>
             <th>Name</th>
+            <th>Status</th>
+            <th>Progress</th>
+            <th>Found</th>
+            <th>Not Found</th>
             <th>Created</th>
-            <th>Questions</th>
-            <th>Answered</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody>
           {questionnaires.length === 0 ? (
             <tr>
-              <td colSpan={5}>No questionnaires yet.</td>
+              <td colSpan={7}>No questionnaires yet.</td>
             </tr>
           ) : (
             questionnaires.map((questionnaire) => (
               <tr key={questionnaire.id}>
                 <td>{questionnaire.name}</td>
+                <td>{questionnaire.status}</td>
+                <td>
+                  {questionnaire.answeredCount}/{questionnaire.questionCount} ({questionnaire.progressPercent}%)
+                </td>
+                <td>{questionnaire.foundCount}</td>
+                <td>{questionnaire.notFoundCount}</td>
                 <td>{new Date(questionnaire.createdAt).toLocaleString()}</td>
-                <td>{questionnaire.questionCount}</td>
-                <td>{questionnaire.answeredCount}</td>
                 <td>
                   <button
                     type="button"
-                    onClick={() => void handleAutofill(questionnaire.id)}
-                    disabled={autofillId === questionnaire.id}
+                    onClick={() => void runAutofillUntilDone(questionnaire.id)}
+                    disabled={activeAutofillId === questionnaire.id || isLoadingList}
                   >
-                    {autofillId === questionnaire.id ? "Autofilling..." : "Autofill"}
+                    {activeAutofillId === questionnaire.id ? "Running..." : "Autofill/Resume"}
                   </button>{" "}
                   <a href={`/api/questionnaires/${questionnaire.id}/export`}>Download CSV</a>
                 </td>

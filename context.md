@@ -29,7 +29,8 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
 - Retrieval + cited single-question answering at `/api/questions/answer`
 - `/ask` UI for one-question evidence-grounded responses
 - Questionnaire CSV import + question-column selection + batch autofill + CSV export
-- `/questionnaires` UI for import, autofill, and export actions
+- `/questionnaires` UI for import, preview, autofill/resume, and export actions
+- Resumable autofill run state on `Questionnaire` (`PENDING/RUNNING/COMPLETED/FAILED`) with progress counters
 - Homepage shortcuts: `Go to Documents`, `Go to Questionnaires`, `Go to Ask`, `Open API Health`, `Open API Documents`
 
 ## 5) Current Endpoints and Pages
@@ -80,6 +81,7 @@ Current required variables:
 - Review UI quickly, but assume backend correctness and data integrity need extra care
 - Avoid extras not requested in the prompt; prefer small, reviewable increments
 - Keep each change easy to verify locally
+- Prefer resumable operations and DB-backed progress for long-running tasks
 
 ## 9) Next Milestones
 

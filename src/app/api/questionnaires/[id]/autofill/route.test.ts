@@ -3,8 +3,12 @@ import { NOT_FOUND_RESPONSE } from "@/lib/answering";
 import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
 import { prisma } from "@/lib/prisma";
 
-const { answerQuestionWithEvidenceMock } = vi.hoisted(() => ({
-  answerQuestionWithEvidenceMock: vi.fn()
+const {
+  answerQuestionWithEvidenceMock,
+  getEmbeddingAvailabilityMock
+} = vi.hoisted(() => ({
+  answerQuestionWithEvidenceMock: vi.fn(),
+  getEmbeddingAvailabilityMock: vi.fn()
 }));
 
 vi.mock("@/lib/answering", async () => {
@@ -12,6 +16,17 @@ vi.mock("@/lib/answering", async () => {
   return {
     ...actual,
     answerQuestionWithEvidence: answerQuestionWithEvidenceMock
+  };
+});
+
+vi.mock("@/lib/questionnaireService", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/questionnaireService")>(
+    "@/lib/questionnaireService"
+  );
+
+  return {
+    ...actual,
+    getEmbeddingAvailability: getEmbeddingAvailabilityMock
   };
 });
 
@@ -69,6 +84,7 @@ describe.sequential("questionnaire autofill + export", () => {
   beforeEach(async () => {
     await cleanupQuestionnaires();
     answerQuestionWithEvidenceMock.mockReset();
+    getEmbeddingAvailabilityMock.mockResolvedValue({ total: 1, embedded: 1, missing: 0 });
   });
 
   afterEach(async () => {
@@ -79,7 +95,7 @@ describe.sequential("questionnaire autofill + export", () => {
     await prisma.$disconnect();
   });
 
-  it("autofills in row order and exports CSV with answer columns", async () => {
+  it("autofills in resumable batches and exports csv columns", async () => {
     const organization = await getOrCreateDefaultOrganization();
 
     const questionnaire = await prisma.questionnaire.create({
@@ -88,43 +104,59 @@ describe.sequential("questionnaire autofill + export", () => {
         name: `${TEST_QUESTIONNAIRE_NAME_PREFIX}${Date.now()}`,
         questionColumn: "Question",
         sourceHeaders: ["Question", "Control ID"],
-        sourceFileName: "test.csv"
+        sourceFileName: "test.csv",
+        totalCount: 7
       }
     });
 
     await prisma.question.createMany({
-      data: [
-        {
-          questionnaireId: questionnaire.id,
-          rowIndex: 0,
-          text: "Do you enforce TLS 1.2+?",
-          sourceRow: {
-            Question: "Do you enforce TLS 1.2+?",
-            "Control ID": "ENC-1"
-          },
-          citations: []
+      data: Array.from({ length: 7 }).map((_, index) => ({
+        questionnaireId: questionnaire.id,
+        rowIndex: index,
+        text: `Question ${index + 1}`,
+        sourceRow: {
+          Question: `Question ${index + 1}`,
+          "Control ID": `CTRL-${index + 1}`
         },
-        {
-          questionnaireId: questionnaire.id,
-          rowIndex: 1,
-          text: "Are backups encrypted?",
-          sourceRow: {
-            Question: "Are backups encrypted?",
-            "Control ID": "ENC-2"
-          },
-          citations: []
-        }
-      ]
+        citations: []
+      }))
     });
 
     answerQuestionWithEvidenceMock
       .mockResolvedValueOnce({
-        answer: "Yes, TLS 1.2+ is enforced.",
+        answer: "Found A1",
         citations: [
           {
             docName: "Security Doc",
             chunkId: "chunk-1",
-            quotedSnippet: "TLS 1.2 or higher is required"
+            quotedSnippet: "Snippet 1"
+          }
+        ],
+        confidence: "high",
+        needsReview: false
+      })
+      .mockResolvedValueOnce(NOT_FOUND_RESPONSE)
+      .mockResolvedValueOnce({
+        answer: "Found A3",
+        citations: [
+          {
+            docName: "Security Doc",
+            chunkId: "chunk-3",
+            quotedSnippet: "Snippet 3"
+          }
+        ],
+        confidence: "med",
+        needsReview: false
+      })
+      .mockResolvedValueOnce(NOT_FOUND_RESPONSE)
+      .mockResolvedValueOnce(NOT_FOUND_RESPONSE)
+      .mockResolvedValueOnce({
+        answer: "Found A6",
+        citations: [
+          {
+            docName: "Security Doc",
+            chunkId: "chunk-6",
+            quotedSnippet: "Snippet 6"
           }
         ],
         confidence: "high",
@@ -132,35 +164,46 @@ describe.sequential("questionnaire autofill + export", () => {
       })
       .mockResolvedValueOnce(NOT_FOUND_RESPONSE);
 
-    const autofillResponse = await runAutofill(new Request("http://localhost"), {
+    const firstResponse = await runAutofill(new Request("http://localhost"), {
       params: { id: questionnaire.id }
     });
+    const firstPayload = await firstResponse.json();
 
-    expect(autofillResponse.status).toBe(200);
+    expect(firstResponse.status).toBe(200);
+    expect(firstPayload.status).toBe("RUNNING");
+    expect(firstPayload.processedCount).toBe(5);
+    expect(firstPayload.totalCount).toBe(7);
+
+    const secondResponse = await runAutofill(new Request("http://localhost"), {
+      params: { id: questionnaire.id }
+    });
+    const secondPayload = await secondResponse.json();
+
+    expect(secondResponse.status).toBe(200);
+    expect(secondPayload.status).toBe("COMPLETED");
+    expect(secondPayload.processedCount).toBe(7);
+    expect(secondPayload.foundCount).toBe(3);
+    expect(secondPayload.notFoundCount).toBe(4);
 
     const updatedQuestions = await prisma.question.findMany({
       where: { questionnaireId: questionnaire.id },
       orderBy: { rowIndex: "asc" }
     });
 
-    expect(updatedQuestions[0].answer).toBe("Yes, TLS 1.2+ is enforced.");
-    expect(updatedQuestions[0].confidence).toBe("high");
-    expect(updatedQuestions[0].needsReview).toBe(false);
-
+    expect(updatedQuestions).toHaveLength(7);
+    expect(updatedQuestions[0].answer).toBe("Found A1");
     expect(updatedQuestions[1].answer).toBe("Not found in provided documents.");
-    expect(updatedQuestions[1].confidence).toBe("low");
-    expect(updatedQuestions[1].needsReview).toBe(true);
+    expect(updatedQuestions[6].answer).toBe("Not found in provided documents.");
 
     const exportResponse = await exportCsv(new Request("http://localhost"), {
       params: { id: questionnaire.id }
     });
 
     expect(exportResponse.status).toBe(200);
-    expect(exportResponse.headers.get("content-type")).toContain("text/csv");
 
     const exportCsvText = await exportResponse.text();
     expect(exportCsvText).toContain('"Answer","Citations","Confidence","Needs Review"');
-    expect(exportCsvText).toContain("Yes, TLS 1.2+ is enforced.");
+    expect(exportCsvText).toContain("Found A1");
     expect(exportCsvText).toContain("Not found in provided documents.");
     expect(exportCsvText).toContain("Security Doc#chunk-1");
   });

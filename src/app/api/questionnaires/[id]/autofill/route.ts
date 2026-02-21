@@ -1,66 +1,44 @@
 import { NextResponse } from "next/server";
-import { NOT_FOUND_RESPONSE, answerQuestionWithEvidence } from "@/lib/answering";
 import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
-import { prisma } from "@/lib/prisma";
+import { getEmbeddingAvailability, processQuestionnaireAutofillBatch } from "@/lib/questionnaireService";
 
 export async function POST(_request: Request, context: { params: { id: string } }) {
   try {
     const organization = await getOrCreateDefaultOrganization();
-    const questionnaireId = context.params.id;
+    const availability = await getEmbeddingAvailability(organization.id);
 
-    const questionnaire = await prisma.questionnaire.findFirst({
-      where: {
-        id: questionnaireId,
-        organizationId: organization.id
-      },
-      include: {
-        questions: {
-          orderBy: {
-            rowIndex: "asc"
-          }
-        }
-      }
+    if (availability.total === 0 || availability.embedded === 0) {
+      return NextResponse.json(
+        {
+          error: "No embedded chunks found. Upload documents and run /api/documents/embed first."
+        },
+        { status: 409 }
+      );
+    }
+
+    if (availability.missing > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Some document chunks are missing embeddings. Run /api/documents/embed and retry autofill."
+        },
+        { status: 409 }
+      );
+    }
+
+    const progress = await processQuestionnaireAutofillBatch({
+      organizationId: organization.id,
+      questionnaireId: context.params.id
     });
 
-    if (!questionnaire) {
+    return NextResponse.json(progress);
+  } catch (error) {
+    console.error("Failed to autofill questionnaire", error);
+
+    if (error instanceof Error && error.message === "Questionnaire not found") {
       return NextResponse.json({ error: "Questionnaire not found" }, { status: 404 });
     }
 
-    let completedCount = 0;
-    let notFoundCount = 0;
-
-    for (const question of questionnaire.questions) {
-      const answer = await answerQuestionWithEvidence({
-        organizationId: organization.id,
-        question: question.text
-      });
-
-      if (answer.answer === NOT_FOUND_RESPONSE.answer) {
-        notFoundCount += 1;
-      }
-
-      await prisma.question.update({
-        where: {
-          id: question.id
-        },
-        data: {
-          answer: answer.answer,
-          citations: answer.citations,
-          confidence: answer.confidence,
-          needsReview: answer.needsReview
-        }
-      });
-
-      completedCount += 1;
-    }
-
-    return NextResponse.json({
-      questionnaireId: questionnaire.id,
-      completedCount,
-      notFoundCount
-    });
-  } catch (error) {
-    console.error("Failed to autofill questionnaire", error);
     return NextResponse.json({ error: "Failed to autofill questionnaire" }, { status: 500 });
   }
 }
