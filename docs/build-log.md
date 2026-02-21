@@ -550,3 +550,61 @@ Users now get actionable partial answers that preserve real evidence instead of 
    - backup question cites backup/DR evidence
    - SDLC question returns NOT_FOUND unless SDLC evidence exists
    - answers are never raw fragments or heading dumps
+
+## Day 4 QA hardening v8: evidence debug mode and normalized routing
+
+### What changed
+
+- Added normalized matching for routing/filtering:
+  - lowercasing
+  - unicode dash normalization
+  - punctuation stripping (slash/dot preserved)
+  - whitespace collapsing
+- Applied normalization consistently to:
+  - question category detection
+  - chunk must-match filtering
+  - overlap/relevance term matching
+- Tightened must-match logic for key categories:
+  - `INCIDENT_RESPONSE`: `incident response` OR (`severity` + `triage|mitigat*`)
+  - `BACKUP_DR`: `backup*` OR `disaster recovery` OR `rto` OR `rpo`
+  - `ACCESS_AUTH`: `mfa|authentication|sso|saml`
+  - `VENDOR`: `subprocessor|vendor`
+- Added debug mode for evidence routing:
+  - `/api/questions/answer` accepts `debug=true` via query or JSON body
+  - questionnaire autofill accepts `debug=true` (query or JSON body)
+  - debug payload includes:
+    - `category`
+    - `threshold`
+    - `retrievedTopK`
+    - `afterMustMatch`
+    - `droppedByMustMatch`
+    - `finalCitations`
+- Added gated persistence for questionnaire debug:
+  - only persisted when `DEBUG_EVIDENCE=true`
+  - stored under `Question.sourceRow.__answerDebug`
+
+### Why this matters
+
+This removes routing blind spots that produced false NOT_FOUND for valid IR content and reduces cross-category leakage (for example backups answered from IR text). Debug payloads make future mismatches diagnosable without guessing.
+
+### Tests added/updated
+
+- Unit tests:
+  - normalization behavior
+  - must-match phrase/group checks (`## Incident Response`, `Backup & Disaster Recovery`)
+- Route tests:
+  - IR question returns cited result when IR evidence exists
+  - backup question prefers backup chunk over IR chunk when both are retrieved
+  - debug query wiring for `/api/questions/answer`
+
+### Verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate deploy`
+3. `npm test`
+4. `npm run lint`
+5. `npm run build`
+6. `npm run dev`
+7. Debug check:
+   - `POST /api/questions/answer?debug=true`
+   - confirm returned debug fields show must-match filtering and final citations

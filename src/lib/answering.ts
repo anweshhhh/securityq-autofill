@@ -21,6 +21,7 @@ export type EvidenceAnswer = {
   citations: Citation[];
   confidence: "low" | "med" | "high";
   needsReview: boolean;
+  debug?: EvidenceDebugInfo;
 };
 
 type AskDefinition = {
@@ -54,9 +55,25 @@ export type QuestionCategory =
   | "OTHER";
 
 type CategoryRule = {
-  mustMatch: string[];
+  mustMatchAny: string[][];
   niceToMatch: string[];
   preferredSnippetTerms: string[];
+};
+
+export type EvidenceDebugChunk = {
+  chunkId: string;
+  docName: string;
+  similarity: number;
+  overlap: number;
+};
+
+export type EvidenceDebugInfo = {
+  category: QuestionCategory;
+  threshold: number;
+  retrievedTopK: EvidenceDebugChunk[];
+  afterMustMatch: EvidenceDebugChunk[];
+  droppedByMustMatch: Array<{ chunkId: string; reason: string }>;
+  finalCitations: Citation[];
 };
 
 type AttemptResult = {
@@ -83,52 +100,69 @@ const MFA_REQUIRED_FALLBACK =
 
 const CATEGORY_RULES: Record<QuestionCategory, CategoryRule> = {
   BACKUP_DR: {
-    mustMatch: ["backup", "backups", "restore", "disaster", "rto", "rpo", "snapshot"],
+    mustMatchAny: [["backup*"], ["disaster recovery"], ["rto"], ["rpo"]],
     niceToMatch: ["daily", "weekly", "recovery", "dr"],
     preferredSnippetTerms: ["backup", "disaster recovery"]
   },
   SDLC: {
-    mustMatch: ["sdlc", "code review", "ci/cd", "pipeline", "branch", "change management", "deployment"],
+    mustMatchAny: [
+      ["sdlc"],
+      ["code review"],
+      ["ci/cd"],
+      ["pipeline"],
+      ["branch"],
+      ["change management"],
+      ["deployment"]
+    ],
     niceToMatch: ["pull request", "pr", "commit", "release"],
     preferredSnippetTerms: ["sdlc", "code review", "pipeline", "branch protection"]
   },
   INCIDENT_RESPONSE: {
-    mustMatch: ["incident", "response", "severity", "triage", "mitigation"],
+    mustMatchAny: [["incident response"], ["severity", "triage"], ["severity", "mitigat*"]],
     niceToMatch: ["containment", "eradication", "recovery", "playbook", "sev-"],
     preferredSnippetTerms: ["incident response", "severity"]
   },
   ACCESS_AUTH: {
-    mustMatch: ["mfa", "sso", "authentication", "access", "least privilege", "rbac"],
+    mustMatchAny: [["mfa"], ["authentication"], ["sso"], ["saml"]],
     niceToMatch: ["login", "authorize", "identity", "role"],
     preferredSnippetTerms: ["mfa", "access control", "authentication"]
   },
   ENCRYPTION: {
-    mustMatch: ["encrypt", "encryption", "tls", "hsts", "cipher", "algorithm", "at rest", "in transit"],
+    mustMatchAny: [
+      ["encrypt"],
+      ["encryption"],
+      ["tls"],
+      ["hsts"],
+      ["cipher"],
+      ["algorithm"],
+      ["at rest"],
+      ["in transit"]
+    ],
     niceToMatch: ["key", "kms", "rotation", "aes", "rsa"],
     preferredSnippetTerms: ["encryption", "tls", "at rest", "in transit"]
   },
   VENDOR: {
-    mustMatch: ["vendor", "subprocessor", "third-party", "third party", "supplier"],
+    mustMatchAny: [["subprocessor"], ["vendor"]],
     niceToMatch: ["soc2", "sig", "assessment", "review"],
     preferredSnippetTerms: ["vendor", "subprocessor", "third-party"]
   },
   LOGGING: {
-    mustMatch: ["log", "logging", "audit", "monitor", "monitoring"],
+    mustMatchAny: [["log"], ["logging"], ["audit"], ["monitoring"]],
     niceToMatch: ["siem", "alert", "retention", "review"],
     preferredSnippetTerms: ["logging", "audit", "monitoring"]
   },
   RETENTION_DELETION: {
-    mustMatch: ["retention", "delete", "deletion", "dsr", "data subject", "export", "purge"],
+    mustMatchAny: [["retention"], ["delete"], ["deletion"], ["dsr"], ["data subject"], ["export"]],
     niceToMatch: ["erase", "removal", "timeline", "request"],
     preferredSnippetTerms: ["retention", "deletion", "dsr", "data subject"]
   },
   PEN_TEST: {
-    mustMatch: ["pen test", "penetration", "pentest"],
+    mustMatchAny: [["pen test"], ["penetration"], ["pentest"]],
     niceToMatch: ["remediation", "external", "internal", "frequency"],
     preferredSnippetTerms: ["pen test", "penetration", "pentest"]
   },
   OTHER: {
-    mustMatch: [],
+    mustMatchAny: [],
     niceToMatch: [],
     preferredSnippetTerms: []
   }
@@ -392,42 +426,171 @@ export const NOT_FOUND_RESPONSE: EvidenceAnswer = {
   needsReview: true
 };
 
-export function categorizeQuestion(question: string): QuestionCategory {
-  const normalized = question.toLowerCase();
+export function normalizeForMatch(value: string): string {
+  return value
+    .normalize("NFKC")
+    .replace(/[‐‑‒–—―−]/g, "-")
+    .toLowerCase()
+    .replace(/[^a-z0-9./\s-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  if (/\bpen(?:\s|-)?test\b|\bpenetration\b|\bpentest\b/i.test(normalized)) {
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function containsNormalizedTerm(normalizedText: string, rawTerm: string): boolean {
+  const trimmedRawTerm = rawTerm.trim();
+  const hasWildcard = trimmedRawTerm.endsWith("*");
+  const normalizedTerm = normalizeForMatch(
+    hasWildcard ? trimmedRawTerm.slice(0, Math.max(0, trimmedRawTerm.length - 1)) : trimmedRawTerm
+  );
+  if (!normalizedTerm) {
+    return false;
+  }
+
+  if (hasWildcard) {
+    return new RegExp(`(?:^|\\s)${escapeRegExp(normalizedTerm)}[a-z0-9-]*(?:$|\\s)`).test(
+      normalizedText
+    );
+  }
+
+  if (
+    normalizedTerm.includes(" ") ||
+    normalizedTerm.includes("/") ||
+    normalizedTerm.includes(".") ||
+    normalizedTerm.includes("-")
+  ) {
+    return normalizedText.includes(normalizedTerm);
+  }
+
+  return new RegExp(`(?:^|\\s)${escapeRegExp(normalizedTerm)}(?:$|\\s)`).test(normalizedText);
+}
+
+function matchesMustMatchGroup(normalizedText: string, group: string[]): boolean {
+  return group.every((term) => containsNormalizedTerm(normalizedText, term));
+}
+
+export function chunkMatchesCategoryMustMatch(
+  category: QuestionCategory,
+  chunkText: string
+): boolean {
+  const mustMatchAny = CATEGORY_RULES[category]?.mustMatchAny ?? [];
+  if (mustMatchAny.length === 0) {
+    return true;
+  }
+
+  const normalizedChunk = normalizeForMatch(chunkText);
+  return mustMatchAny.some((group) => matchesMustMatchGroup(normalizedChunk, group));
+}
+
+export function categorizeQuestion(question: string): QuestionCategory {
+  const normalized = normalizeForMatch(question);
+
+  if (
+    containsNormalizedTerm(normalized, "pen test") ||
+    containsNormalizedTerm(normalized, "penetration") ||
+    containsNormalizedTerm(normalized, "pentest")
+  ) {
     return "PEN_TEST";
   }
 
-  if (/\bbackup\b|\bbackups\b|\brestore\b|disaster recovery|\bdr\b|\brto\b|\brpo\b|\bsnapshot\b/i.test(normalized)) {
+  if (
+    containsNormalizedTerm(normalized, "backup") ||
+    containsNormalizedTerm(normalized, "backups") ||
+    containsNormalizedTerm(normalized, "restore") ||
+    containsNormalizedTerm(normalized, "disaster recovery") ||
+    containsNormalizedTerm(normalized, "dr") ||
+    containsNormalizedTerm(normalized, "rto") ||
+    containsNormalizedTerm(normalized, "rpo") ||
+    containsNormalizedTerm(normalized, "snapshot")
+  ) {
     return "BACKUP_DR";
   }
 
-  if (/\bsdlc\b|code review|pull request|\bci\/cd\b|\bpipeline\b|branch protection|change management|deployment/i.test(normalized)) {
+  if (
+    containsNormalizedTerm(normalized, "sdlc") ||
+    containsNormalizedTerm(normalized, "code review") ||
+    containsNormalizedTerm(normalized, "pull request") ||
+    containsNormalizedTerm(normalized, "ci/cd") ||
+    containsNormalizedTerm(normalized, "pipeline") ||
+    containsNormalizedTerm(normalized, "branch protection") ||
+    containsNormalizedTerm(normalized, "change management") ||
+    containsNormalizedTerm(normalized, "deployment")
+  ) {
     return "SDLC";
   }
 
-  if (/\bincident\b|\bseverity\b|\btriage\b|\bmitigation\b|\bcontainment\b|\beradication\b|\brecovery\b/i.test(normalized)) {
+  if (
+    containsNormalizedTerm(normalized, "incident response") ||
+    containsNormalizedTerm(normalized, "ir") ||
+    containsNormalizedTerm(normalized, "severity") ||
+    containsNormalizedTerm(normalized, "severity levels") ||
+    containsNormalizedTerm(normalized, "triage") ||
+    containsNormalizedTerm(normalized, "mitigation") ||
+    containsNormalizedTerm(normalized, "containment") ||
+    containsNormalizedTerm(normalized, "eradication")
+  ) {
     return "INCIDENT_RESPONSE";
   }
 
-  if (/\bmfa\b|\bsso\b|access control|authentication|least privilege|\brbac\b/i.test(normalized)) {
+  if (
+    containsNormalizedTerm(normalized, "mfa") ||
+    containsNormalizedTerm(normalized, "sso") ||
+    containsNormalizedTerm(normalized, "authentication") ||
+    containsNormalizedTerm(normalized, "least privilege") ||
+    containsNormalizedTerm(normalized, "rbac")
+  ) {
     return "ACCESS_AUTH";
   }
 
-  if (/\bencrypt|\bencryption\b|\btls\b|\bhsts\b|\bcipher\b|\balgorithm\b|at rest|in transit|key management|\bkms\b/i.test(normalized)) {
+  if (
+    containsNormalizedTerm(normalized, "encrypt") ||
+    containsNormalizedTerm(normalized, "encryption") ||
+    containsNormalizedTerm(normalized, "tls") ||
+    containsNormalizedTerm(normalized, "hsts") ||
+    containsNormalizedTerm(normalized, "cipher") ||
+    containsNormalizedTerm(normalized, "algorithm") ||
+    containsNormalizedTerm(normalized, "at rest") ||
+    containsNormalizedTerm(normalized, "in transit") ||
+    containsNormalizedTerm(normalized, "key management") ||
+    containsNormalizedTerm(normalized, "kms")
+  ) {
     return "ENCRYPTION";
   }
 
-  if (/\bvendor\b|\bsubprocessor\b|third[- ]party|\bsupplier\b|\bsoc\s*2\b|\bsig\b/i.test(normalized)) {
+  if (
+    containsNormalizedTerm(normalized, "vendor") ||
+    containsNormalizedTerm(normalized, "subprocessor") ||
+    containsNormalizedTerm(normalized, "third-party") ||
+    containsNormalizedTerm(normalized, "supplier") ||
+    containsNormalizedTerm(normalized, "soc2") ||
+    containsNormalizedTerm(normalized, "sig")
+  ) {
     return "VENDOR";
   }
 
-  if (/\blog\b|\blogging\b|\baudit\b|\bmonitoring\b|\bsiem\b|\balert\b/i.test(normalized)) {
+  if (
+    containsNormalizedTerm(normalized, "log") ||
+    containsNormalizedTerm(normalized, "logging") ||
+    containsNormalizedTerm(normalized, "audit") ||
+    containsNormalizedTerm(normalized, "monitoring") ||
+    containsNormalizedTerm(normalized, "siem") ||
+    containsNormalizedTerm(normalized, "alert")
+  ) {
     return "LOGGING";
   }
 
-  if (/\bretention\b|\bdelete\b|\bdeletion\b|\bdsr\b|data subject|\bexport\b|\bpurge\b/i.test(normalized)) {
+  if (
+    containsNormalizedTerm(normalized, "retention") ||
+    containsNormalizedTerm(normalized, "delete") ||
+    containsNormalizedTerm(normalized, "deletion") ||
+    containsNormalizedTerm(normalized, "dsr") ||
+    containsNormalizedTerm(normalized, "data subject") ||
+    containsNormalizedTerm(normalized, "export") ||
+    containsNormalizedTerm(normalized, "purge")
+  ) {
     return "RETENTION_DELETION";
   }
 
@@ -462,10 +625,10 @@ function dedupeCitations(citations: Citation[]): Citation[] {
 }
 
 function extractQuestionKeywords(question: string): string[] {
-  const normalizedQuestion = question.toLowerCase();
+  const normalizedQuestion = normalizeForMatch(question);
   const keywords = new Set<string>();
 
-  for (const token of normalizedQuestion.match(/[a-z0-9/-]+/g) ?? []) {
+  for (const token of normalizedQuestion.match(/[a-z0-9./-]+/g) ?? []) {
     if (token.length < 4) {
       continue;
     }
@@ -491,11 +654,11 @@ function extractStrongQuestionKeywords(questionKeywords: string[]): string[] {
 }
 
 function scoreChunkOverlap(chunkText: string, questionKeywords: string[]): number {
-  const normalizedChunk = chunkText.toLowerCase();
+  const normalizedChunk = normalizeForMatch(chunkText);
   let score = 0;
 
   for (const keyword of questionKeywords) {
-    if (normalizedChunk.includes(keyword)) {
+    if (containsNormalizedTerm(normalizedChunk, keyword)) {
       score += 1;
     }
   }
@@ -508,9 +671,10 @@ function countTermMatches(content: string, terms: string[]): number {
     return 0;
   }
 
+  const normalizedContent = normalizeForMatch(content);
   let count = 0;
   for (const term of terms) {
-    if (content.includes(term)) {
+    if (containsNormalizedTerm(normalizedContent, term)) {
       count += 1;
     }
   }
@@ -521,16 +685,37 @@ function countTermMatches(content: string, terms: string[]): number {
 function filterChunksByCategoryMustMatch(
   category: QuestionCategory,
   chunks: RetrievedChunk[]
-): RetrievedChunk[] {
+): {
+  kept: RetrievedChunk[];
+  dropped: Array<{ chunk: RetrievedChunk; reason: string }>;
+} {
   const rule = CATEGORY_RULES[category];
-  if (!rule || rule.mustMatch.length === 0) {
-    return chunks;
+  if (!rule || rule.mustMatchAny.length === 0) {
+    return {
+      kept: chunks,
+      dropped: []
+    };
   }
 
-  return chunks.filter((chunk) => {
-    const content = `${chunk.quotedSnippet}\n${chunk.fullContent}`.toLowerCase();
-    return countTermMatches(content, rule.mustMatch) >= 1;
-  });
+  const kept: RetrievedChunk[] = [];
+  const dropped: Array<{ chunk: RetrievedChunk; reason: string }> = [];
+
+  for (const chunk of chunks) {
+    const content = `${chunk.quotedSnippet}\n${chunk.fullContent}`;
+    if (chunkMatchesCategoryMustMatch(category, content)) {
+      kept.push(chunk);
+    } else {
+      dropped.push({
+        chunk,
+        reason: `No ${category} must-match terms found`
+      });
+    }
+  }
+
+  return {
+    kept,
+    dropped
+  };
 }
 
 function filterAndRerankChunks(
@@ -741,8 +926,8 @@ function isCitationRelevant(question: string, citation: Citation): boolean {
     return true;
   }
 
-  const snippet = citation.quotedSnippet.toLowerCase();
-  return relevanceTerms.some((term) => snippet.includes(term));
+  const snippet = normalizeForMatch(citation.quotedSnippet);
+  return relevanceTerms.some((term) => containsNormalizedTerm(snippet, term));
 }
 
 function scoreCitationPreference(category: QuestionCategory, citation: Citation): number {
@@ -751,7 +936,7 @@ function scoreCitationPreference(category: QuestionCategory, citation: Citation)
     return 0;
   }
 
-  const content = `${citation.docName}\n${citation.quotedSnippet}`.toLowerCase();
+  const content = `${citation.docName}\n${citation.quotedSnippet}`;
   return countTermMatches(content, preferredTerms);
 }
 
@@ -1065,12 +1250,25 @@ function selectCitationsForNormalization(
   return selectRelevantCitations(question, category, merged);
 }
 
+function toDebugChunks(question: string, chunks: RetrievedChunk[]): EvidenceDebugChunk[] {
+  const questionKeywords = extractQuestionKeywords(question);
+  return chunks.map((chunk) => ({
+    chunkId: chunk.chunkId,
+    docName: chunk.docName,
+    similarity: chunk.similarity,
+    overlap: scoreChunkOverlap(`${chunk.quotedSnippet}\n${chunk.fullContent}`, questionKeywords)
+  }));
+}
+
 async function retrieveRelevantChunks(params: {
   organizationId: string;
   question: string;
   questionEmbedding: number[];
   category: QuestionCategory;
-}): Promise<ScoredChunk[]> {
+}): Promise<{
+  chunks: ScoredChunk[];
+  debug: Pick<EvidenceDebugInfo, "retrievedTopK" | "afterMustMatch" | "droppedByMustMatch">;
+}> {
   const initialChunks = await retrieveTopChunks({
     organizationId: params.organizationId,
     questionEmbedding: params.questionEmbedding,
@@ -1078,14 +1276,29 @@ async function retrieveRelevantChunks(params: {
     topK: TOP_K
   });
 
-  const mustMatchChunks = filterChunksByCategoryMustMatch(params.category, initialChunks);
-  if (params.category !== "OTHER" && mustMatchChunks.length === 0) {
-    return [];
+  const mustMatchInitial = filterChunksByCategoryMustMatch(params.category, initialChunks);
+  const baseDebug = {
+    retrievedTopK: toDebugChunks(params.question, initialChunks),
+    afterMustMatch: toDebugChunks(params.question, mustMatchInitial.kept),
+    droppedByMustMatch: mustMatchInitial.dropped.map((entry) => ({
+      chunkId: entry.chunk.chunkId,
+      reason: entry.reason
+    }))
+  };
+
+  if (params.category !== "OTHER" && mustMatchInitial.kept.length === 0) {
+    return {
+      chunks: [],
+      debug: baseDebug
+    };
   }
 
-  let filtered = filterAndRerankChunks(params.question, mustMatchChunks);
+  let filtered = filterAndRerankChunks(params.question, mustMatchInitial.kept);
   if (filtered.length > 0) {
-    return filtered;
+    return {
+      chunks: filtered,
+      debug: baseDebug
+    };
   }
 
   const retryChunks = await retrieveTopChunks({
@@ -1095,13 +1308,33 @@ async function retrieveRelevantChunks(params: {
     topK: RETRY_TOP_K
   });
 
-  const retryMustMatchChunks = filterChunksByCategoryMustMatch(params.category, retryChunks);
-  if (params.category !== "OTHER" && retryMustMatchChunks.length === 0) {
-    return [];
+  const mustMatchRetry = filterChunksByCategoryMustMatch(params.category, retryChunks);
+  if (params.category !== "OTHER" && mustMatchRetry.kept.length === 0) {
+    return {
+      chunks: [],
+      debug: {
+        ...baseDebug,
+        afterMustMatch: toDebugChunks(params.question, mustMatchRetry.kept),
+        droppedByMustMatch: mustMatchRetry.dropped.map((entry) => ({
+          chunkId: entry.chunk.chunkId,
+          reason: entry.reason
+        }))
+      }
+    };
   }
 
-  filtered = filterAndRerankChunks(params.question, retryMustMatchChunks);
-  return filtered;
+  filtered = filterAndRerankChunks(params.question, mustMatchRetry.kept);
+  return {
+    chunks: filtered,
+    debug: {
+      ...baseDebug,
+      afterMustMatch: toDebugChunks(params.question, mustMatchRetry.kept),
+      droppedByMustMatch: mustMatchRetry.dropped.map((entry) => ({
+        chunkId: entry.chunk.chunkId,
+        reason: entry.reason
+      }))
+    }
+  };
 }
 
 async function retryWithAdditionalChunks(params: {
@@ -1119,11 +1352,11 @@ async function retryWithAdditionalChunks(params: {
   });
 
   const mustMatchChunks = filterChunksByCategoryMustMatch(params.category, retryChunks);
-  if (params.category !== "OTHER" && mustMatchChunks.length === 0) {
+  if (params.category !== "OTHER" && mustMatchChunks.kept.length === 0) {
     return [];
   }
 
-  return filterAndRerankChunks(params.question, mustMatchChunks).filter(
+  return filterAndRerankChunks(params.question, mustMatchChunks.kept).filter(
     (chunk) => !params.excludeChunkIds.has(chunk.chunkId)
   );
 }
@@ -1131,28 +1364,42 @@ async function retryWithAdditionalChunks(params: {
 export async function answerQuestionWithEvidence(params: {
   organizationId: string;
   question: string;
+  debug?: boolean;
 }): Promise<EvidenceAnswer> {
   const question = params.question.trim();
   const category = categorizeQuestion(question);
+  const debugEnabled = params.debug === true;
+  const debugInfo: EvidenceDebugInfo = {
+    category,
+    threshold: MIN_TOP_SIMILARITY,
+    retrievedTopK: [],
+    afterMustMatch: [],
+    droppedByMustMatch: [],
+    finalCitations: []
+  };
   if (!question) {
-    return NOT_FOUND_RESPONSE;
+    return debugEnabled ? { ...NOT_FOUND_RESPONSE, debug: debugInfo } : NOT_FOUND_RESPONSE;
   }
 
   const embeddedChunkCount = await countEmbeddedChunksForOrganization(params.organizationId);
   if (embeddedChunkCount === 0) {
-    return NOT_FOUND_RESPONSE;
+    return debugEnabled ? { ...NOT_FOUND_RESPONSE, debug: debugInfo } : NOT_FOUND_RESPONSE;
   }
 
   const questionEmbedding = await createEmbedding(question);
-  const relevantChunks = await retrieveRelevantChunks({
+  const retrieved = await retrieveRelevantChunks({
     organizationId: params.organizationId,
     question,
     questionEmbedding,
     category
   });
+  const relevantChunks = retrieved.chunks;
+  debugInfo.retrievedTopK = retrieved.debug.retrievedTopK;
+  debugInfo.afterMustMatch = retrieved.debug.afterMustMatch;
+  debugInfo.droppedByMustMatch = retrieved.debug.droppedByMustMatch;
 
   if (relevantChunks.length === 0 || relevantChunks[0].similarity < MIN_TOP_SIMILARITY) {
-    return NOT_FOUND_RESPONSE;
+    return debugEnabled ? { ...NOT_FOUND_RESPONSE, debug: debugInfo } : NOT_FOUND_RESPONSE;
   }
 
   let attempt = await runAnswerAttempt({
@@ -1185,12 +1432,12 @@ export async function answerQuestionWithEvidence(params: {
   }
 
   if (citations.length === 0 || attempt.bestSimilarity < MIN_TOP_SIMILARITY) {
-    return NOT_FOUND_RESPONSE;
+    return debugEnabled ? { ...NOT_FOUND_RESPONSE, debug: debugInfo } : NOT_FOUND_RESPONSE;
   }
 
   const overlapByChunk = new Map(attempt.scoredChunks.map((chunk) => [chunk.chunkId, chunk.overlapScore]));
 
-  return normalizeAnswerOutput({
+  const normalized = normalizeAnswerOutput({
     question,
     category,
     modelAnswer: attempt.modelAnswer,
@@ -1200,4 +1447,14 @@ export async function answerQuestionWithEvidence(params: {
     citations,
     overlapScores: citations.map((citation) => overlapByChunk.get(citation.chunkId) ?? 0)
   });
+
+  if (!debugEnabled) {
+    return normalized;
+  }
+
+  debugInfo.finalCitations = normalized.citations;
+  return {
+    ...normalized,
+    debug: debugInfo
+  };
 }

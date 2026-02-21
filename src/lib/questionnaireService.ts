@@ -1,4 +1,8 @@
-import { NOT_FOUND_RESPONSE, answerQuestionWithEvidence } from "@/lib/answering";
+import {
+  NOT_FOUND_RESPONSE,
+  answerQuestionWithEvidence,
+  type EvidenceDebugInfo
+} from "@/lib/answering";
 import { parseCsvFile } from "@/lib/csv";
 import { prisma } from "@/lib/prisma";
 
@@ -21,6 +25,19 @@ export type AutofillProgress = {
   notFoundCount: number;
   progressPercent: number;
   lastError: string | null;
+};
+
+export type AutofillDebugEntry = {
+  questionId: string;
+  rowIndex: number;
+  debug: EvidenceDebugInfo;
+};
+
+export type AutofillBatchResult = AutofillProgress & {
+  debug?: {
+    enabled: boolean;
+    entries: AutofillDebugEntry[];
+  };
 };
 
 export type QuestionnaireDetails = {
@@ -341,8 +358,12 @@ export async function processQuestionnaireAutofillBatch(params: {
   organizationId: string;
   questionnaireId: string;
   batchSize?: number;
-}): Promise<AutofillProgress> {
+  debug?: boolean;
+}): Promise<AutofillBatchResult> {
   const batchSize = params.batchSize ?? AUTOFILL_BATCH_SIZE;
+  const debugEnabled = params.debug === true;
+  const persistDebug = debugEnabled && process.env.DEBUG_EVIDENCE === "true";
+  const debugEntries: AutofillDebugEntry[] = [];
 
   const questionnaire = await prisma.questionnaire.findFirst({
     where: {
@@ -387,13 +408,23 @@ export async function processQuestionnaireAutofillBatch(params: {
   });
 
   if (batchQuestions.length === 0) {
-    return updateQuestionnaireProgress({
+    const progress = await updateQuestionnaireProgress({
       questionnaireId: questionnaire.id,
       runStatus: "COMPLETED",
       lastError: null,
       startedAt: runStartedAt,
       finishedAt: new Date()
     });
+
+    return debugEnabled
+      ? {
+          ...progress,
+          debug: {
+            enabled: true,
+            entries: debugEntries
+          }
+        }
+      : progress;
   }
 
   try {
@@ -401,8 +432,30 @@ export async function processQuestionnaireAutofillBatch(params: {
       const question = batchQuestions[index];
       const answer = await answerQuestionWithEvidence({
         organizationId: params.organizationId,
-        question: question.text
+        question: question.text,
+        debug: debugEnabled
       });
+
+      if (debugEnabled && answer.debug) {
+        debugEntries.push({
+          questionId: question.id,
+          rowIndex: question.rowIndex,
+          debug: answer.debug
+        });
+      }
+
+      let sourceRowUpdate = undefined;
+      if (persistDebug && answer.debug) {
+        const existingSourceRow =
+          question.sourceRow && typeof question.sourceRow === "object" && !Array.isArray(question.sourceRow)
+            ? (question.sourceRow as Record<string, unknown>)
+            : {};
+
+        sourceRowUpdate = {
+          ...existingSourceRow,
+          __answerDebug: answer.debug
+        };
+      }
 
       await prisma.question.update({
         where: { id: question.id },
@@ -410,7 +463,8 @@ export async function processQuestionnaireAutofillBatch(params: {
           answer: answer.answer,
           citations: answer.citations,
           confidence: answer.confidence,
-          needsReview: answer.needsReview
+          needsReview: answer.needsReview,
+          ...(sourceRowUpdate ? { sourceRow: sourceRowUpdate } : {})
         }
       });
 
@@ -421,13 +475,23 @@ export async function processQuestionnaireAutofillBatch(params: {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Autofill batch failed";
 
-    return updateQuestionnaireProgress({
+    const progress = await updateQuestionnaireProgress({
       questionnaireId: questionnaire.id,
       runStatus: "FAILED",
       lastError: message,
       startedAt: runStartedAt,
       finishedAt: null
     });
+
+    return debugEnabled
+      ? {
+          ...progress,
+          debug: {
+            enabled: true,
+            entries: debugEntries
+          }
+        }
+      : progress;
   }
 
   const remaining = await prisma.question.count({
@@ -437,13 +501,23 @@ export async function processQuestionnaireAutofillBatch(params: {
     }
   });
 
-  return updateQuestionnaireProgress({
+  const progress = await updateQuestionnaireProgress({
     questionnaireId: questionnaire.id,
     runStatus: remaining === 0 ? "COMPLETED" : "RUNNING",
     lastError: null,
     startedAt: runStartedAt,
     finishedAt: remaining === 0 ? new Date() : null
   });
+
+  return debugEnabled
+    ? {
+        ...progress,
+        debug: {
+          enabled: true,
+          entries: debugEntries
+        }
+      }
+    : progress;
 }
 
 export async function processQuestionnaireRerunMissingBatch(params: {

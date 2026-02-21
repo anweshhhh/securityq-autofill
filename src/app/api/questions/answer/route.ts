@@ -4,8 +4,11 @@ import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
 
 export async function POST(request: Request) {
   try {
-    const payload = (await request.json()) as { question?: string };
+    const url = new URL(request.url);
+    const debugFromQuery = url.searchParams.get("debug") === "true";
+    const payload = (await request.json()) as { question?: string; debug?: boolean };
     const question = payload.question?.trim();
+    const debug = debugFromQuery || payload.debug === true;
 
     if (!question) {
       return NextResponse.json({ error: "question is required" }, { status: 400 });
@@ -14,7 +17,8 @@ export async function POST(request: Request) {
     const organization = await getOrCreateDefaultOrganization();
     const answer = await answerQuestionWithEvidence({
       organizationId: organization.id,
-      question
+      question,
+      debug
     });
 
     return NextResponse.json(answer);

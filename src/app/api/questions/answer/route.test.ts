@@ -49,7 +49,45 @@ describe("/api/questions/answer", () => {
 
     expect(answerQuestionWithEvidenceMock).toHaveBeenCalledWith({
       organizationId: "org-default",
-      question: "Do we support SSO?"
+      question: "Do we support SSO?",
+      debug: false
+    });
+  });
+
+  it("passes debug mode from query param", async () => {
+    getOrCreateDefaultOrganizationMock.mockResolvedValue({ id: "org-default" });
+    answerQuestionWithEvidenceMock.mockResolvedValue({
+      answer: "Not found in provided documents.",
+      citations: [],
+      confidence: "low",
+      needsReview: true,
+      debug: {
+        category: "OTHER",
+        threshold: 0.35,
+        retrievedTopK: [],
+        afterMustMatch: [],
+        droppedByMustMatch: [],
+        finalCitations: []
+      }
+    });
+
+    const request = new Request("http://localhost/api/questions/answer?debug=true", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ question: "Do we support SSO?" })
+    });
+
+    const response = await POST(request);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.debug?.category).toBe("OTHER");
+    expect(answerQuestionWithEvidenceMock).toHaveBeenCalledWith({
+      organizationId: "org-default",
+      question: "Do we support SSO?",
+      debug: true
     });
   });
 });

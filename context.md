@@ -41,11 +41,16 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
   - vendors/tools/algorithms are blocked unless terms appear in cited snippets
   - deterministic relevance gate filters retrieved chunks by keyword overlap before answer generation
   - deterministic question category routing (`BACKUP_DR`, `SDLC`, `INCIDENT_RESPONSE`, `ACCESS_AUTH`, `ENCRYPTION`, `VENDOR`, `LOGGING`, `RETENTION_DELETION`, `PEN_TEST`, `OTHER`)
+  - matching now uses normalized text (case/punctuation/unicode-dash resilient) for question, chunk text, and category keywords
   - category-specific must-match retrieval filters run before reranking; if no category-relevant chunks remain, result is `Not found in provided documents.`
+  - must-match supports phrase and grouped logic (for example incident response phrase or severity+triage/mitigation combinations)
   - reranking is deterministic: overlap desc, similarity desc, chunkId asc; top 3 chunks are used for answering
   - if relevance-filtered citations are empty, retrieval retries once with a larger pool and different chunks before returning NOT_FOUND
   - citation selection is category-aware (e.g., backup/DR and incident-response snippets are preferred when available)
   - invalid model output format (markdown headings/raw evidence dumps) is rejected; one strict regeneration is attempted, then it falls back to NOT_FOUND
+  - debug mode is available for `/api/questions/answer` and questionnaire autofill (`debug=true`) with retrieval-stage visibility:
+    - category, threshold, retrievedTopK, afterMustMatch, droppedByMustMatch, finalCitations
+  - questionnaire debug persistence is gated by `DEBUG_EVIDENCE=true` to avoid JSON bloat by default
   - citation relevance filter keeps only snippets with question-term overlap and retries retrieval once with larger top-k if needed
   - deterministic `normalizeAnswerOutput` post-processor is the single source of truth for all answer guardrails
   - coverage scoring marks missing requested details (SOC2/SIG/algorithm/scope/keys/rto/rpo/etc.) for review and caps confidence
@@ -109,6 +114,7 @@ Use `.env.example` as the source of truth for required environment variables.
 Current required variables:
 - `DATABASE_URL` (Postgres connection)
 - `OPENAI_API_KEY` (OpenAI embeddings + chat calls)
+- `DEBUG_EVIDENCE` (optional; set `true` to persist questionnaire autofill debug objects in `Question.sourceRow.__answerDebug`)
 
 ## 8) How We Work
 

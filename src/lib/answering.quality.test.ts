@@ -22,7 +22,12 @@ vi.mock("./retrieval", () => ({
   retrieveTopChunks: retrieveTopChunksMock
 }));
 
-import { answerQuestionWithEvidence, categorizeQuestion } from "./answering";
+import {
+  answerQuestionWithEvidence,
+  categorizeQuestion,
+  chunkMatchesCategoryMustMatch,
+  normalizeForMatch
+} from "./answering";
 
 function mockSingleChunk(snippet: string, fullContent?: string, similarity = 0.9) {
   retrieveTopChunksMock.mockResolvedValue([
@@ -90,6 +95,17 @@ describe("answering quality guardrails", () => {
     expect(categorizeQuestion("Are backups encrypted and what are RTO/RPO targets?")).toBe("BACKUP_DR");
     expect(categorizeQuestion("Describe your SDLC and CI/CD branch protection controls.")).toBe("SDLC");
     expect(categorizeQuestion("How often do you run penetration tests?")).toBe("PEN_TEST");
+    expect(categorizeQuestion("Describe your IR process and severity levels.")).toBe("INCIDENT_RESPONSE");
+  });
+
+  it("normalizes punctuation/casing and matches must-match phrases", () => {
+    expect(normalizeForMatch("Backup & Disaster Recovery — Policy")).toBe("backup disaster recovery - policy");
+    expect(chunkMatchesCategoryMustMatch("INCIDENT_RESPONSE", "## Incident Response\nSEV-1 to SEV-4")).toBe(
+      true
+    );
+    expect(
+      chunkMatchesCategoryMustMatch("BACKUP_DR", "Backup & Disaster Recovery: Daily backups and tested restores")
+    ).toBe(true);
   });
 
   it("returns two-part partial answer for backups evidence", async () => {
@@ -107,9 +123,9 @@ describe("answering quality guardrails", () => {
         chunkId: "chunk-backup",
         docName: "Backup and DR",
         quotedSnippet:
-          "Backups are performed daily. Disaster recovery tests are conducted annually. RPO is 24 hours and RTO is 24 hours.",
+          "Backup frequency is daily. Disaster recovery tests are conducted annually. RPO is 24 hours and RTO is 24 hours.",
         fullContent:
-          "Backups are performed daily. Disaster recovery tests are conducted annually. RPO is 24 hours and RTO is 24 hours.",
+          "Backup frequency is daily. Disaster recovery tests are conducted annually. RPO is 24 hours and RTO is 24 hours.",
         similarity: 0.89
       }
     ]);
@@ -128,7 +144,7 @@ describe("answering quality guardrails", () => {
     });
 
     expect(result.answer).toContain("Confirmed from provided documents:");
-    expect(result.answer.toLowerCase()).toContain("backups are performed daily");
+    expect(result.answer.toLowerCase()).toContain("backup frequency is daily");
     expect(result.answer.toLowerCase()).toContain("disaster recovery tests are conducted annually");
     expect(result.answer.toLowerCase()).toContain("rpo is 24 hours");
     expect(result.answer.toLowerCase()).toContain("rto is 24 hours");
@@ -228,7 +244,7 @@ describe("answering quality guardrails", () => {
 
   it("falls back to NOT_FOUND when model returns fragment output twice", async () => {
     mockSingleChunk(
-      "Backups are performed daily. Disaster recovery tests are conducted annually. RPO is 24 hours and RTO is 24 hours."
+      "Backup frequency is daily. Disaster recovery tests are conducted annually. RPO is 24 hours and RTO is 24 hours."
     );
 
     generateGroundedAnswerMock
@@ -247,7 +263,7 @@ describe("answering quality guardrails", () => {
 
     const result = await answerQuestionWithEvidence({
       organizationId: "org-1",
-      question: "What is the backup frequency?"
+      question: "What is the backup frequency and RTO/RPO?"
     });
 
     expect(generateGroundedAnswerMock).toHaveBeenCalledTimes(2);
