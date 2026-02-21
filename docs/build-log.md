@@ -154,3 +154,9 @@ This pattern prevented scope drift and kept changes runnable end-to-end while en
    - Answer with at least one citation, or
    - `Not found in provided documents.` with empty citations
 7. `npm test`
+
+### Day 3 stabilization notes
+
+- Fixed retrieval SQL snippet extraction cast to avoid runtime 500 (`LEFT(content, $4::int)`).
+- Hardened upload route so unexpected failures after document creation mark status as `ERROR` instead of leaving `UPLOADED`.
+- Added upload tests for `.md` and explicit failure-path coverage.

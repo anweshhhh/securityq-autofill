@@ -17,7 +17,7 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
 - Delivery discipline: PR-sized changes with tests, acceptance criteria, and clear commit messages
 - MVP-first: keep implementation minimal before adding advanced capabilities
 
-## 4) Current Implemented Features (Day 1-2)
+## 4) Current Implemented Features (Day 1-3)
 
 - Next.js App Router scaffold (TypeScript) with `src/` layout
 - Docker Postgres with pgvector enabled
@@ -25,23 +25,30 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
 - `/api/health` endpoint
 - Documents ingestion for `.txt` and `.md`: upload, extract text, chunk, store, list
 - `/documents` UI for upload and document list
-- Homepage shortcuts: `Go to Documents`, `Open API Health`, `Open API Documents`
+- Embeddings pipeline with OpenAI `text-embedding-3-small` and pgvector `vector(1536)` storage
+- Retrieval + cited single-question answering at `/api/questions/answer`
+- `/ask` UI for one-question evidence-grounded responses
+- Homepage shortcuts: `Go to Documents`, `Go to Ask`, `Open API Health`, `Open API Documents`
 
 ## 5) Current Endpoints and Pages
 
 Pages:
 - `/` (home)
 - `/documents` (upload + list)
+- `/ask` (single-question answering)
 
 API:
 - `GET /api/health`
 - `GET /api/documents`
 - `POST /api/documents/upload`
+- `POST /api/documents/embed`
+- `POST /api/questions/answer`
 
 ## 6) Local Runbook
 
 ```bash
 docker compose up -d
+npx prisma migrate deploy
 npm test
 npm run dev
 ```
@@ -49,11 +56,14 @@ npm run dev
 Then open:
 - `http://localhost:3000/`
 - `http://localhost:3000/documents`
+- `http://localhost:3000/ask`
 
 ## 7) Environment Variables
 
 Use `.env.example` as the source of truth for required environment variables.  
-Current key variable is `DATABASE_URL` (Postgres connection).
+Current required variables:
+- `DATABASE_URL` (Postgres connection)
+- `OPENAI_API_KEY` (OpenAI embeddings + chat calls)
 
 ## 8) How We Work
 
@@ -64,5 +74,5 @@ Current key variable is `DATABASE_URL` (Postgres connection).
 
 ## 9) Next Milestones
 
-- Day 3: embeddings + retrieval + single-question answering with citations
 - Day 4: CSV batch autofill
+- Day 5: evidence-aware answer approval workflow and reviewer UX
