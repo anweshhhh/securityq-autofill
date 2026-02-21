@@ -123,9 +123,19 @@ describe("answering quality guardrails", () => {
         chunkId: "chunk-backup",
         docName: "Backup and DR",
         quotedSnippet:
-          "Backup frequency is daily. Disaster recovery tests are conducted annually. RPO is 24 hours and RTO is 24 hours.",
+          "## Backup & Disaster Recovery\n" +
+          "Backups are performed daily.\n" +
+          "Disaster recovery testing is performed annually.\n" +
+          "Recovery objectives:\n" +
+          "Target RPO: 24 hours\n" +
+          "Target RTO: 24 hours",
         fullContent:
-          "Backup frequency is daily. Disaster recovery tests are conducted annually. RPO is 24 hours and RTO is 24 hours.",
+          "## Backup & Disaster Recovery\n" +
+          "Backups are performed daily.\n" +
+          "Disaster recovery testing is performed annually.\n" +
+          "Recovery objectives:\n" +
+          "Target RPO: 24 hours\n" +
+          "Target RTO: 24 hours",
         similarity: 0.89
       }
     ]);
@@ -144,10 +154,10 @@ describe("answering quality guardrails", () => {
     });
 
     expect(result.answer).toContain("Confirmed from provided documents:");
-    expect(result.answer.toLowerCase()).toContain("backup frequency is daily");
-    expect(result.answer.toLowerCase()).toContain("disaster recovery tests are conducted annually");
-    expect(result.answer.toLowerCase()).toContain("rpo is 24 hours");
-    expect(result.answer.toLowerCase()).toContain("rto is 24 hours");
+    expect(result.answer.toLowerCase()).toContain("backups are performed daily");
+    expect(result.answer.toLowerCase()).toContain("disaster recovery testing is performed annually");
+    expect(result.answer.toLowerCase()).toContain("target rpo: 24 hours");
+    expect(result.answer.toLowerCase()).toContain("target rto: 24 hours");
     expect(result.answer).toContain("Not specified in provided documents:");
     expect(result.answer.toLowerCase()).toContain("retention period");
     expect(result.answer.toLowerCase()).toContain("restore testing cadence");
@@ -187,6 +197,36 @@ describe("answering quality guardrails", () => {
       needsReview: true
     });
     expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
+  });
+
+  it("returns partial SDLC answer when dependency scanning evidence exists", async () => {
+    mockSingleChunk(
+      "Application security controls include automated dependency scanning on every PR before merge."
+    );
+
+    generateGroundedAnswerMock.mockResolvedValue({
+      answer: "SDLC controls are documented.",
+      citationChunkIds: ["chunk-1"],
+      confidence: "med",
+      needsReview: false
+    });
+
+    const result = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question:
+        "Describe your SDLC and AppSec controls, including code review, branch protection, CI/CD, and change management."
+    });
+
+    expect(result.answer).toContain("Confirmed from provided documents:");
+    expect(result.answer.toLowerCase()).toContain("dependency scanning on every pr");
+    expect(result.answer).toContain("Not specified in provided documents:");
+    expect(result.answer.toLowerCase()).toContain("code review controls");
+    expect(result.answer.toLowerCase()).toContain("branch protection controls");
+    expect(result.answer.toLowerCase()).toContain("ci/cd pipeline controls");
+    expect(result.answer.toLowerCase()).toContain("change management workflow");
+    expect(result.answer).not.toBe("Not found in provided documents.");
+    expect(result.citations.length).toBeGreaterThan(0);
+    expect(result.needsReview).toBe(true);
   });
 
   it("returns two-part IR answer with missing containment/eradication/recovery when absent", async () => {

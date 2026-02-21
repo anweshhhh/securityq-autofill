@@ -53,4 +53,41 @@ describe("retrieveTopChunks", () => {
     expect(result[1].quotedSnippet.endsWith("requir")).toBe(false);
     expect(/[.!?]$/.test(result[1].quotedSnippet)).toBe(true);
   });
+
+  it("extracts section-based snippet for backup and includes RTO/RPO lines", async () => {
+    const mockDb = {
+      $queryRawUnsafe: vi.fn().mockResolvedValue([
+        {
+          chunkId: "chunk-backup",
+          docName: "Backup and DR",
+          content: [
+            "## Company Overview",
+            "General information about controls.",
+            "",
+            "## Backup & Disaster Recovery",
+            "Backups are performed daily.",
+            "Disaster recovery testing is performed annually.",
+            "Recovery objectives:",
+            "Target RPO: 24 hours",
+            "Target RTO: 24 hours",
+            "Retention is 30 days."
+          ].join("\n"),
+          distance: 0.08
+        }
+      ])
+    };
+
+    const result = await retrieveTopChunks({
+      organizationId: "org-1",
+      questionEmbedding: [0.1, 0.2, 0.3],
+      questionText: "Provide backup frequency, DR testing cadence, and RTO/RPO.",
+      topK: 1,
+      db: mockDb
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].quotedSnippet).toContain("## Backup & Disaster Recovery");
+    expect(result[0].quotedSnippet).toContain("Target RPO: 24 hours");
+    expect(result[0].quotedSnippet).toContain("Target RTO: 24 hours");
+  });
 });

@@ -108,13 +108,22 @@ const CATEGORY_RULES: Record<QuestionCategory, CategoryRule> = {
     mustMatchAny: [
       ["sdlc"],
       ["code review"],
+      ["pull request"],
+      ["pr"],
+      ["ci"],
       ["ci/cd"],
       ["pipeline"],
       ["branch"],
       ["change management"],
-      ["deployment"]
+      ["deployment"],
+      ["dependency scanning"],
+      ["sast"],
+      ["dast"],
+      ["static analysis"],
+      ["lint"],
+      ["security testing"]
     ],
-    niceToMatch: ["pull request", "pr", "commit", "release"],
+    niceToMatch: ["pull request", "pr", "commit", "release", "dependency scanning", "sast", "dast"],
     preferredSnippetTerms: ["sdlc", "code review", "pipeline", "branch protection"]
   },
   INCIDENT_RESPONSE: {
@@ -179,6 +188,9 @@ const QUESTION_KEY_PHRASES = [
   "retention",
   "sdlc",
   "code review",
+  "dependency scanning",
+  "static analysis",
+  "security testing",
   "ci/cd",
   "branch",
   "tls",
@@ -416,6 +428,38 @@ const ASK_DEFINITIONS: AskDefinition[] = [
     label: "certification details",
     questionPatterns: [/certification|certified/i],
     evidencePatterns: [/certification|certified|iso\s*27001/i]
+  },
+  {
+    id: "sdlc_code_review",
+    label: "code review controls",
+    questionPatterns: [/sdlc|application security|appsec|code review|secure development/i],
+    evidencePatterns: [/code review|reviewed|peer review|pull request/i]
+  },
+  {
+    id: "sdlc_branch_protection",
+    label: "branch protection controls",
+    questionPatterns: [/sdlc|application security|appsec|branch protection|secure development/i],
+    evidencePatterns: [/branch protection|protected branch|merge restriction|required checks/i]
+  },
+  {
+    id: "sdlc_ci_cd",
+    label: "CI/CD pipeline controls",
+    questionPatterns: [/sdlc|application security|appsec|ci\/cd|pipeline|secure development/i],
+    evidencePatterns: [/\bci\/cd\b|\bpipeline\b|continuous integration|continuous deployment/i]
+  },
+  {
+    id: "sdlc_change_management",
+    label: "change management workflow",
+    questionPatterns: [/sdlc|application security|appsec|change management|secure development/i],
+    evidencePatterns: [/change management|change control|approval workflow|release approval/i]
+  },
+  {
+    id: "sdlc_dependency_scanning",
+    label: "dependency scanning and AppSec testing",
+    questionPatterns: [
+      /sdlc|application security|appsec|dependency scanning|sast|dast|static analysis|security testing|secure development/i
+    ],
+    evidencePatterns: [/dependency scanning|sast|dast|static analysis|security testing|lint/i]
   }
 ];
 
@@ -513,11 +557,19 @@ export function categorizeQuestion(question: string): QuestionCategory {
     containsNormalizedTerm(normalized, "sdlc") ||
     containsNormalizedTerm(normalized, "code review") ||
     containsNormalizedTerm(normalized, "pull request") ||
+    containsNormalizedTerm(normalized, "pr") ||
+    containsNormalizedTerm(normalized, "ci") ||
     containsNormalizedTerm(normalized, "ci/cd") ||
     containsNormalizedTerm(normalized, "pipeline") ||
     containsNormalizedTerm(normalized, "branch protection") ||
     containsNormalizedTerm(normalized, "change management") ||
-    containsNormalizedTerm(normalized, "deployment")
+    containsNormalizedTerm(normalized, "deployment") ||
+    containsNormalizedTerm(normalized, "dependency scanning") ||
+    containsNormalizedTerm(normalized, "sast") ||
+    containsNormalizedTerm(normalized, "dast") ||
+    containsNormalizedTerm(normalized, "static analysis") ||
+    containsNormalizedTerm(normalized, "lint") ||
+    containsNormalizedTerm(normalized, "security testing")
   ) {
     return "SDLC";
   }
@@ -720,12 +772,14 @@ function filterChunksByCategoryMustMatch(
 
 function filterAndRerankChunks(
   question: string,
-  chunks: RetrievedChunk[]
+  chunks: RetrievedChunk[],
+  category: QuestionCategory
 ): ScoredChunk[] {
   const questionKeywords = extractQuestionKeywords(question);
   const strongKeywords = extractStrongQuestionKeywords(questionKeywords);
   const questionWordCount = question.trim().split(/\s+/).filter(Boolean).length;
-  const minOverlap = questionWordCount >= 14 || questionKeywords.length >= 8 ? 2 : 1;
+  const defaultMinOverlap = questionWordCount >= 14 || questionKeywords.length >= 8 ? 2 : 1;
+  const minOverlap = category === "SDLC" ? 1 : defaultMinOverlap;
 
   const scored = chunks
     .map((chunk) => ({
@@ -739,6 +793,10 @@ function filterAndRerankChunks(
     .filter((chunk) => {
       if (chunk.overlapScore < minOverlap) {
         return false;
+      }
+
+      if (category === "SDLC") {
+        return true;
       }
 
       if (strongKeywords.length === 0) {
@@ -774,17 +832,41 @@ function extractAsksFromParentheses(question: string): AskDefinition[] {
   return ASK_DEFINITIONS.filter((ask) => ask.questionPatterns.some((pattern) => pattern.test(bucket)));
 }
 
-function extractAsks(question: string): AskDefinition[] {
+function getDefaultAsksForCategory(category: QuestionCategory): AskDefinition[] {
+  if (category !== "SDLC") {
+    return [];
+  }
+
+  const defaultSdlcAskIds = new Set([
+    "sdlc_code_review",
+    "sdlc_branch_protection",
+    "sdlc_ci_cd",
+    "sdlc_change_management",
+    "sdlc_dependency_scanning"
+  ]);
+
+  return ASK_DEFINITIONS.filter((ask) => defaultSdlcAskIds.has(ask.id));
+}
+
+function extractAsks(question: string, category: QuestionCategory): AskDefinition[] {
   const byQuestion = ASK_DEFINITIONS.filter((ask) =>
     ask.questionPatterns.some((pattern) => pattern.test(question))
   );
 
   const byParentheses = extractAsksFromParentheses(question);
-  return Array.from(new Map([...byQuestion, ...byParentheses].map((ask) => [ask.id, ask])).values());
+  const byCategoryDefaults = getDefaultAsksForCategory(category);
+
+  return Array.from(
+    new Map([...byQuestion, ...byParentheses, ...byCategoryDefaults].map((ask) => [ask.id, ask])).values()
+  );
 }
 
-function evaluateAsksCoverage(question: string, citations: Citation[]): AskCoverage {
-  const asks = extractAsks(question);
+function evaluateAsksCoverage(
+  question: string,
+  category: QuestionCategory,
+  citations: Citation[]
+): AskCoverage {
+  const asks = extractAsks(question, category);
   if (asks.length === 0) {
     return {
       asks: [],
@@ -849,6 +931,28 @@ function extractConfirmedFacts(
   }
 
   return Array.from(new Set(genericFacts)).slice(0, 5);
+}
+
+function extractBackupDrFacts(citations: Citation[]): string[] {
+  const patterns = [
+    /(?:backups?\s+(?:are|is)\s+(?:performed|run|taken)[^.!?\n]*[.!?]?)/i,
+    /(?:disaster recovery|recovery)[^.!?\n]{0,100}(?:tested|testing|exercise)[^.!?\n]*[.!?]?/i,
+    /(?:rpo[^.!?\n]{0,40}(?:\d+[^.!?\n]{0,20}(?:hours?|hrs?|days?))[^.!?\n]*[.!?]?)/i,
+    /(?:rto[^.!?\n]{0,40}(?:\d+[^.!?\n]{0,20}(?:hours?|hrs?|days?))[^.!?\n]*[.!?]?)/i
+  ];
+
+  const facts: string[] = [];
+  for (const citation of citations) {
+    const snippet = citation.quotedSnippet;
+    for (const pattern of patterns) {
+      const match = snippet.match(pattern)?.[0]?.trim();
+      if (match) {
+        facts.push(match);
+      }
+    }
+  }
+
+  return Array.from(new Set(facts)).slice(0, 6);
 }
 
 function sanitizeFact(fact: string): string {
@@ -920,14 +1024,50 @@ function extractCitationRelevanceTerms(question: string): string[] {
   return fallbackTerms;
 }
 
-function isCitationRelevant(question: string, citation: Citation): boolean {
+function extractCategoryRelevanceTerms(category: QuestionCategory): string[] {
+  const rule = CATEGORY_RULES[category];
+  if (!rule) {
+    return [];
+  }
+
+  const terms = new Set<string>();
+
+  for (const group of rule.mustMatchAny) {
+    for (const term of group) {
+      const normalized = normalizeForMatch(term.replace(/\*+$/g, ""));
+      if (normalized) {
+        terms.add(normalized);
+      }
+    }
+  }
+
+  for (const term of rule.niceToMatch) {
+    const normalized = normalizeForMatch(term);
+    if (normalized) {
+      terms.add(normalized);
+    }
+  }
+
+  return Array.from(terms);
+}
+
+function isCitationRelevant(question: string, category: QuestionCategory, citation: Citation): boolean {
   const relevanceTerms = extractCitationRelevanceTerms(question);
-  if (relevanceTerms.length === 0) {
+  const snippet = normalizeForMatch(citation.quotedSnippet);
+  const questionTermMatch =
+    relevanceTerms.length === 0
+      ? false
+      : relevanceTerms.some((term) => containsNormalizedTerm(snippet, term));
+  if (questionTermMatch) {
     return true;
   }
 
-  const snippet = normalizeForMatch(citation.quotedSnippet);
-  return relevanceTerms.some((term) => containsNormalizedTerm(snippet, term));
+  const categoryTerms = extractCategoryRelevanceTerms(category);
+  if (categoryTerms.length === 0 && relevanceTerms.length === 0) {
+    return true;
+  }
+
+  return categoryTerms.some((term) => containsNormalizedTerm(snippet, term));
 }
 
 function scoreCitationPreference(category: QuestionCategory, citation: Citation): number {
@@ -946,7 +1086,7 @@ function selectRelevantCitations(
   citations: Citation[]
 ): Citation[] {
   const relevant = citations
-    .filter((citation) => isCitationRelevant(question, citation))
+    .filter((citation) => isCitationRelevant(question, category, citation))
     .map((citation, index) => ({
       citation,
       index,
@@ -1081,9 +1221,13 @@ export function normalizeAnswerOutput(params: {
     return NOT_FOUND_RESPONSE;
   }
 
-  const coverage = evaluateAsksCoverage(params.question, citations);
-  const confirmedFacts = extractConfirmedFacts(coverage.coveredAsks, citations, params.question);
+  const coverage = evaluateAsksCoverage(params.question, params.category, citations);
+  let confirmedFacts = extractConfirmedFacts(coverage.coveredAsks, citations, params.question);
   const missingLabels = coverage.missingAsks.map((ask) => ask.label);
+
+  if (params.category === "BACKUP_DR") {
+    confirmedFacts = Array.from(new Set([...confirmedFacts, ...extractBackupDrFacts(citations)])).slice(0, 6);
+  }
 
   const modelClaimCheck = applyClaimCheckGuardrails({
     answer: params.modelAnswer,
@@ -1294,7 +1438,7 @@ async function retrieveRelevantChunks(params: {
     };
   }
 
-  let filtered = filterAndRerankChunks(params.question, mustMatchInitial.kept);
+  let filtered = filterAndRerankChunks(params.question, mustMatchInitial.kept, params.category);
   if (filtered.length > 0) {
     return {
       chunks: filtered,
@@ -1325,7 +1469,7 @@ async function retrieveRelevantChunks(params: {
     };
   }
 
-  filtered = filterAndRerankChunks(params.question, mustMatchRetry.kept);
+  filtered = filterAndRerankChunks(params.question, mustMatchRetry.kept, params.category);
   return {
     chunks: filtered,
     debug: {
@@ -1359,7 +1503,7 @@ async function retryWithAdditionalChunks(params: {
     return [];
   }
 
-  return filterAndRerankChunks(params.question, mustMatchChunks.kept).filter(
+  return filterAndRerankChunks(params.question, mustMatchChunks.kept, params.category).filter(
     (chunk) => !params.excludeChunkIds.has(chunk.chunkId)
   );
 }

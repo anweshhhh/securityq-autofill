@@ -44,6 +44,8 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
   - matching now uses normalized text (case/punctuation/unicode-dash resilient) for question, chunk text, and category keywords
   - category-specific must-match retrieval filters run before reranking; if no category-relevant chunks remain, result is `Not found in provided documents.`
   - must-match supports phrase and grouped logic (for example incident response phrase or severity+triage/mitigation combinations)
+  - retrieval snippets now support section-based extraction: for headed sections (for example backup/DR or incident response), snippets start at heading and include subsequent lines so critical values like RTO/RPO are retained
+  - SDLC evidence matching is broadened to include partial AppSec controls (`dependency scanning`, `SAST`, `DAST`, `static analysis`, `lint`, `security testing`) so partial SDLC answers are returned instead of false NOT_FOUND
   - reranking is deterministic: overlap desc, similarity desc, chunkId asc; top 3 chunks are used for answering
   - if relevance-filtered citations are empty, retrieval retries once with a larger pool and different chunks before returning NOT_FOUND
   - citation selection is category-aware (e.g., backup/DR and incident-response snippets are preferred when available)
@@ -54,6 +56,7 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
   - citation relevance filter keeps only snippets with question-term overlap and retries retrieval once with larger top-k if needed
   - deterministic `normalizeAnswerOutput` post-processor is the single source of truth for all answer guardrails
   - coverage scoring marks missing requested details (SOC2/SIG/algorithm/scope/keys/rto/rpo/etc.) for review and caps confidence
+  - SDLC questions use default coverage asks (code review, branch protection, CI/CD, change management, dependency/AppSec testing) so responses are partial unless full evidence is present
   - MFA `required` is only allowed when evidence contains `required` or `must`/`enforced` near MFA; otherwise answer is rewritten to requirement-not-specified
   - confidence/needsReview are deterministic by outcome:
     - NOT_FOUND => low confidence, needsReview true

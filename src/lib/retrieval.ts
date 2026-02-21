@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 export const DEFAULT_TOP_K = 5;
 export const DEFAULT_SNIPPET_CHARS = 700;
 const MIN_SNIPPET_CHARS = 250;
+const SECTION_SNIPPET_MAX_LINES = 12;
+const SECTION_SNIPPET_MAX_CHARS = 1200;
 
 export const RETRIEVAL_SQL = `
 SELECT
@@ -45,6 +47,140 @@ function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function normalizeNewlines(value: string): string {
+  return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+function isHeadingLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  if (/^#{1,6}\s+/.test(trimmed)) {
+    return true;
+  }
+
+  return /^[A-Za-z][A-Za-z0-9 &/()\-]{2,}:\s*$/.test(trimmed);
+}
+
+function lineContainsToken(line: string, token: string): boolean {
+  return line.toLowerCase().includes(token.toLowerCase());
+}
+
+function findAnchorLineIndex(lines: string[], anchorTokens: string[]): number {
+  if (anchorTokens.length === 0) {
+    return -1;
+  }
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (anchorTokens.some((token) => lineContainsToken(line, token))) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function findHeadingLineIndex(lines: string[], fromIndex: number): number {
+  for (let index = Math.max(0, fromIndex); index >= 0; index -= 1) {
+    if (isHeadingLine(lines[index])) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function buildSectionSnippet(params: {
+  lines: string[];
+  startLineIndex: number;
+  maxLines: number;
+  maxChars: number;
+}): string {
+  const selectedLines: string[] = [];
+  let currentChars = 0;
+
+  for (
+    let index = params.startLineIndex;
+    index < params.lines.length && selectedLines.length < params.maxLines;
+    index += 1
+  ) {
+    const nextLine = params.lines[index];
+    const extraChars = (selectedLines.length > 0 ? 1 : 0) + nextLine.length;
+
+    if (currentChars + extraChars > params.maxChars) {
+      break;
+    }
+
+    selectedLines.push(nextLine);
+    currentChars += extraChars;
+  }
+
+  let snippet = selectedLines.join("\n").trim();
+  if (!snippet) {
+    return "";
+  }
+
+  if (/recovery objectives/i.test(snippet) && (!/\brto\b/i.test(snippet) || !/\brpo\b/i.test(snippet))) {
+    const lastIndex = params.startLineIndex + selectedLines.length;
+    for (
+      let index = lastIndex;
+      index < params.lines.length && selectedLines.length < params.maxLines + 6;
+      index += 1
+    ) {
+      const nextLine = params.lines[index];
+      const extraChars = 1 + nextLine.length;
+      if (currentChars + extraChars > params.maxChars) {
+        break;
+      }
+
+      selectedLines.push(nextLine);
+      currentChars += extraChars;
+
+      const expandedSnippet = selectedLines.join("\n");
+      if (/\brto\b/i.test(expandedSnippet) && /\brpo\b/i.test(expandedSnippet)) {
+        break;
+      }
+    }
+
+    snippet = selectedLines.join("\n").trim();
+  }
+
+  return snippet;
+}
+
+function selectSectionSnippet(params: {
+  content: string;
+  anchorTokens: string[];
+  snippetChars: number;
+}): string | null {
+  const rawContent = normalizeNewlines(params.content).trim();
+  if (!rawContent) {
+    return null;
+  }
+
+  const lines = rawContent.split("\n");
+  const anchorLineIndex = findAnchorLineIndex(lines, params.anchorTokens);
+  if (anchorLineIndex < 0) {
+    return null;
+  }
+
+  const headingLineIndex = findHeadingLineIndex(lines, anchorLineIndex);
+  const startLineIndex = headingLineIndex >= 0 ? headingLineIndex : anchorLineIndex;
+  const maxChars = Math.max(params.snippetChars, SECTION_SNIPPET_MAX_CHARS);
+
+  const snippet = buildSectionSnippet({
+    lines,
+    startLineIndex,
+    maxLines: SECTION_SNIPPET_MAX_LINES,
+    maxChars
+  });
+
+  return snippet || null;
+}
+
 function getQuestionAnchorTokens(questionText: string): string[] {
   const tokens = new Set<string>();
 
@@ -53,6 +189,10 @@ function getQuestionAnchorTokens(questionText: string): string[] {
   }
 
   for (const token of questionText.match(/\b(?:tls|ssl|mfa|sig|soc2)\b/gi) ?? []) {
+    tokens.add(token.toLowerCase());
+  }
+
+  for (const token of questionText.match(/\b(?:rto|rpo|sdlc|ir)\b/gi) ?? []) {
     tokens.add(token.toLowerCase());
   }
 
@@ -122,6 +262,11 @@ function selectContextSnippet(params: {
   anchorTokens: string[];
   snippetChars: number;
 }): string {
+  const sectionSnippet = selectSectionSnippet(params);
+  if (sectionSnippet) {
+    return sectionSnippet;
+  }
+
   const normalizedContent = normalizeWhitespace(params.content);
   if (!normalizedContent) {
     return "";

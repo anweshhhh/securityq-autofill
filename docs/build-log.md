@@ -642,3 +642,46 @@ This makes retrieval/routing failures visible directly from `/ask`, so we can di
 5. Open `http://localhost:3000/ask`
 6. Submit once with `Show debug` unchecked and confirm no `debug` field.
 7. Submit again with `Show debug` checked and confirm `debug` object is present.
+
+## Day 4 QA hardening v10: snippet section extraction + SDLC broadening
+
+### What changed
+
+- Improved retrieval snippet extraction for headed sections:
+  - detects nearest heading (for example `## Backup & Disaster Recovery`, `## Incident Response`)
+  - starts snippet at heading (or nearest prior heading to anchor line)
+  - includes subsequent lines (up to ~12 lines / 1200 chars)
+  - keeps newline boundaries so snippets are not cut mid-word
+  - extends backup sections after `Recovery objectives` until RTO/RPO lines are included when available
+- Broadened SDLC category evidence matching:
+  - SDLC must-match now accepts additional AppSec controls:
+    - `dependency scanning`, `sast`, `dast`, `static analysis`, `lint`, `security testing`
+    - plus existing SDLC indicators (`code review`, `pr`, `ci`, `ci/cd`, `pipeline`, `branch`, `change management`)
+- Improved SDLC answer behavior:
+  - if any SDLC must-match evidence exists, SDLC answers return partial two-part output (not false NOT_FOUND)
+  - default SDLC asks are now applied for coverage scoring:
+    - code review
+    - branch protection
+    - CI/CD
+    - change management
+    - dependency/AppSec testing
+- Improved BACKUP_DR confirmed-fact extraction:
+  - explicitly extracts backup frequency, DR testing cadence, and RTO/RPO patterns from cited snippets
+
+### Tests added/updated
+
+- Retrieval unit test verifies backup section snippets include RPO/RTO lines.
+- Answering unit test verifies BACKUP_DR confirmed output includes RTO/RPO from headed backup section text.
+- Answering unit test verifies SDLC question with `dependency scanning on every PR` returns partial answer with citations (not NOT_FOUND) and missing SDLC details listed.
+
+### Verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate deploy`
+3. `npm test`
+4. `npm run lint`
+5. `npm run build`
+6. `npm run dev`
+7. In `/ask`, verify:
+   - backup question includes RTO/RPO in `Confirmed from provided documents` when present
+   - SDLC question with dependency-scanning evidence returns partial (not NOT_FOUND) with citations
