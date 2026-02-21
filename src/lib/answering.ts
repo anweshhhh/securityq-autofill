@@ -188,13 +188,21 @@ const CATEGORY_RULES: Record<QuestionCategory, CategoryRule> = {
     mustMatchAny: [
       ["subprocessor*"],
       ["sub", "processor*"],
+      ["subcontractor*"],
+      ["sub", "contractor*"],
       ["third", "party"],
       ["vendor", "assess*"],
       ["vendor", "review*"],
       ["onboarding", "vendor"]
     ],
-    niceToMatch: ["monitor*", "periodic review", "due diligence"],
-    preferredSnippetTerms: ["subprocessor", "third party", "vendor assessment", "onboarding"]
+    niceToMatch: ["monitor*", "periodic review", "due diligence", "subcontractor"],
+    preferredSnippetTerms: [
+      "subprocessor",
+      "subcontractor",
+      "third party",
+      "vendor assessment",
+      "onboarding"
+    ]
   },
   SECRETS: {
     mustMatchAny: [
@@ -257,8 +265,8 @@ const CATEGORY_RULES: Record<QuestionCategory, CategoryRule> = {
     preferredSnippetTerms: ["vendor", "subprocessor", "third-party"]
   },
   LOGGING: {
-    mustMatchAny: [["log"], ["logging"], ["audit"], ["monitoring"]],
-    niceToMatch: ["siem", "alert", "retention", "review"],
+    mustMatchAny: [["log*"], ["logging"], ["audit*"], ["monitor*"], ["siem"], ["alert*"]],
+    niceToMatch: ["siem", "alert", "retention", "review", "centralized"],
     preferredSnippetTerms: ["logging", "audit", "monitoring"]
   },
   RETENTION_DELETION: {
@@ -314,6 +322,7 @@ const QUESTION_KEY_PHRASES = [
   "physical security",
   "data center",
   "security contact",
+  "subcontractor",
   "vendor",
   "subprocessor",
   "deletion",
@@ -534,8 +543,20 @@ const ASK_DEFINITIONS: AskDefinition[] = [
   {
     id: "third_party",
     label: "third-party/vendor details",
-    questionPatterns: [/third[- ]party|vendor/i],
-    evidencePatterns: [/third[- ]party|vendor/i]
+    questionPatterns: [/third[- ]party|vendor|subprocessor|subcontractor/i],
+    evidencePatterns: [/third[- ]party|vendor|subprocessor|subcontractor/i]
+  },
+  {
+    id: "subprocessor_assessment",
+    label: "subprocessor/vendor assessment process",
+    questionPatterns: [
+      /(subprocessor|subcontractor|third[- ]party|vendor)[^.!?\n]{0,80}(assess|review|onboard|monitor)/i,
+      /(assess|review|onboard|monitor)[^.!?\n]{0,80}(subprocessor|subcontractor|third[- ]party|vendor)/i
+    ],
+    evidencePatterns: [
+      /(subprocessor|subcontractor|third[- ]party|vendor)[^.!?\n]{0,80}(assess|review|onboard|monitor)/i,
+      /(assess|review|onboard|monitor)[^.!?\n]{0,80}(subprocessor|subcontractor|third[- ]party|vendor)/i
+    ]
   },
   {
     id: "hosting_provider",
@@ -749,6 +770,7 @@ export function categorizeQuestion(question: string): QuestionCategory {
 
   if (
     containsNormalizedTerm(normalized, "tenant isolation") ||
+    (containsNormalizedTerm(normalized, "tenant") && containsNormalizedTerm(normalized, "isolation")) ||
     containsNormalizedTerm(normalized, "multi tenant") ||
     containsNormalizedTerm(normalized, "multi-tenant") ||
     containsNormalizedTerm(normalized, "segregation")
@@ -768,7 +790,10 @@ export function categorizeQuestion(question: string): QuestionCategory {
 
   if (
     containsNormalizedTerm(normalized, "subprocessor") ||
-    containsNormalizedTerm(normalized, "sub processor") ||
+    containsNormalizedTerm(normalized, "subprocessor*") ||
+    containsNormalizedTerm(normalized, "sub processor*") ||
+    containsNormalizedTerm(normalized, "subcontractor*") ||
+    containsNormalizedTerm(normalized, "sub contractor*") ||
     containsNormalizedTerm(normalized, "third party") ||
     (containsNormalizedTerm(normalized, "vendor") &&
       (containsNormalizedTerm(normalized, "onboarding") ||
@@ -1317,14 +1342,40 @@ function extractLogRetentionFacts(citations: Citation[]): string[] {
 }
 
 function extractSubprocessorsVendorFacts(citations: Citation[]): string[] {
-  return extractFactsBySentenceMatch({
-    citations,
-    include: [
-      /sub\s*-?\s*processor|subprocessor|third[- ]party|vendor/i,
-      /(assessed|assessment|reviewed|review|onboarding|monitored|monitoring)/i
-    ],
-    limit: 5
-  });
+  const entityPattern = /sub\s*-?\s*processor|subprocessor|sub\s*-?\s*contractor|subcontractor|third[- ]party|vendor/i;
+  const governancePattern = /(assessed|assessment|reviewed|review|onboarding|monitored|monitoring|due diligence)/i;
+
+  const entityFacts = new Set<string>();
+  const governanceFacts = new Set<string>();
+
+  for (const citation of citations) {
+    for (const sentence of splitSentences(citation.quotedSnippet)) {
+      const normalizedSentence = sanitizeFact(normalizeWhitespace(sentence));
+      if (!normalizedSentence) {
+        continue;
+      }
+
+      const hasEntity = entityPattern.test(normalizedSentence);
+      const hasGovernance = governancePattern.test(normalizedSentence);
+      if (!hasEntity) {
+        continue;
+      }
+
+      if (hasEntity) {
+        entityFacts.add(normalizedSentence);
+      }
+
+      if (hasGovernance) {
+        governanceFacts.add(normalizedSentence);
+      }
+    }
+  }
+
+  if (governanceFacts.size === 0) {
+    return [];
+  }
+
+  return Array.from(new Set([...governanceFacts, ...entityFacts])).slice(0, 5);
 }
 
 function extractSecretsFacts(citations: Citation[]): string[] {
@@ -1542,9 +1593,10 @@ function extractCategoryRelevanceTerms(category: QuestionCategory): string[] {
 
   for (const group of rule.mustMatchAny) {
     for (const term of group) {
+      const hasWildcard = /\*+$/.test(term);
       const normalized = normalizeForMatch(term.replace(/\*+$/g, ""));
       if (normalized) {
-        terms.add(normalized);
+        terms.add(hasWildcard ? `${normalized}*` : normalized);
       }
     }
   }

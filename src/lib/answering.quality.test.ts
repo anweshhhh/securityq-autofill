@@ -101,6 +101,13 @@ describe("answering quality guardrails", () => {
     expect(categorizeQuestion("Which cloud provider hosts production data and region?")).toBe("HOSTING");
     expect(categorizeQuestion("What is your log retention period?")).toBe("LOG_RETENTION");
     expect(categorizeQuestion("How do you manage API secrets and credential rotation?")).toBe("SECRETS");
+    expect(categorizeQuestion("Are subcontractors assessed before onboarding?")).toBe(
+      "SUBPROCESSORS_VENDOR"
+    );
+    expect(categorizeQuestion("Describe tenant data isolation controls.")).toBe("TENANT_ISOLATION");
+    expect(categorizeQuestion("Describe physical security controls at your data centers.")).toBe(
+      "PHYSICAL_SECURITY"
+    );
     expect(categorizeQuestion("Do you provide a security contact email?")).toBe("SECURITY_CONTACT");
   });
 
@@ -253,6 +260,122 @@ describe("answering quality guardrails", () => {
       needsReview: true
     });
     expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
+  });
+
+  it("returns NOT_FOUND for tenant-isolation questions without tenant evidence", async () => {
+    retrieveTopChunksMock.mockResolvedValue([
+      {
+        chunkId: "chunk-access",
+        docName: "Access Policy",
+        quotedSnippet: "MFA is enabled and access is reviewed quarterly.",
+        fullContent: "MFA is enabled and access is reviewed quarterly.",
+        similarity: 0.93
+      },
+      {
+        chunkId: "chunk-retention",
+        docName: "Retention Policy",
+        quotedSnippet: "Data is retained for 30 days after account closure.",
+        fullContent: "Data is retained for 30 days after account closure.",
+        similarity: 0.89
+      }
+    ]);
+
+    const result = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "How is tenant data isolated in your multi-tenant architecture?"
+    });
+
+    expect(result).toEqual({
+      answer: "Not found in provided documents.",
+      citations: [],
+      confidence: "low",
+      needsReview: true
+    });
+    expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
+  });
+
+  it("returns NOT_FOUND for physical security when only generic AWS hosting evidence exists", async () => {
+    mockSingleChunk("Production workloads are hosted on AWS.");
+
+    const result = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "Describe your physical security controls."
+    });
+
+    expect(result).toEqual({
+      answer: "Not found in provided documents.",
+      citations: [],
+      confidence: "low",
+      needsReview: true
+    });
+    expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
+  });
+
+  it("returns NOT_FOUND for subcontractor assessments when assessment evidence is missing", async () => {
+    mockSingleChunk("Subprocessors include AWS and Stripe.");
+
+    generateGroundedAnswerMock.mockResolvedValue({
+      answer: "Subprocessors include AWS and Stripe.",
+      citationChunkIds: ["chunk-1"],
+      confidence: "med",
+      needsReview: false
+    });
+
+    const result = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "Are subcontractors assessed before onboarding and reviewed periodically?"
+    });
+
+    expect(result).toEqual({
+      answer: "Not found in provided documents.",
+      citations: [],
+      confidence: "low",
+      needsReview: true
+    });
+  });
+
+  it("returns cited subprocessors answer when assessment evidence exists", async () => {
+    mockSingleChunk(
+      "Subprocessors include AWS and Stripe. Subprocessors are reviewed before onboarding and monitored periodically."
+    );
+
+    generateGroundedAnswerMock.mockResolvedValue({
+      answer: "Subprocessors are reviewed before onboarding and monitored periodically.",
+      citationChunkIds: ["chunk-1"],
+      confidence: "med",
+      needsReview: false
+    });
+
+    const result = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "Are subcontractors assessed before onboarding and reviewed periodically?"
+    });
+
+    expect(result.answer).not.toBe("Not found in provided documents.");
+    expect(result.answer.toLowerCase()).toContain("reviewed before onboarding");
+    expect(result.citations).toHaveLength(1);
+  });
+
+  it("keeps logging answers focused on logging facts, not backup lines", async () => {
+    mockSingleChunk(
+      "Security logs are centralized and monitored continuously. Backups are performed daily."
+    );
+
+    generateGroundedAnswerMock.mockResolvedValue({
+      answer: "Security logs are centralized and monitored continuously.",
+      citationChunkIds: ["chunk-1"],
+      confidence: "med",
+      needsReview: false
+    });
+
+    const result = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "Describe logging and monitoring controls."
+    });
+
+    expect(result.answer).not.toBe("Not found in provided documents.");
+    expect(result.answer.toLowerCase()).toContain("logs are centralized");
+    expect(result.answer.toLowerCase()).not.toContain("backups are performed daily");
   });
 
   it("returns log-retention answer with normalized 30-90 range", async () => {

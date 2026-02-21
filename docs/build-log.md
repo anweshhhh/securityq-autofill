@@ -754,6 +754,7 @@ A strong evidence product depends first on:
   - logging facts exclude backup/DR-only lines
   - log retention facts prioritize explicit retention durations
   - hosting extracts provider details and supports partial when region is not specified
+  - subprocessors now require assessment/review evidence (not just a vendor list) for confirmation
 - Preserved shared answer path behavior for both:
   - `POST /api/questions/answer`
   - questionnaire autofill/rerun-missing flows via `answerQuestionWithEvidence`
@@ -767,6 +768,11 @@ A strong evidence product depends first on:
   - Security contact => NOT_FOUND without email; cited answer with email
   - Secrets question without secrets evidence => NOT_FOUND
   - Log retention question => cited answer with normalized `30-90 days`
+  - Tenant-isolation question with non-tenant evidence => NOT_FOUND
+  - Physical-security question with only generic AWS hosting => NOT_FOUND
+  - Subcontractor assessment question without assessment terms => NOT_FOUND
+  - Subcontractor assessment with onboarding/monitoring evidence => cited answer
+  - Logging question keeps logging facts and excludes backup-only lines
 - `src/lib/retrieval.test.ts`
   - Snippet/fullContent normalization for malformed retention ranges (`30�90` -> `30-90`)
 - `src/lib/chunker.test.ts`
