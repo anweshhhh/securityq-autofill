@@ -40,8 +40,8 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
   - deterministic claim-check downgrades unsupported claims to low confidence + needsReview
   - vendors/tools/algorithms are blocked unless terms appear in cited snippets
   - deterministic relevance gate filters retrieved chunks by keyword overlap before answer generation
-  - deterministic question category routing (`BACKUP_DR`, `SDLC`, `INCIDENT_RESPONSE`, `ACCESS_AUTH`, `ENCRYPTION`, `VENDOR`, `LOGGING`, `RETENTION_DELETION`, `PEN_TEST`, `OTHER`)
-  - matching now uses normalized text (case/punctuation/unicode-dash resilient) for question, chunk text, and category keywords
+  - deterministic question category routing (`BACKUP_DR`, `SDLC`, `INCIDENT_RESPONSE`, `ACCESS_AUTH`, `RBAC_LEAST_PRIV`, `HOSTING`, `LOG_RETENTION`, `SUBPROCESSORS_VENDOR`, `SECRETS`, `TENANT_ISOLATION`, `PHYSICAL_SECURITY`, `SECURITY_CONTACT`, `ENCRYPTION`, `VENDOR`, `LOGGING`, `RETENTION_DELETION`, `PEN_TEST`, `OTHER`)
+  - matching now uses normalized text (case/punctuation/unicode-dash resilient + malformed-character cleanup) for question, chunk text, and category keywords
   - category-specific must-match retrieval filters run before reranking; if no category-relevant chunks remain, result is `Not found in provided documents.`
   - must-match supports phrase and grouped logic (for example incident response phrase or severity+triage/mitigation combinations)
   - retrieval snippets now support section-based extraction: for headed sections (for example backup/DR or incident response), snippets start at heading and include subsequent lines so critical values like RTO/RPO are retained
@@ -54,6 +54,8 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
     - category, threshold, retrievedTopK, afterMustMatch, droppedByMustMatch, finalCitations
   - questionnaire debug persistence is gated by `DEBUG_EVIDENCE=true` to avoid JSON bloat by default
   - citation relevance filter keeps only snippets with question-term overlap and retries retrieval once with larger top-k if needed
+  - category-specific fact extraction prevents irrelevant `Confirmed...` bullets (for example secrets/tenant-isolation/security-contact now require category-relevant evidence terms)
+  - strict categories (`SECRETS`, `TENANT_ISOLATION`, `PHYSICAL_SECURITY`, `SECURITY_CONTACT`, etc.) return exact NOT_FOUND when must-match/fact extraction finds no qualifying evidence
   - deterministic `normalizeAnswerOutput` post-processor is the single source of truth for all answer guardrails
   - coverage scoring marks missing requested details (SOC2/SIG/algorithm/scope/keys/rto/rpo/etc.) for review and caps confidence
   - SDLC questions use default coverage asks (code review, branch protection, CI/CD, change management, dependency/AppSec testing) so responses are partial unless full evidence is present

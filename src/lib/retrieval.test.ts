@@ -90,4 +90,29 @@ describe("retrieveTopChunks", () => {
     expect(result[0].quotedSnippet).toContain("Target RPO: 24 hours");
     expect(result[0].quotedSnippet).toContain("Target RTO: 24 hours");
   });
+
+  it("normalizes malformed retention ranges in snippets", async () => {
+    const mockDb = {
+      $queryRawUnsafe: vi.fn().mockResolvedValue([
+        {
+          chunkId: "chunk-logs",
+          docName: "Logging Policy",
+          content: "Logs are retained for 30�90 days to support monitoring and investigations.",
+          distance: 0.06
+        }
+      ])
+    };
+
+    const result = await retrieveTopChunks({
+      organizationId: "org-1",
+      questionEmbedding: [0.1, 0.2, 0.3],
+      questionText: "What is your log retention period?",
+      topK: 1,
+      db: mockDb
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].quotedSnippet).toContain("30-90 days");
+    expect(result[0].fullContent).toContain("30-90 days");
+  });
 });

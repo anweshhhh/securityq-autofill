@@ -9,6 +9,7 @@ import {
   type GroundedAnswerModelOutput
 } from "@/lib/openai";
 import { countEmbeddedChunksForOrganization, retrieveTopChunks, type RetrievedChunk } from "@/lib/retrieval";
+import { sanitizeExtractedText } from "@/lib/textNormalization";
 
 export type Citation = {
   docName: string;
@@ -47,6 +48,14 @@ export type QuestionCategory =
   | "SDLC"
   | "INCIDENT_RESPONSE"
   | "ACCESS_AUTH"
+  | "RBAC_LEAST_PRIV"
+  | "HOSTING"
+  | "LOG_RETENTION"
+  | "SUBPROCESSORS_VENDOR"
+  | "SECRETS"
+  | "TENANT_ISOLATION"
+  | "PHYSICAL_SECURITY"
+  | "SECURITY_CONTACT"
   | "ENCRYPTION"
   | "VENDOR"
   | "LOGGING"
@@ -56,6 +65,7 @@ export type QuestionCategory =
 
 type CategoryRule = {
   mustMatchAny: string[][];
+  mustMatchRegexAny?: RegExp[];
   niceToMatch: string[];
   preferredSnippetTerms: string[];
 };
@@ -132,9 +142,100 @@ const CATEGORY_RULES: Record<QuestionCategory, CategoryRule> = {
     preferredSnippetTerms: ["incident response", "severity"]
   },
   ACCESS_AUTH: {
-    mustMatchAny: [["mfa"], ["authentication"], ["sso"], ["saml"]],
-    niceToMatch: ["login", "authorize", "identity", "role"],
+    mustMatchAny: [
+      ["mfa"],
+      ["multi factor"],
+      ["authentication"],
+      ["sso"],
+      ["saml"],
+      ["admin", "authentication"],
+      ["privileged", "authentication"]
+    ],
+    niceToMatch: ["login", "authorize", "identity", "admin", "privileged", "multi factor"],
     preferredSnippetTerms: ["mfa", "access control", "authentication"]
+  },
+  RBAC_LEAST_PRIV: {
+    mustMatchAny: [
+      ["least privilege"],
+      ["rbac"],
+      ["role based"],
+      ["access control"],
+      ["admin access"],
+      ["privileged access"]
+    ],
+    niceToMatch: ["reviewed quarterly", "review cadence", "roles", "privileged"],
+    preferredSnippetTerms: ["least privilege", "rbac", "role based", "admin access"]
+  },
+  HOSTING: {
+    mustMatchAny: [
+      ["hosted"],
+      ["hosting"],
+      ["cloud provider"],
+      ["aws"],
+      ["azure"],
+      ["gcp"],
+      ["region"]
+    ],
+    niceToMatch: ["infrastructure", "production", "availability zone"],
+    preferredSnippetTerms: ["hosted", "aws", "cloud provider", "region"]
+  },
+  LOG_RETENTION: {
+    mustMatchAny: [["log", "retain*"], ["log retention"], ["logs are retained"], ["retain logs"]],
+    niceToMatch: ["days", "months", "years", "audit log"],
+    preferredSnippetTerms: ["logs are retained", "log retention"]
+  },
+  SUBPROCESSORS_VENDOR: {
+    mustMatchAny: [
+      ["subprocessor*"],
+      ["sub", "processor*"],
+      ["third", "party"],
+      ["vendor", "assess*"],
+      ["vendor", "review*"],
+      ["onboarding", "vendor"]
+    ],
+    niceToMatch: ["monitor*", "periodic review", "due diligence"],
+    preferredSnippetTerms: ["subprocessor", "third party", "vendor assessment", "onboarding"]
+  },
+  SECRETS: {
+    mustMatchAny: [
+      ["secret*"],
+      ["api", "key"],
+      ["credential*"],
+      ["vault"],
+      ["kms", "key"],
+      ["rotation"],
+      ["rotate"]
+    ],
+    niceToMatch: ["storage", "managed secret", "key rotation"],
+    preferredSnippetTerms: ["secret", "vault", "api key", "credential", "rotation"]
+  },
+  TENANT_ISOLATION: {
+    mustMatchAny: [
+      ["tenant"],
+      ["multi tenant"],
+      ["isolation"],
+      ["segregation"],
+      ["segregated"]
+    ],
+    niceToMatch: ["logical isolation", "tenant boundary"],
+    preferredSnippetTerms: ["tenant isolation", "multi tenant", "segregation"]
+  },
+  PHYSICAL_SECURITY: {
+    mustMatchAny: [
+      ["physical security"],
+      ["data center"],
+      ["datacenter"],
+      ["facility"],
+      ["shared responsibility", "physical"]
+    ],
+    niceToMatch: ["building access", "badges", "guards", "aws"],
+    preferredSnippetTerms: ["physical security", "data center", "shared responsibility"]
+  },
+  SECURITY_CONTACT: {
+    mustMatchAny: [],
+    mustMatchRegexAny: [/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i],
+    niceToMatch: ["security", "contact", "email"],
+    preferredSnippetTerms: ["@", "security contact"]
   },
   ENCRYPTION: {
     mustMatchAny: [
@@ -196,6 +297,23 @@ const QUESTION_KEY_PHRASES = [
   "tls",
   "hsts",
   "mfa",
+  "multi-factor",
+  "least privilege",
+  "rbac",
+  "admin access",
+  "cloud provider",
+  "hosted",
+  "aws",
+  "log retention",
+  "logs are retained",
+  "secret",
+  "api key",
+  "vault",
+  "tenant isolation",
+  "multi-tenant",
+  "physical security",
+  "data center",
+  "security contact",
   "vendor",
   "subprocessor",
   "deletion",
@@ -316,6 +434,14 @@ const ASK_DEFINITIONS: AskDefinition[] = [
     evidencePatterns: [/\bretention\b|retain|kept for|days|months|years/i]
   },
   {
+    id: "log_retention_duration",
+    label: "log retention duration",
+    questionPatterns: [/log retention|retain logs|logs are retained|how long.*logs?/i],
+    evidencePatterns: [
+      /logs?[^.!?\n]{0,60}(retained|retain|kept)[^.!?\n]{0,60}\d+\s*(?:-\s*\d+\s*)?(days?|months?|years?)/i
+    ]
+  },
+  {
     id: "restore_testing_cadence",
     label: "restore testing cadence",
     questionPatterns: [/restore testing|restore test|restore cadence|restore frequency/i],
@@ -412,6 +538,20 @@ const ASK_DEFINITIONS: AskDefinition[] = [
     evidencePatterns: [/third[- ]party|vendor/i]
   },
   {
+    id: "hosting_provider",
+    label: "cloud hosting provider",
+    questionPatterns: [/hosting|hosted|cloud provider|which cloud|where hosted|infrastructure/i],
+    evidencePatterns: [/hosted|hosting|cloud provider|aws|azure|gcp/i]
+  },
+  {
+    id: "hosting_region",
+    label: "hosting region",
+    questionPatterns: [/region|regions|data residency|location/i],
+    evidencePatterns: [
+      /\bregion\b|\b(?:us|eu|ap|ca|sa|me|af)-(?:east|west|central|north|south|southeast|southwest|northeast|northwest)-\d\b/i
+    ]
+  },
+  {
     id: "soc2",
     label: "SOC2 evidence",
     questionPatterns: [/soc\s*2/i],
@@ -471,7 +611,7 @@ export const NOT_FOUND_RESPONSE: EvidenceAnswer = {
 };
 
 export function normalizeForMatch(value: string): string {
-  return value
+  return sanitizeExtractedText(value)
     .normalize("NFKC")
     .replace(/[‐‑‒–—―−]/g, "-")
     .toLowerCase()
@@ -520,13 +660,16 @@ export function chunkMatchesCategoryMustMatch(
   category: QuestionCategory,
   chunkText: string
 ): boolean {
-  const mustMatchAny = CATEGORY_RULES[category]?.mustMatchAny ?? [];
-  if (mustMatchAny.length === 0) {
-    return true;
-  }
-
+  const rule = CATEGORY_RULES[category];
+  const mustMatchAny = rule?.mustMatchAny ?? [];
+  const mustMatchRegexAny = rule?.mustMatchRegexAny ?? [];
   const normalizedChunk = normalizeForMatch(chunkText);
-  return mustMatchAny.some((group) => matchesMustMatchGroup(normalizedChunk, group));
+  const hasMustMatch =
+    mustMatchAny.length === 0 ||
+    mustMatchAny.some((group) => matchesMustMatchGroup(normalizedChunk, group));
+  const hasRegexMatch =
+    mustMatchRegexAny.length === 0 || mustMatchRegexAny.some((pattern) => pattern.test(chunkText));
+  return hasMustMatch && hasRegexMatch;
 }
 
 export function categorizeQuestion(question: string): QuestionCategory {
@@ -588,13 +731,97 @@ export function categorizeQuestion(question: string): QuestionCategory {
   }
 
   if (
+    containsNormalizedTerm(normalized, "security contact") ||
+    (containsNormalizedTerm(normalized, "contact") && containsNormalizedTerm(normalized, "email")) ||
+    containsNormalizedTerm(normalized, "security email")
+  ) {
+    return "SECURITY_CONTACT";
+  }
+
+  if (
+    containsNormalizedTerm(normalized, "physical security") ||
+    containsNormalizedTerm(normalized, "data center") ||
+    containsNormalizedTerm(normalized, "datacenter") ||
+    containsNormalizedTerm(normalized, "facility")
+  ) {
+    return "PHYSICAL_SECURITY";
+  }
+
+  if (
+    containsNormalizedTerm(normalized, "tenant isolation") ||
+    containsNormalizedTerm(normalized, "multi tenant") ||
+    containsNormalizedTerm(normalized, "multi-tenant") ||
+    containsNormalizedTerm(normalized, "segregation")
+  ) {
+    return "TENANT_ISOLATION";
+  }
+
+  if (
+    containsNormalizedTerm(normalized, "secret") ||
+    containsNormalizedTerm(normalized, "secrets") ||
+    containsNormalizedTerm(normalized, "api key") ||
+    containsNormalizedTerm(normalized, "credential") ||
+    containsNormalizedTerm(normalized, "vault")
+  ) {
+    return "SECRETS";
+  }
+
+  if (
+    containsNormalizedTerm(normalized, "subprocessor") ||
+    containsNormalizedTerm(normalized, "sub processor") ||
+    containsNormalizedTerm(normalized, "third party") ||
+    (containsNormalizedTerm(normalized, "vendor") &&
+      (containsNormalizedTerm(normalized, "onboarding") ||
+        containsNormalizedTerm(normalized, "assessed") ||
+        containsNormalizedTerm(normalized, "reviewed")))
+  ) {
+    return "SUBPROCESSORS_VENDOR";
+  }
+
+  if (
+    containsNormalizedTerm(normalized, "hosted") ||
+    containsNormalizedTerm(normalized, "hosting") ||
+    containsNormalizedTerm(normalized, "cloud provider") ||
+    containsNormalizedTerm(normalized, "aws") ||
+    containsNormalizedTerm(normalized, "azure") ||
+    containsNormalizedTerm(normalized, "gcp") ||
+    containsNormalizedTerm(normalized, "region")
+  ) {
+    return "HOSTING";
+  }
+
+  if (
+    (containsNormalizedTerm(normalized, "log") || containsNormalizedTerm(normalized, "logs")) &&
+    (containsNormalizedTerm(normalized, "retention") ||
+      containsNormalizedTerm(normalized, "retained") ||
+      containsNormalizedTerm(normalized, "retain"))
+  ) {
+    return "LOG_RETENTION";
+  }
+
+  if (
     containsNormalizedTerm(normalized, "mfa") ||
+    containsNormalizedTerm(normalized, "multi-factor") ||
+    containsNormalizedTerm(normalized, "multi factor") ||
     containsNormalizedTerm(normalized, "sso") ||
     containsNormalizedTerm(normalized, "authentication") ||
-    containsNormalizedTerm(normalized, "least privilege") ||
-    containsNormalizedTerm(normalized, "rbac")
+    containsNormalizedTerm(normalized, "saml") ||
+    (containsNormalizedTerm(normalized, "admin") &&
+      (containsNormalizedTerm(normalized, "mfa") ||
+        containsNormalizedTerm(normalized, "authentication") ||
+        containsNormalizedTerm(normalized, "privileged")))
   ) {
     return "ACCESS_AUTH";
+  }
+
+  if (
+    containsNormalizedTerm(normalized, "least privilege") ||
+    containsNormalizedTerm(normalized, "rbac") ||
+    containsNormalizedTerm(normalized, "role-based") ||
+    containsNormalizedTerm(normalized, "role based") ||
+    containsNormalizedTerm(normalized, "access control")
+  ) {
+    return "RBAC_LEAST_PRIV";
   }
 
   if (
@@ -650,7 +877,7 @@ export function categorizeQuestion(question: string): QuestionCategory {
 }
 
 function normalizeWhitespace(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
+  return sanitizeExtractedText(value).replace(/\s+/g, " ").trim();
 }
 
 function containsNotSpecified(answer: string): boolean {
@@ -742,7 +969,9 @@ function filterChunksByCategoryMustMatch(
   dropped: Array<{ chunk: RetrievedChunk; reason: string }>;
 } {
   const rule = CATEGORY_RULES[category];
-  if (!rule || rule.mustMatchAny.length === 0) {
+  const hasMustMatchTerms = (rule?.mustMatchAny.length ?? 0) > 0;
+  const hasMustMatchRegex = (rule?.mustMatchRegexAny?.length ?? 0) > 0;
+  if (!rule || (!hasMustMatchTerms && !hasMustMatchRegex)) {
     return {
       kept: chunks,
       dropped: []
@@ -775,11 +1004,25 @@ function filterAndRerankChunks(
   chunks: RetrievedChunk[],
   category: QuestionCategory
 ): ScoredChunk[] {
-  const questionKeywords = extractQuestionKeywords(question);
+  const questionKeywords = Array.from(
+    new Set([...extractQuestionKeywords(question), ...extractCategoryRelevanceTerms(category)])
+  );
   const strongKeywords = extractStrongQuestionKeywords(questionKeywords);
   const questionWordCount = question.trim().split(/\s+/).filter(Boolean).length;
   const defaultMinOverlap = questionWordCount >= 14 || questionKeywords.length >= 8 ? 2 : 1;
-  const minOverlap = category === "SDLC" ? 1 : defaultMinOverlap;
+  const minOverlapCategories = new Set<QuestionCategory>([
+    "SDLC",
+    "ACCESS_AUTH",
+    "RBAC_LEAST_PRIV",
+    "HOSTING",
+    "LOG_RETENTION",
+    "SUBPROCESSORS_VENDOR",
+    "SECRETS",
+    "TENANT_ISOLATION",
+    "PHYSICAL_SECURITY",
+    "SECURITY_CONTACT"
+  ]);
+  const minOverlap = minOverlapCategories.has(category) ? 1 : defaultMinOverlap;
 
   const scored = chunks
     .map((chunk) => ({
@@ -892,7 +1135,21 @@ function evaluateAsksCoverage(
   };
 }
 
-function extractConfirmedFacts(
+const EMAIL_LIKE_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
+
+const STRICT_FACT_MATCH_CATEGORIES = new Set<QuestionCategory>([
+  "ACCESS_AUTH",
+  "RBAC_LEAST_PRIV",
+  "HOSTING",
+  "LOG_RETENTION",
+  "SUBPROCESSORS_VENDOR",
+  "SECRETS",
+  "TENANT_ISOLATION",
+  "PHYSICAL_SECURITY",
+  "SECURITY_CONTACT"
+]);
+
+function extractConfirmedFactsFromAsks(
   coveredAsks: AskDefinition[],
   citations: Citation[],
   question: string
@@ -933,6 +1190,41 @@ function extractConfirmedFacts(
   return Array.from(new Set(genericFacts)).slice(0, 5);
 }
 
+function extractFactsBySentenceMatch(params: {
+  citations: Citation[];
+  include: RegExp[];
+  exclude?: RegExp[];
+  limit?: number;
+}): string[] {
+  const limit = params.limit ?? 5;
+  const exclude = params.exclude ?? [];
+  const facts: string[] = [];
+
+  for (const citation of params.citations) {
+    for (const sentence of splitSentences(citation.quotedSnippet)) {
+      const normalizedSentence = normalizeWhitespace(sentence);
+      if (!normalizedSentence) {
+        continue;
+      }
+
+      if (!params.include.some((pattern) => pattern.test(normalizedSentence))) {
+        continue;
+      }
+
+      if (exclude.some((pattern) => pattern.test(normalizedSentence))) {
+        continue;
+      }
+
+      facts.push(sanitizeFact(normalizedSentence));
+      if (facts.length >= limit) {
+        return Array.from(new Set(facts)).slice(0, limit);
+      }
+    }
+  }
+
+  return Array.from(new Set(facts)).slice(0, limit);
+}
+
 function extractBackupDrFacts(citations: Citation[]): string[] {
   const facts = new Set<string>();
 
@@ -967,12 +1259,176 @@ function extractBackupDrFacts(citations: Citation[]): string[] {
   return Array.from(facts).slice(0, 6);
 }
 
+function extractAccessAuthFacts(citations: Citation[]): string[] {
+  return extractFactsBySentenceMatch({
+    citations,
+    include: [
+      /\bmfa\b|multi[- ]factor/i,
+      /authentication|sso|saml/i,
+      /(admin|privileged)[^.!?\n]{0,60}(account|access)/i
+    ],
+    limit: 5
+  });
+}
+
+function extractRbacLeastPrivilegeFacts(citations: Citation[]): string[] {
+  return extractFactsBySentenceMatch({
+    citations,
+    include: [
+      /least privilege|rbac|role[- ]based/i,
+      /access control|admin access|privileged access/i,
+      /(reviewed|review)[^.!?\n]{0,40}(quarterly|monthly|annually)/i
+    ],
+    limit: 5
+  });
+}
+
+function extractHostingFacts(citations: Citation[]): string[] {
+  return extractFactsBySentenceMatch({
+    citations,
+    include: [
+      /(hosted|hosting|cloud provider|infrastructure)[^.!?\n]{0,60}(aws|azure|gcp)/i,
+      /(aws|azure|gcp)[^.!?\n]{0,60}(hosted|hosting|cloud)/i,
+      /\bregion\b|\b(?:us|eu|ap|ca|sa|me|af)-(?:east|west|central|north|south|southeast|southwest|northeast|northwest)-\d\b/i
+    ],
+    limit: 4
+  });
+}
+
+function extractLogRetentionFacts(citations: Citation[]): string[] {
+  const facts = new Set<string>();
+
+  for (const citation of citations) {
+    const snippet = normalizeWhitespace(citation.quotedSnippet);
+    const logRetention =
+      snippet.match(
+        /logs?[^.!?\n]{0,80}(?:retained|retain|kept)[^.!?\n]{0,80}\d+\s*(?:-\s*\d+\s*)?(?:days?|months?|years?)/i
+      )?.[0] ??
+      snippet.match(
+        /(?:retention|retained)[^.!?\n]{0,80}logs?[^.!?\n]{0,80}\d+\s*(?:-\s*\d+\s*)?(?:days?|months?|years?)/i
+      )?.[0];
+
+    if (logRetention) {
+      facts.add(sanitizeFact(logRetention));
+    }
+  }
+
+  return Array.from(facts).slice(0, 4);
+}
+
+function extractSubprocessorsVendorFacts(citations: Citation[]): string[] {
+  return extractFactsBySentenceMatch({
+    citations,
+    include: [
+      /sub\s*-?\s*processor|subprocessor|third[- ]party|vendor/i,
+      /(assessed|assessment|reviewed|review|onboarding|monitored|monitoring)/i
+    ],
+    limit: 5
+  });
+}
+
+function extractSecretsFacts(citations: Citation[]): string[] {
+  return extractFactsBySentenceMatch({
+    citations,
+    include: [/secret|api key|credential|vault|kms key|rotate|rotation/i],
+    limit: 5
+  });
+}
+
+function extractTenantIsolationFacts(citations: Citation[]): string[] {
+  return extractFactsBySentenceMatch({
+    citations,
+    include: [/tenant|multi[- ]tenant|isolation|segregation|segregated/i],
+    limit: 5
+  });
+}
+
+function extractPhysicalSecurityFacts(citations: Citation[]): string[] {
+  return extractFactsBySentenceMatch({
+    citations,
+    include: [
+      /physical security|data center|datacenter|facility/i,
+      /shared responsibility[^.!?\n]{0,80}(aws|cloud|physical security|data center|facility)/i
+    ],
+    limit: 4
+  });
+}
+
+function extractSecurityContactFacts(citations: Citation[]): string[] {
+  const facts = new Set<string>();
+  for (const citation of citations) {
+    for (const sentence of splitSentences(citation.quotedSnippet)) {
+      if (EMAIL_LIKE_PATTERN.test(sentence)) {
+        facts.add(sanitizeFact(normalizeWhitespace(sentence)));
+      }
+    }
+  }
+
+  return Array.from(facts).slice(0, 2);
+}
+
+function extractLoggingFacts(citations: Citation[]): string[] {
+  return extractFactsBySentenceMatch({
+    citations,
+    include: [/log|logging|audit|monitoring|siem|alert/i],
+    exclude: [/backup|disaster recovery|\brto\b|\brpo\b/i],
+    limit: 5
+  });
+}
+
+function extractCategorySpecificFacts(category: QuestionCategory, citations: Citation[]): string[] {
+  switch (category) {
+    case "BACKUP_DR":
+      return extractBackupDrFacts(citations);
+    case "ACCESS_AUTH":
+      return extractAccessAuthFacts(citations);
+    case "RBAC_LEAST_PRIV":
+      return extractRbacLeastPrivilegeFacts(citations);
+    case "HOSTING":
+      return extractHostingFacts(citations);
+    case "LOG_RETENTION":
+      return extractLogRetentionFacts(citations);
+    case "SUBPROCESSORS_VENDOR":
+      return extractSubprocessorsVendorFacts(citations);
+    case "SECRETS":
+      return extractSecretsFacts(citations);
+    case "TENANT_ISOLATION":
+      return extractTenantIsolationFacts(citations);
+    case "PHYSICAL_SECURITY":
+      return extractPhysicalSecurityFacts(citations);
+    case "SECURITY_CONTACT":
+      return extractSecurityContactFacts(citations);
+    case "LOGGING":
+      return extractLoggingFacts(citations);
+    default:
+      return [];
+  }
+}
+
+function extractConfirmedFacts(params: {
+  coveredAsks: AskDefinition[];
+  citations: Citation[];
+  question: string;
+  category: QuestionCategory;
+}): string[] {
+  const categoryFacts = extractCategorySpecificFacts(params.category, params.citations);
+  if (categoryFacts.length > 0) {
+    return categoryFacts;
+  }
+
+  if (STRICT_FACT_MATCH_CATEGORIES.has(params.category)) {
+    return [];
+  }
+
+  return extractConfirmedFactsFromAsks(params.coveredAsks, params.citations, params.question);
+}
+
 function defaultMissingLabels(labels: string[]): string[] {
   return labels.length > 0 ? labels : ["additional requested details"];
 }
 
 function sanitizeFact(fact: string): string {
-  return fact
+  return sanitizeExtractedText(fact)
     .replace(/^#+\s*/g, "")
     .replace(/^[-•]+\s*/g, "")
     .replace(/^\*+\s*/g, "")
@@ -997,14 +1453,12 @@ function buildDeterministicPartialFromCitations(params: {
   }
 
   const coverage = evaluateAsksCoverage(params.question, params.category, params.citations);
-  let confirmedFacts = extractConfirmedFacts(coverage.coveredAsks, params.citations, params.question);
-
-  if (params.category === "BACKUP_DR") {
-    const backupFacts = extractBackupDrFacts(params.citations);
-    if (backupFacts.length > 0) {
-      confirmedFacts = backupFacts;
-    }
-  }
+  const confirmedFacts = extractConfirmedFacts({
+    coveredAsks: coverage.coveredAsks,
+    citations: params.citations,
+    question: params.question,
+    category: params.category
+  });
 
   if (confirmedFacts.length === 0) {
     return null;
@@ -1106,6 +1560,10 @@ function extractCategoryRelevanceTerms(category: QuestionCategory): string[] {
 }
 
 function isCitationRelevant(question: string, category: QuestionCategory, citation: Citation): boolean {
+  if (category === "SECURITY_CONTACT") {
+    return EMAIL_LIKE_PATTERN.test(citation.quotedSnippet);
+  }
+
   const relevanceTerms = extractCitationRelevanceTerms(question);
   const snippet = normalizeForMatch(citation.quotedSnippet);
   const questionTermMatch =
@@ -1276,15 +1734,13 @@ export function normalizeAnswerOutput(params: {
   }
 
   const coverage = evaluateAsksCoverage(params.question, params.category, citations);
-  let confirmedFacts = extractConfirmedFacts(coverage.coveredAsks, citations, params.question);
+  const confirmedFacts = extractConfirmedFacts({
+    coveredAsks: coverage.coveredAsks,
+    citations,
+    question: params.question,
+    category: params.category
+  });
   const missingLabels = coverage.missingAsks.map((ask) => ask.label);
-
-  if (params.category === "BACKUP_DR") {
-    const backupFacts = extractBackupDrFacts(citations);
-    if (backupFacts.length > 0) {
-      confirmedFacts = backupFacts;
-    }
-  }
 
   const modelClaimCheck = applyClaimCheckGuardrails({
     answer: params.modelAnswer,
@@ -1298,6 +1754,10 @@ export function normalizeAnswerOutput(params: {
 
   let answer: string;
   let outcome: "FULL" | "PARTIAL";
+
+  if (STRICT_FACT_MATCH_CATEGORIES.has(params.category) && confirmedFacts.length === 0) {
+    return NOT_FOUND_RESPONSE;
+  }
 
   if (coverage.missingAsks.length > 0) {
     if (confirmedFacts.length > 0) {

@@ -733,3 +733,51 @@ A strong evidence product depends first on:
 - Keep shared answering logic as the single source of truth
 - Add reviewer/approval workflow without weakening evidence guardrails
 - Preserve deterministic outcomes and debug observability as features expand
+
+## Day 4 hardening for real questionnaires
+
+### What changed
+
+- Added malformed-character normalization across ingestion/retrieval/answering so corrupted ranges like `30�90` normalize to `30-90`.
+- Expanded deterministic routing + must-match categories for real questionnaire failure modes:
+  - `RBAC_LEAST_PRIV`
+  - `HOSTING`
+  - `LOG_RETENTION`
+  - `SUBPROCESSORS_VENDOR`
+  - `SECRETS`
+  - `TENANT_ISOLATION`
+  - `PHYSICAL_SECURITY`
+  - `SECURITY_CONTACT` (email regex required)
+- Tightened must-match handling to support regex-gated categories (security contact now requires email-like evidence).
+- Added category-specific fact extraction to prevent irrelevant `Confirmed from provided documents` bullets.
+  - secrets/tenant isolation/security contact/physical security/subprocessors now only confirm category-relevant evidence
+  - logging facts exclude backup/DR-only lines
+  - log retention facts prioritize explicit retention durations
+  - hosting extracts provider details and supports partial when region is not specified
+- Preserved shared answer path behavior for both:
+  - `POST /api/questions/answer`
+  - questionnaire autofill/rerun-missing flows via `answerQuestionWithEvidence`
+
+### Tests added/updated
+
+- `src/lib/answering.quality.test.ts`
+  - MFA admin-access evidence => cited answer (not NOT_FOUND)
+  - RBAC/least-privilege evidence => cited answer
+  - Hosting provider with missing region => partial answer with missing-region callout
+  - Security contact => NOT_FOUND without email; cited answer with email
+  - Secrets question without secrets evidence => NOT_FOUND
+  - Log retention question => cited answer with normalized `30-90 days`
+- `src/lib/retrieval.test.ts`
+  - Snippet/fullContent normalization for malformed retention ranges (`30�90` -> `30-90`)
+- `src/lib/chunker.test.ts`
+  - Ingestion normalization for replacement characters
+
+### Verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate deploy`
+3. `npm test`
+4. In `/ask` or questionnaire autofill, verify:
+   - MFA admin/RBAC/hosting/log retention questions return cited answers when matching evidence exists
+   - secrets/tenant isolation/physical security/security contact return exact `Not found in provided documents.` when category evidence is absent
+   - log retention output and citations show `30-90` (not malformed replacement character)

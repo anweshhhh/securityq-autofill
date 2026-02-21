@@ -19,6 +19,15 @@ describe("chunkText", () => {
     expect(chunkText("   \n\n  ")).toEqual([]);
   });
 
+  it("normalizes replacement characters in extracted text", () => {
+    const chunks = chunkText("Logs are retained for 30�90 days.", {
+      maxChars: 100,
+      overlapChars: 10
+    });
+
+    expect(chunks).toEqual([{ chunkIndex: 0, content: "Logs are retained for 30-90 days." }]);
+  });
+
   it("throws for invalid overlap settings", () => {
     expect(() => chunkText("abc", { maxChars: 3, overlapChars: 3 })).toThrow(
       "overlapChars must be >= 0 and less than maxChars"

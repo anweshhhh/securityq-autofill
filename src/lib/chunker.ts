@@ -1,3 +1,5 @@
+import { sanitizeExtractedText } from "@/lib/textNormalization";
+
 export const DEFAULT_MAX_CHARS = 1500;
 export const DEFAULT_OVERLAP_CHARS = 200;
 
@@ -23,7 +25,7 @@ export function chunkText(text: string, options: ChunkOptions = {}): Chunk[] {
     throw new Error("overlapChars must be >= 0 and less than maxChars");
   }
 
-  const normalizedText = text.replace(/\r\n/g, "\n").trim();
+  const normalizedText = sanitizeExtractedText(text).replace(/\r\n/g, "\n").trim();
   if (!normalizedText) {
     return [];
   }

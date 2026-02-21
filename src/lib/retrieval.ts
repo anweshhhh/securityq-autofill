@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { sanitizeExtractedText } from "@/lib/textNormalization";
 
 export const DEFAULT_TOP_K = 5;
 export const DEFAULT_SNIPPET_CHARS = 700;
@@ -44,11 +45,11 @@ export function embeddingToVectorLiteral(embedding: number[]): string {
 }
 
 function normalizeWhitespace(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
+  return sanitizeExtractedText(value).replace(/\s+/g, " ").trim();
 }
 
 function normalizeNewlines(value: string): string {
-  return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  return sanitizeExtractedText(value).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
 function isHeadingLine(line: string): boolean {

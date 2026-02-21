@@ -96,6 +96,12 @@ describe("answering quality guardrails", () => {
     expect(categorizeQuestion("Describe your SDLC and CI/CD branch protection controls.")).toBe("SDLC");
     expect(categorizeQuestion("How often do you run penetration tests?")).toBe("PEN_TEST");
     expect(categorizeQuestion("Describe your IR process and severity levels.")).toBe("INCIDENT_RESPONSE");
+    expect(categorizeQuestion("Is MFA required for privileged admin access?")).toBe("ACCESS_AUTH");
+    expect(categorizeQuestion("Do you enforce RBAC and least privilege?")).toBe("RBAC_LEAST_PRIV");
+    expect(categorizeQuestion("Which cloud provider hosts production data and region?")).toBe("HOSTING");
+    expect(categorizeQuestion("What is your log retention period?")).toBe("LOG_RETENTION");
+    expect(categorizeQuestion("How do you manage API secrets and credential rotation?")).toBe("SECRETS");
+    expect(categorizeQuestion("Do you provide a security contact email?")).toBe("SECURITY_CONTACT");
   });
 
   it("normalizes punctuation/casing and matches must-match phrases", () => {
@@ -106,6 +112,168 @@ describe("answering quality guardrails", () => {
     expect(
       chunkMatchesCategoryMustMatch("BACKUP_DR", "Backup & Disaster Recovery: Daily backups and tested restores")
     ).toBe(true);
+  });
+
+  it("returns cited answer for MFA admin-access evidence", async () => {
+    mockSingleChunk("MFA is required for privileged/admin accounts.");
+
+    generateGroundedAnswerMock.mockResolvedValue({
+      answer: "MFA is required for privileged/admin accounts.",
+      citationChunkIds: ["chunk-1"],
+      confidence: "high",
+      needsReview: false
+    });
+
+    const result = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "Is MFA required for admin access?"
+    });
+
+    expect(result.answer).not.toBe("Not found in provided documents.");
+    expect(result.answer.toLowerCase()).toContain("mfa is required for privileged/admin accounts");
+    expect(result.citations).toHaveLength(1);
+    expect(result.citations[0].chunkId).toBe("chunk-1");
+  });
+
+  it("returns cited answer for least-privilege and RBAC evidence", async () => {
+    mockSingleChunk(
+      "We follow least privilege and RBAC. Admin access is restricted and reviewed quarterly."
+    );
+
+    generateGroundedAnswerMock.mockResolvedValue({
+      answer: "Least privilege and RBAC controls are in place.",
+      citationChunkIds: ["chunk-1"],
+      confidence: "med",
+      needsReview: false
+    });
+
+    const result = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "Describe your least privilege / RBAC controls for admin access."
+    });
+
+    expect(result.answer).not.toBe("Not found in provided documents.");
+    expect(result.answer.toLowerCase()).toContain("least privilege");
+    expect(result.citations).toHaveLength(1);
+    expect(result.citations[0].chunkId).toBe("chunk-1");
+  });
+
+  it("returns partial hosting answer when provider evidence exists but region is missing", async () => {
+    mockSingleChunk("Production workloads are hosted on AWS.");
+
+    generateGroundedAnswerMock.mockResolvedValue({
+      answer: "Production workloads are hosted on AWS.",
+      citationChunkIds: ["chunk-1"],
+      confidence: "med",
+      needsReview: false
+    });
+
+    const result = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "Which cloud provider hosts production data and in which regions?"
+    });
+
+    expect(result.answer).toContain("Confirmed from provided documents:");
+    expect(result.answer.toLowerCase()).toContain("hosted on aws");
+    expect(result.answer).toContain("Not specified in provided documents:");
+    expect(result.answer.toLowerCase()).toContain("hosting region");
+    expect(result.citations).toHaveLength(1);
+  });
+
+  it("returns NOT_FOUND for security contact unless email evidence exists", async () => {
+    mockSingleChunk("Security contacts are managed by the compliance team.");
+
+    const withoutEmail = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "Provide your security contact email."
+    });
+
+    expect(withoutEmail).toEqual({
+      answer: "Not found in provided documents.",
+      citations: [],
+      confidence: "low",
+      needsReview: true
+    });
+    expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
+
+    retrieveTopChunksMock.mockResolvedValue([
+      {
+        chunkId: "chunk-2",
+        docName: "Trust Center",
+        quotedSnippet: "Security contact: security@attestly.example",
+        fullContent: "Security contact: security@attestly.example",
+        similarity: 0.91
+      }
+    ]);
+    generateGroundedAnswerMock.mockResolvedValue({
+      answer: "Security contact is security@attestly.example.",
+      citationChunkIds: ["chunk-2"],
+      confidence: "med",
+      needsReview: false
+    });
+
+    const withEmail = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "Provide your security contact email."
+    });
+
+    expect(withEmail.answer).not.toBe("Not found in provided documents.");
+    expect(withEmail.answer).toContain("security@attestly.example");
+    expect(withEmail.citations).toHaveLength(1);
+    expect(withEmail.citations[0].chunkId).toBe("chunk-2");
+  });
+
+  it("returns NOT_FOUND for secrets question when no secrets evidence exists", async () => {
+    retrieveTopChunksMock.mockResolvedValue([
+      {
+        chunkId: "chunk-logging",
+        docName: "Logging",
+        quotedSnippet: "Centralized logging and monitoring are enabled.",
+        fullContent: "Centralized logging and monitoring are enabled.",
+        similarity: 0.93
+      },
+      {
+        chunkId: "chunk-backup",
+        docName: "Backup",
+        quotedSnippet: "Backups are performed daily and tested annually.",
+        fullContent: "Backups are performed daily and tested annually.",
+        similarity: 0.9
+      }
+    ]);
+
+    const result = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "How are secrets stored and rotated?"
+    });
+
+    expect(result).toEqual({
+      answer: "Not found in provided documents.",
+      citations: [],
+      confidence: "low",
+      needsReview: true
+    });
+    expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
+  });
+
+  it("returns log-retention answer with normalized 30-90 range", async () => {
+    mockSingleChunk("Logs are retained for 30�90 days for security monitoring.");
+
+    generateGroundedAnswerMock.mockResolvedValue({
+      answer: "Logs are retained for 30-90 days.",
+      citationChunkIds: ["chunk-1"],
+      confidence: "high",
+      needsReview: false
+    });
+
+    const result = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "What is your log retention period?"
+    });
+
+    expect(result.answer).not.toBe("Not found in provided documents.");
+    expect(result.answer).toContain("30-90 days");
+    expect(result.citations).toHaveLength(1);
+    expect(result.citations[0].quotedSnippet).toContain("30-90 days");
   });
 
   it("returns two-part partial answer for backups evidence", async () => {
