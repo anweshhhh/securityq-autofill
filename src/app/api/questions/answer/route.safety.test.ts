@@ -68,6 +68,6 @@ describe("/api/questions/answer safety hardening", () => {
     expect(payload.answer).toBe("Not specified in provided documents.");
     expect(payload.confidence).toBe("low");
     expect(payload.needsReview).toBe(true);
-    expect(payload.citations).toEqual([]);
+    expect(payload.citations.length).toBeGreaterThan(0);
   });
 });

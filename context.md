@@ -29,10 +29,14 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
 - Embeddings pipeline with OpenAI `text-embedding-3-small` and pgvector `vector(1536)` storage
 - Retrieval + cited single-question answering at `/api/questions/answer`
 - Evidence-bounded answer guardrails:
+  - outcome taxonomy is deterministic:
+    - FOUND => cited answer with non-empty citations
+    - NOT_FOUND => exact `Not found in provided documents.` and empty citations
+    - PARTIAL_SPEC => answer contains `Not specified in provided documents.` and keeps citations to partial evidence
   - if snippets are insufficient for a detail, answer uses `Not specified in provided documents.`
   - deterministic claim-check downgrades unsupported claims to low confidence + needsReview
   - vendors/tools/algorithms are blocked unless terms appear in cited snippets
-  - partial/not-specified answers always return empty citations
+  - partial/not-specified answers retain citations to the partial supporting evidence
   - citation relevance filter drops unrelated snippets using question-term overlap
   - deterministic `normalizeAnswerOutput` post-processor is the single source of truth for all answer guardrails
   - coverage scoring marks missing requested details (SOC2/SIG/algorithm/scope/keys/rto/rpo/etc.) for review and caps confidence

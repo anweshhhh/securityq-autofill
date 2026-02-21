@@ -398,3 +398,40 @@ This resolves the remaining observed failures: partial answers cannot carry misl
 4. `npm run dev`
 5. Test `/ask` with DSR, MFA-required, encryption-detail, and vendor SOC2/SIG questions
 6. Confirm partial/not-specified outputs return no citations and force low confidence + review
+
+## Day 4 QA hardening v4: partial evidence outcome
+
+### What changed
+
+- Finalized deterministic answer outcome taxonomy in one shared normalizer:
+  - `FOUND`: cited answer with non-empty citations
+  - `NOT_FOUND`: exact `Not found in provided documents.` with empty citations
+  - `PARTIAL_SPEC`: answer includes `Not specified in provided documents.` and retains citations to partial evidence
+- Removed over-blocking behavior that dropped citations for all partial answers.
+- Kept hallucination prevention:
+  - claim-check still rewrites unsupported specifics and lowers confidence/review status
+  - citations are only dropped for true NOT_FOUND or hard relevance failure
+- Added relevance retry logic:
+  - if first citation set is irrelevant but similarity is strong, retrieval retries once with higher `k`
+- Tightened scoring behavior:
+  - partial and missing-detail coverage now reliably set review flags
+  - confidence is capped when requested details are missing (including SOC2/SIG vendor evidence gaps)
+
+### Tests added/updated
+
+- DB-seeded incident response test verifies a valid FOUND result with citation snippet containing:
+  - `incident response`
+  - `severity levels`
+- Deterministic tests for:
+  - pen-test frequency with no evidence => NOT_FOUND + empty citations
+  - encryption-at-rest partial evidence => PARTIAL_SPEC + non-empty citations
+  - unsupported token claim-check rewrite without dropping valid citations
+  - MFA `required` guard against truncated evidence (`requir`)
+
+### Verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate deploy`
+3. `npm test`
+4. `npm run dev`
+5. Run IR / pen-test / encryption-detail / vendor SOC2+SIG questions in `/ask` and confirm outcome taxonomy behavior
