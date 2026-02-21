@@ -261,3 +261,35 @@ This removes dead/duplicate entries quickly and makes failures actionable instea
 5. Open `http://localhost:3000/documents`
 6. Upload a valid file and a failing/empty file, confirm ERROR reason is visible
 7. Delete single and multiple documents, then refresh to confirm removal
+
+## Day 4.x Questionnaire Details + Hygiene
+
+### What we shipped
+
+- Added questionnaire details API + page:
+  - `GET /api/questionnaires/:id`
+  - `/questionnaires/[id]` with filters (All, Found, Not Found, Needs Review)
+- Added targeted rerun flow:
+  - `POST /api/questionnaires/:id/rerun-missing`
+  - Processes only unanswered or `Not found in provided documents.` rows
+  - Uses the same evidence-grounded answer function as Day 3
+  - Runs in resumable batches and updates counts/progress
+- Added cleanup actions:
+  - `POST /api/questionnaires/:id/archive` (UI default)
+  - `DELETE /api/questionnaires/:id` (hard-delete API path)
+  - Archived questionnaires are hidden from default list
+
+### Why it matters
+
+Users can now inspect outputs, selectively improve completion after adding evidence, and keep old runs out of the active workspace without losing control of data hygiene.
+
+### Verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate deploy`
+3. `npm test`
+4. `npm run dev`
+5. Open `http://localhost:3000/questionnaires`
+6. Create/import questionnaire, run autofill, then click `View` to inspect row-level answers/citations
+7. Click `Re-run Missing` after adding evidence and confirm only missing rows are retried
+8. Click `Archive` and confirm it disappears from the main list

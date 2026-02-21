@@ -64,6 +64,7 @@ model Questionnaire {
   sourceFileName String?
   questionColumn String?
   sourceHeaders  Json?
+  archivedAt     DateTime?
   runStatus      QuestionnaireRunStatus @default(PENDING)
   processedCount Int                    @default(0)
   totalCount     Int                    @default(0)
@@ -88,6 +89,7 @@ model Question {
   citations       Json
   confidence      String?
   needsReview     Boolean?
+  lastRerunAt     DateTime?
   createdAt       DateTime      @default(now())
   approvedAnswers ApprovedAnswer[]
 

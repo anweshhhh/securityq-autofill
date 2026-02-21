@@ -18,7 +18,7 @@ type QuestionnaireRow = {
   lastError: string | null;
 };
 
-type AutofillProgress = {
+type RunProgress = {
   questionnaireId: string;
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
   processedCount: number;
@@ -48,6 +48,8 @@ export default function QuestionnairesPage() {
   const [isParsing, setIsParsing] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [activeAutofillId, setActiveAutofillId] = useState<string | null>(null);
+  const [activeRerunId, setActiveRerunId] = useState<string | null>(null);
+  const [activeArchiveId, setActiveArchiveId] = useState<string | null>(null);
 
   const previewHeaders = useMemo(() => headers, [headers]);
 
@@ -175,24 +177,29 @@ export default function QuestionnairesPage() {
     }
   }
 
-  async function runAutofillUntilDone(questionnaireId: string) {
-    setActiveAutofillId(questionnaireId);
+  async function runLoop(
+    questionnaireId: string,
+    endpointPath: "autofill" | "rerun-missing",
+    setActiveId: (id: string | null) => void,
+    label: string
+  ) {
+    setActiveId(questionnaireId);
     setMessage("");
 
     try {
       while (true) {
-        const response = await fetch(`/api/questionnaires/${questionnaireId}/autofill`, {
+        const response = await fetch(`/api/questionnaires/${questionnaireId}/${endpointPath}`, {
           method: "POST"
         });
 
-        const payload = (await response.json()) as AutofillProgress;
+        const payload = (await response.json()) as RunProgress;
 
         if (!response.ok) {
-          throw new Error(payload.error ?? "Autofill failed");
+          throw new Error(payload.error ?? `${label} failed`);
         }
 
         setMessage(
-          `Autofill ${payload.status}: ${payload.processedCount}/${payload.totalCount} (${payload.progressPercent}%)`
+          `${label} ${payload.status}: ${payload.processedCount}/${payload.totalCount} (${payload.progressPercent}%)`
         );
 
         await fetchQuestionnaires();
@@ -202,15 +209,46 @@ export default function QuestionnairesPage() {
         }
 
         if (payload.status === "FAILED") {
-          throw new Error(payload.lastError ?? "Autofill failed");
+          throw new Error(payload.lastError ?? `${label} failed`);
         }
 
         await sleep(POLL_INTERVAL_MS);
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Autofill failed");
+      setMessage(error instanceof Error ? error.message : `${label} failed`);
     } finally {
-      setActiveAutofillId(null);
+      setActiveId(null);
+    }
+  }
+
+  async function archiveQuestionnaireById(questionnaireId: string) {
+    if (!window.confirm("Archive this questionnaire from the list?")) {
+      return;
+    }
+
+    setActiveArchiveId(questionnaireId);
+    setMessage("");
+
+    try {
+      const response = await fetch(`/api/questionnaires/${questionnaireId}/archive`, {
+        method: "POST"
+      });
+
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? "Archive failed");
+      }
+
+      setMessage("Questionnaire archived.");
+      await fetchQuestionnaires();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Archive failed");
+    } finally {
+      setActiveArchiveId(null);
     }
   }
 
@@ -320,12 +358,46 @@ export default function QuestionnairesPage() {
                 <td>{questionnaire.notFoundCount}</td>
                 <td>{new Date(questionnaire.createdAt).toLocaleString()}</td>
                 <td>
+                  <Link href={`/questionnaires/${questionnaire.id}`}>View</Link>{" "}
                   <button
                     type="button"
-                    onClick={() => void runAutofillUntilDone(questionnaire.id)}
-                    disabled={activeAutofillId === questionnaire.id || isLoadingList}
+                    onClick={() =>
+                      void runLoop(questionnaire.id, "autofill", setActiveAutofillId, "Autofill")
+                    }
+                    disabled={
+                      activeAutofillId === questionnaire.id ||
+                      activeRerunId === questionnaire.id ||
+                      activeArchiveId === questionnaire.id ||
+                      isLoadingList
+                    }
                   >
                     {activeAutofillId === questionnaire.id ? "Running..." : "Autofill/Resume"}
+                  </button>{" "}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void runLoop(questionnaire.id, "rerun-missing", setActiveRerunId, "Re-run Missing")
+                    }
+                    disabled={
+                      activeAutofillId === questionnaire.id ||
+                      activeRerunId === questionnaire.id ||
+                      activeArchiveId === questionnaire.id ||
+                      isLoadingList
+                    }
+                  >
+                    {activeRerunId === questionnaire.id ? "Running..." : "Re-run Missing"}
+                  </button>{" "}
+                  <button
+                    type="button"
+                    onClick={() => void archiveQuestionnaireById(questionnaire.id)}
+                    disabled={
+                      activeAutofillId === questionnaire.id ||
+                      activeRerunId === questionnaire.id ||
+                      activeArchiveId === questionnaire.id ||
+                      isLoadingList
+                    }
+                  >
+                    {activeArchiveId === questionnaire.id ? "Archiving..." : "Archive"}
                   </button>{" "}
                   <a href={`/api/questionnaires/${questionnaire.id}/export`}>Download CSV</a>
                 </td>

@@ -30,7 +30,8 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
 - Retrieval + cited single-question answering at `/api/questions/answer`
 - `/ask` UI for one-question evidence-grounded responses
 - Questionnaire CSV import + question-column selection + batch autofill + CSV export
-- `/questionnaires` UI for import, preview, autofill/resume, and export actions
+- `/questionnaires` UI for import, preview, autofill/resume, rerun-missing, archive, and export actions
+- Questionnaire details page at `/questionnaires/[id]` with per-question answers/citations filters
 - Resumable autofill run state on `Questionnaire` (`PENDING/RUNNING/COMPLETED/FAILED`) with progress counters
 - Homepage shortcuts: `Go to Documents`, `Go to Questionnaires`, `Go to Ask`, `Open API Health`, `Open API Documents`
 
@@ -40,6 +41,7 @@ Pages:
 - `/` (home)
 - `/documents` (upload + list)
 - `/questionnaires` (CSV import + autofill + export)
+- `/questionnaires/[id]` (result details + filters)
 - `/ask` (single-question answering)
 
 API:
@@ -53,6 +55,10 @@ API:
 - `POST /api/questionnaires/headers`
 - `POST /api/questionnaires/import`
 - `POST /api/questionnaires/:id/autofill`
+- `POST /api/questionnaires/:id/rerun-missing`
+- `POST /api/questionnaires/:id/archive`
+- `GET /api/questionnaires/:id`
+- `DELETE /api/questionnaires/:id`
 - `GET /api/questionnaires/:id/export`
 
 ## 6) Local Runbook
