@@ -466,3 +466,43 @@ Users now get actionable partial answers that preserve real evidence instead of 
 4. `npm run dev`
 5. Ask backup/IR/pen-test/vendor-detail questions at `/ask`
 6. Confirm partial outputs include both confirmed facts and explicit missing details, with non-empty citations when evidence exists
+
+## Day 4 QA hardening v6: relevance gating + format enforcement
+
+### What changed
+
+- Added a deterministic relevance gate before answer generation:
+  - extracts question keywords (with security key phrases)
+  - scores chunk overlap
+  - drops chunks with insufficient overlap
+- Added deterministic reranking on filtered chunks:
+  - overlap desc, similarity desc, chunkId asc
+  - answer generation uses top 3 chunks only
+- Added one retry path when citations fail relevance:
+  - re-fetches a larger candidate pool
+  - excludes already-attempted chunks
+  - retries once before returning NOT_FOUND
+- Enforced answer-format safety:
+  - rejects markdown heading/raw-dump outputs from the model
+  - regenerates once with stricter instruction
+  - falls back to `Not found in provided documents.` if still invalid
+- Fixed hidden regex boundary corruption (`\b`) in backup ask detection.
+- Kept deterministic confidence + review behavior aligned with outcome (NOT_FOUND/PARTIAL/FULL).
+
+### Tests added/updated
+
+- Pen-test question with only backup/overview chunks now returns NOT_FOUND (relevance gate blocks irrelevant evidence).
+- Backup multi-detail question returns two-part partial answer with confirmed backup facts and explicit missing details.
+- Format-enforcement test verifies invalid markdown-style model output is rejected and falls back safely when invalid twice.
+
+### Verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate deploy`
+3. `npm test`
+4. `npm run lint`
+5. `npm run build`
+6. `npm run dev`
+7. Open `http://localhost:3000/ask` and verify:
+   - pen-test question returns `Not found in provided documents.` when no pen-test evidence exists
+   - backup questions produce clean evidence summaries, not raw snippet dumps

@@ -39,10 +39,18 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
   - if snippets are insufficient for requested details, partial answers list missing details explicitly instead of collapsing the full response
   - deterministic claim-check downgrades unsupported claims to low confidence + needsReview
   - vendors/tools/algorithms are blocked unless terms appear in cited snippets
+  - deterministic relevance gate filters retrieved chunks by keyword overlap before answer generation
+  - reranking is deterministic: overlap desc, similarity desc, chunkId asc; top 3 chunks are used for answering
+  - if relevance-filtered citations are empty, retrieval retries once with a larger pool and different chunks before returning NOT_FOUND
+  - invalid model output format (markdown headings/raw evidence dumps) is rejected; one strict regeneration is attempted, then it falls back to NOT_FOUND
   - citation relevance filter keeps only snippets with question-term overlap and retries retrieval once with larger top-k if needed
   - deterministic `normalizeAnswerOutput` post-processor is the single source of truth for all answer guardrails
   - coverage scoring marks missing requested details (SOC2/SIG/algorithm/scope/keys/rto/rpo/etc.) for review and caps confidence
   - MFA `required` is only allowed when evidence contains `required` or `must`/`enforced` near MFA; otherwise answer is rewritten to requirement-not-specified
+  - confidence/needsReview are deterministic by outcome:
+    - NOT_FOUND => low confidence, needsReview true
+    - PARTIAL => low/med confidence, needsReview true
+    - FULL => med/high confidence only when all required details are covered
 - `/ask` UI for one-question evidence-grounded responses
 - Questionnaire CSV import + question-column selection + batch autofill + CSV export
 - `/questionnaires` UI for import, preview, autofill/resume, rerun-missing, archive, and export actions

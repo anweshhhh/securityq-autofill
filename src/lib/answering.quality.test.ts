@@ -36,6 +36,27 @@ function mockSingleChunk(snippet: string, fullContent?: string, similarity = 0.9
   ]);
 }
 
+function mockBackupOnlyChunks() {
+  retrieveTopChunksMock.mockResolvedValue([
+    {
+      chunkId: "chunk-backup",
+      docName: "Backup Policy",
+      quotedSnippet: "Backups are performed daily. Disaster recovery tests are conducted annually.",
+      fullContent:
+        "Backups are performed daily. Disaster recovery tests are conducted annually. " +
+        "RPO is 24 hours and RTO is 24 hours.",
+      similarity: 0.94
+    },
+    {
+      chunkId: "chunk-overview",
+      docName: "Company Overview",
+      quotedSnippet: "Our company profile and security mission statement.",
+      fullContent: "Our company profile and security mission statement.",
+      similarity: 0.92
+    }
+  ]);
+}
+
 describe("answering quality guardrails", () => {
   beforeEach(() => {
     createEmbeddingMock.mockReset();
@@ -47,8 +68,8 @@ describe("answering quality guardrails", () => {
     createEmbeddingMock.mockResolvedValue(new Array(1536).fill(0.02));
   });
 
-  it("returns NOT_FOUND for pen test frequency when no evidence is available", async () => {
-    countEmbeddedChunksForOrganizationMock.mockResolvedValue(0);
+  it("returns NOT_FOUND when only irrelevant backup chunks exist for pen tests", async () => {
+    mockBackupOnlyChunks();
 
     const result = await answerQuestionWithEvidence({
       organizationId: "org-1",
@@ -61,6 +82,8 @@ describe("answering quality guardrails", () => {
       confidence: "low",
       needsReview: true
     });
+
+    expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
   });
 
   it("returns two-part partial answer for backups evidence", async () => {
@@ -145,5 +168,38 @@ describe("answering quality guardrails", () => {
     expect(result.citations.length).toBeGreaterThan(0);
     expect(result.needsReview).toBe(true);
     expect(result.confidence).toBe("low");
+  });
+
+  it("falls back to NOT_FOUND when model returns invalid formatted output twice", async () => {
+    mockSingleChunk(
+      "Backups are performed daily. Disaster recovery tests are conducted annually. RPO is 24 hours and RTO is 24 hours."
+    );
+
+    generateGroundedAnswerMock
+      .mockResolvedValueOnce({
+        answer: "## Backup Evidence\n- Backups are performed daily",
+        citationChunkIds: ["chunk-1"],
+        confidence: "high",
+        needsReview: false
+      })
+      .mockResolvedValueOnce({
+        answer: "# Evidence Pack\nBackups are performed daily",
+        citationChunkIds: ["chunk-1"],
+        confidence: "high",
+        needsReview: false
+      });
+
+    const result = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "What is the backup frequency?"
+    });
+
+    expect(generateGroundedAnswerMock).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({
+      answer: "Not found in provided documents.",
+      citations: [],
+      confidence: "low",
+      needsReview: true
+    });
   });
 });

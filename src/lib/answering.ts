@@ -3,7 +3,11 @@ import {
   applyClaimCheckGuardrails,
   extractQuestionKeyTerms
 } from "@/lib/claimCheck";
-import { createEmbedding, generateGroundedAnswer } from "@/lib/openai";
+import {
+  createEmbedding,
+  generateGroundedAnswer,
+  type GroundedAnswerModelOutput
+} from "@/lib/openai";
 import { countEmbeddedChunksForOrganization, retrieveTopChunks, type RetrievedChunk } from "@/lib/retrieval";
 
 export type Citation = {
@@ -32,24 +36,131 @@ type AskCoverage = {
   missingAsks: AskDefinition[];
 };
 
+type ScoredChunk = RetrievedChunk & {
+  overlapScore: number;
+  strongOverlapScore: number;
+};
+
 type AttemptResult = {
   bestSimilarity: number;
   modelAnswer: string;
   modelConfidence: "low" | "med" | "high";
   modelNeedsReview: boolean;
+  modelHadFormatViolation: boolean;
   citationsFromModel: Citation[];
   fallbackCitations: Citation[];
+  scoredChunks: ScoredChunk[];
 };
 
 const TOP_K = 5;
 const RETRY_TOP_K = 10;
-const MIN_TOP_SIMILARITY = 0.35;
+const MAX_ANSWER_CHUNKS = 3;
 const MAX_CITATIONS = 2;
+const MIN_TOP_SIMILARITY = 0.35;
 const NOT_FOUND_TEXT = "Not found in provided documents.";
 const PARTIAL_TEMPLATE_HEADER = "Confirmed from provided documents:";
 const PARTIAL_TEMPLATE_MISSING = "Not specified in provided documents:";
 const MFA_REQUIRED_FALLBACK =
   "MFA is enabled; whether it is required is not specified in provided documents.";
+
+const QUESTION_KEY_PHRASES = [
+  "pen test",
+  "penetration",
+  "backup",
+  "dr",
+  "rto",
+  "rpo",
+  "restore",
+  "retention",
+  "sdlc",
+  "code review",
+  "ci/cd",
+  "branch",
+  "tls",
+  "hsts",
+  "mfa",
+  "vendor",
+  "subprocessor",
+  "deletion",
+  "dsr"
+];
+
+const QUESTION_STOPWORDS = new Set([
+  "about",
+  "after",
+  "also",
+  "and",
+  "any",
+  "are",
+  "been",
+  "between",
+  "both",
+  "does",
+  "from",
+  "have",
+  "into",
+  "including",
+  "please",
+  "provide",
+  "question",
+  "should",
+  "that",
+  "their",
+  "them",
+  "there",
+  "these",
+  "those",
+  "what",
+  "when",
+  "where",
+  "which",
+  "with",
+  "your",
+  "tests",
+  "test",
+  "testing"
+]);
+
+const WEAK_QUESTION_KEYWORDS = new Set([
+  "about",
+  "across",
+  "after",
+  "answer",
+  "answers",
+  "around",
+  "available",
+  "based",
+  "before",
+  "controls",
+  "control",
+  "describe",
+  "details",
+  "document",
+  "documents",
+  "evidence",
+  "explain",
+  "follow",
+  "following",
+  "generally",
+  "include",
+  "information",
+  "often",
+  "performed",
+  "perform",
+  "please",
+  "policy",
+  "process",
+  "provide",
+  "question",
+  "questions",
+  "security",
+  "should",
+  "show",
+  "state",
+  "status",
+  "using",
+  "whether"
+]);
 
 const ASK_DEFINITIONS: AskDefinition[] = [
   {
@@ -65,7 +176,9 @@ const ASK_DEFINITIONS: AskDefinition[] = [
     id: "dr_testing",
     label: "disaster recovery testing frequency",
     questionPatterns: [/disaster recovery|\bdr\b|restore testing|recovery testing|dr testing/i],
-    evidencePatterns: [/(disaster recovery|\bdr\b|recovery)[^.!?\n]{0,80}(tested|testing|exercise|annually|quarterly|monthly|weekly|daily|every)/i]
+    evidencePatterns: [
+      /(disaster recovery|\bdr\b|recovery)[^.!?\n]{0,80}(tested|testing|exercise|annually|quarterly|monthly|weekly|daily|every)/i
+    ]
   },
   {
     id: "rto",
@@ -89,7 +202,7 @@ const ASK_DEFINITIONS: AskDefinition[] = [
     id: "restore_testing_cadence",
     label: "restore testing cadence",
     questionPatterns: [/restore testing|restore test|restore cadence|restore frequency/i],
-    evidencePatterns: [/restore[^.!?\n]{0,60}(testing|test|cadence|frequency|annually|quarterly|monthly|weekly|daily)/i]
+    evidencePatterns: [/restore[^.!?\n]{0,80}(testing|test|cadence|frequency|annually|quarterly|monthly|weekly|daily)/i]
   },
   {
     id: "severity_levels",
@@ -170,12 +283,6 @@ const ASK_DEFINITIONS: AskDefinition[] = [
     evidencePatterns: [/daily|weekly|monthly|quarterly|annually|every\s+\d+/i]
   },
   {
-    id: "retention_generic",
-    label: "retention",
-    questionPatterns: [/\bretention\b/i],
-    evidencePatterns: [/retention|retain|kept for|days|months|years/i]
-  },
-  {
     id: "by_whom",
     label: "ownership by role/team",
     questionPatterns: [/by whom|who\s+(approves|reviews|manages|owns)|responsible/i],
@@ -214,14 +321,6 @@ export const NOT_FOUND_RESPONSE: EvidenceAnswer = {
   needsReview: true
 };
 
-function hasSufficientEvidence(chunks: RetrievedChunk[]): boolean {
-  if (chunks.length === 0) {
-    return false;
-  }
-
-  return chunks[0].similarity >= MIN_TOP_SIMILARITY;
-}
-
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -247,6 +346,90 @@ function buildCitationFromChunk(chunk: RetrievedChunk): Citation {
 
 function dedupeCitations(citations: Citation[]): Citation[] {
   return Array.from(new Map(citations.map((citation) => [citation.chunkId, citation])).values());
+}
+
+function extractQuestionKeywords(question: string): string[] {
+  const normalizedQuestion = question.toLowerCase();
+  const keywords = new Set<string>();
+
+  for (const token of normalizedQuestion.match(/[a-z0-9/-]+/g) ?? []) {
+    if (token.length < 4) {
+      continue;
+    }
+
+    if (QUESTION_STOPWORDS.has(token)) {
+      continue;
+    }
+
+    keywords.add(token);
+  }
+
+  for (const phrase of QUESTION_KEY_PHRASES) {
+    if (normalizedQuestion.includes(phrase)) {
+      keywords.add(phrase);
+    }
+  }
+
+  return Array.from(keywords);
+}
+
+function extractStrongQuestionKeywords(questionKeywords: string[]): string[] {
+  return questionKeywords.filter((keyword) => !WEAK_QUESTION_KEYWORDS.has(keyword));
+}
+
+function scoreChunkOverlap(chunkText: string, questionKeywords: string[]): number {
+  const normalizedChunk = chunkText.toLowerCase();
+  let score = 0;
+
+  for (const keyword of questionKeywords) {
+    if (normalizedChunk.includes(keyword)) {
+      score += 1;
+    }
+  }
+
+  return score;
+}
+
+function filterAndRerankChunks(question: string, chunks: RetrievedChunk[]): ScoredChunk[] {
+  const questionKeywords = extractQuestionKeywords(question);
+  const strongKeywords = extractStrongQuestionKeywords(questionKeywords);
+  const questionWordCount = question.trim().split(/\s+/).filter(Boolean).length;
+  const minOverlap = questionWordCount >= 14 || questionKeywords.length >= 8 ? 2 : 1;
+
+  const scored = chunks
+    .map((chunk) => ({
+      ...chunk,
+      overlapScore: scoreChunkOverlap(chunk.quotedSnippet + "\n" + chunk.fullContent, questionKeywords),
+      strongOverlapScore: scoreChunkOverlap(
+        chunk.quotedSnippet + "\n" + chunk.fullContent,
+        strongKeywords
+      )
+    }))
+    .filter((chunk) => {
+      if (chunk.overlapScore < minOverlap) {
+        return false;
+      }
+
+      if (strongKeywords.length === 0) {
+        return true;
+      }
+
+      return chunk.strongOverlapScore >= 1;
+    });
+
+  scored.sort((left, right) => {
+    if (left.overlapScore !== right.overlapScore) {
+      return right.overlapScore - left.overlapScore;
+    }
+
+    if (left.similarity !== right.similarity) {
+      return right.similarity - left.similarity;
+    }
+
+    return left.chunkId.localeCompare(right.chunkId);
+  });
+
+  return scored.slice(0, MAX_ANSWER_CHUNKS);
 }
 
 function extractAsksFromParentheses(question: string): AskDefinition[] {
@@ -296,7 +479,11 @@ function evaluateAsksCoverage(question: string, citations: Citation[]): AskCover
   };
 }
 
-function extractConfirmedFacts(coveredAsks: AskDefinition[], citations: Citation[]): string[] {
+function extractConfirmedFacts(
+  coveredAsks: AskDefinition[],
+  citations: Citation[],
+  question: string
+): string[] {
   const facts: string[] = [];
 
   for (const ask of coveredAsks) {
@@ -313,14 +500,39 @@ function extractConfirmedFacts(coveredAsks: AskDefinition[], citations: Citation
     }
   }
 
-  return Array.from(new Set(facts)).slice(0, 5);
+  if (facts.length > 0) {
+    return Array.from(new Set(facts)).slice(0, 5);
+  }
+
+  const questionKeywords = extractQuestionKeywords(question);
+  const genericFacts: string[] = [];
+
+  for (const citation of citations) {
+    const sentences = splitSentences(citation.quotedSnippet);
+    for (const sentence of sentences) {
+      const normalizedSentence = sentence.toLowerCase();
+      if (questionKeywords.some((keyword) => normalizedSentence.includes(keyword))) {
+        genericFacts.push(sentence);
+      }
+    }
+  }
+
+  return Array.from(new Set(genericFacts)).slice(0, 5);
+}
+
+function sanitizeFact(fact: string): string {
+  return fact
+    .replace(/^#+\s*/g, "")
+    .replace(/^\*+\s*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function formatPartialAnswer(confirmedFacts: string[], missingLabels: string[]): string {
-  const confirmedBlock = confirmedFacts.map((fact) => `- ${fact}`).join("\n");
-  const missingBlock = missingLabels.map((label) => `- ${label}`).join("\n");
+  const normalizedFacts = confirmedFacts.map((fact) => `- ${sanitizeFact(fact)}`).join("\n");
+  const normalizedMissing = missingLabels.map((label) => `- ${label}`).join("\n");
 
-  return `${PARTIAL_TEMPLATE_HEADER}\n${confirmedBlock}\n${PARTIAL_TEMPLATE_MISSING}\n${missingBlock}`;
+  return `${PARTIAL_TEMPLATE_HEADER}\n${normalizedFacts}\n${PARTIAL_TEMPLATE_MISSING}\n${normalizedMissing}`;
 }
 
 function buildFullAnswer(confirmedFacts: string[]): string {
@@ -328,11 +540,7 @@ function buildFullAnswer(confirmedFacts: string[]): string {
     return NOT_SPECIFIED_RESPONSE_TEXT;
   }
 
-  if (confirmedFacts.length === 1) {
-    return confirmedFacts[0];
-  }
-
-  return confirmedFacts.join(" ");
+  return confirmedFacts.map((fact) => `- ${sanitizeFact(fact)}`).join("\n");
 }
 
 function isMfaRequiredSupported(citations: Citation[]): boolean {
@@ -349,7 +557,8 @@ function isMfaRequiredSupported(citations: Citation[]): boolean {
 }
 
 function enforceMfaRequiredClaim(question: string, answer: string, citations: Citation[]): string {
-  const mfaContext = /\bmfa\b|multi[- ]factor/i.test(question) || /\bmfa\b|multi[- ]factor/i.test(answer);
+  const mfaContext =
+    /\bmfa\b|multi[- ]factor/i.test(question) || /\bmfa\b|multi[- ]factor/i.test(answer);
   const claimsRequired = /\brequired\b/i.test(answer);
 
   if (!mfaContext || !claimsRequired) {
@@ -363,30 +572,102 @@ function enforceMfaRequiredClaim(question: string, answer: string, citations: Ci
   return MFA_REQUIRED_FALLBACK;
 }
 
+function extractCitationRelevanceTerms(question: string): string[] {
+  const keywordTerms = extractStrongQuestionKeywords(extractQuestionKeywords(question)).filter(
+    (term) => term.length >= 4
+  );
+
+  if (keywordTerms.length > 0) {
+    return keywordTerms;
+  }
+
+  const fallbackTerms = extractQuestionKeyTerms(question).filter(
+    (term) => term.length >= 4 && !WEAK_QUESTION_KEYWORDS.has(term)
+  );
+
+  return fallbackTerms;
+}
+
 function isCitationRelevant(question: string, citation: Citation): boolean {
-  const keyTerms = extractQuestionKeyTerms(question).filter((term) => term.length >= 4);
-  if (keyTerms.length === 0) {
+  const relevanceTerms = extractCitationRelevanceTerms(question);
+  if (relevanceTerms.length === 0) {
     return true;
   }
 
   const snippet = citation.quotedSnippet.toLowerCase();
-  return keyTerms.some((term) => snippet.includes(term));
+  return relevanceTerms.some((term) => snippet.includes(term));
 }
 
 function selectRelevantCitations(question: string, citations: Citation[]): Citation[] {
-  const relevant = citations.filter((citation) => isCitationRelevant(question, citation));
-  return relevant.slice(0, MAX_CITATIONS);
+  return citations.filter((citation) => isCitationRelevant(question, citation)).slice(0, MAX_CITATIONS);
 }
 
-function shouldCapConfidenceToMed(question: string, missingAsks: AskDefinition[]): boolean {
-  if (missingAsks.length === 0) {
-    return false;
+function hasFormatViolation(answer: string): boolean {
+  const trimmed = answer.trim();
+  if (!trimmed) {
+    return true;
   }
 
-  const asksSoc2OrSig = /soc\s*2|\bsig\b/i.test(question);
-  const missingSoc2OrSig = missingAsks.some((ask) => ask.id === "soc2" || ask.id === "sig");
+  if (/^\s*#\s*evidence pack/i.test(trimmed)) {
+    return true;
+  }
 
-  return asksSoc2OrSig && missingSoc2OrSig;
+  if (/(^|\n)\s*##\s+/.test(trimmed)) {
+    return true;
+  }
+
+  if (/```/.test(trimmed)) {
+    return true;
+  }
+
+  if (trimmed.length > 1800 && (trimmed.match(/\n/g) ?? []).length > 12) {
+    return true;
+  }
+
+  return false;
+}
+
+async function generateWithFormatEnforcement(params: {
+  question: string;
+  snippets: Array<{ chunkId: string; docName: string; quotedSnippet: string }>;
+}) {
+  let first = (await generateGroundedAnswer({
+    question: params.question,
+    snippets: params.snippets
+  })) as GroundedAnswerModelOutput;
+
+  if (!hasFormatViolation(first.answer)) {
+    return {
+      output: first,
+      hadFormatViolation: false
+    };
+  }
+
+  const strictQuestion =
+    "Return concise security-answer text only. No markdown headings, no raw evidence dump. " +
+    params.question;
+
+  const second = (await generateGroundedAnswer({
+    question: strictQuestion,
+    snippets: params.snippets
+  })) as GroundedAnswerModelOutput;
+
+  if (!hasFormatViolation(second.answer)) {
+    return {
+      output: second,
+      hadFormatViolation: true
+    };
+  }
+
+  return {
+    output: {
+      answer: NOT_FOUND_TEXT,
+      citationChunkIds: [],
+      confidence: "low",
+      needsReview: true
+    } satisfies GroundedAnswerModelOutput,
+    hadFormatViolation: true
+  };
 }
 
 export function normalizeAnswerOutput(params: {
@@ -394,16 +675,17 @@ export function normalizeAnswerOutput(params: {
   modelAnswer: string;
   modelConfidence: "low" | "med" | "high";
   modelNeedsReview: boolean;
+  modelHadFormatViolation: boolean;
   citations: Citation[];
+  overlapScores: number[];
 }): EvidenceAnswer {
   const citations = dedupeCitations(params.citations);
-
   if (citations.length === 0) {
     return NOT_FOUND_RESPONSE;
   }
 
   const coverage = evaluateAsksCoverage(params.question, citations);
-  const confirmedFacts = extractConfirmedFacts(coverage.coveredAsks, citations);
+  const confirmedFacts = extractConfirmedFacts(coverage.coveredAsks, citations, params.question);
   const missingLabels = coverage.missingAsks.map((ask) => ask.label);
 
   const modelClaimCheck = applyClaimCheckGuardrails({
@@ -419,14 +701,14 @@ export function normalizeAnswerOutput(params: {
   let answer: string;
   let outcome: "FULL" | "PARTIAL";
 
-  if (missingLabels.length > 0) {
+  if (coverage.missingAsks.length > 0) {
     if (confirmedFacts.length > 0) {
       answer = formatPartialAnswer(confirmedFacts, missingLabels);
-      outcome = "PARTIAL";
     } else {
       answer = NOT_SPECIFIED_RESPONSE_TEXT;
-      outcome = "PARTIAL";
     }
+
+    outcome = "PARTIAL";
   } else {
     answer = buildFullAnswer(confirmedFacts);
     outcome = "FULL";
@@ -438,24 +720,42 @@ export function normalizeAnswerOutput(params: {
     return NOT_FOUND_RESPONSE;
   }
 
+  if (params.modelHadFormatViolation && !containsNotSpecified(answer) && outcome === "FULL") {
+    outcome = "PARTIAL";
+    answer = formatPartialAnswer(confirmedFacts, missingLabels.length > 0 ? missingLabels : ["additional detail context"]);
+  }
+
+  const hasNotSpecified = containsNotSpecified(answer);
+  const overlapTotal = params.overlapScores.reduce((sum, score) => sum + score, 0);
+  const avgOverlap = params.overlapScores.length > 0 ? overlapTotal / params.overlapScores.length : 0;
+  const anyZeroOverlap = params.overlapScores.some((score) => score <= 0);
+
   let needsReview =
     outcome === "PARTIAL" ||
     params.modelNeedsReview ||
     modelHadUnsupportedClaims ||
-    containsNotSpecified(answer);
+    params.modelHadFormatViolation ||
+    hasNotSpecified;
 
-  let confidence: "low" | "med" | "high";
+  let confidence: "low" | "med" | "high" = "low";
 
   if (outcome === "PARTIAL") {
-    confidence = "low";
+    confidence = coverage.missingAsks.length <= 1 && avgOverlap >= 3 ? "med" : "low";
   } else {
-    confidence = params.modelConfidence === "high" ? "high" : "med";
-    if (needsReview) {
+    if (!needsReview) {
+      confidence = params.modelConfidence === "high" && avgOverlap >= 3 ? "high" : "med";
+    } else {
       confidence = "low";
     }
   }
 
-  if (shouldCapConfidenceToMed(params.question, coverage.missingAsks) && confidence === "high") {
+  if (needsReview || hasNotSpecified || anyZeroOverlap) {
+    if (confidence === "high") {
+      confidence = "med";
+    }
+  }
+
+  if (needsReview && confidence === "high") {
     confidence = "med";
   }
 
@@ -472,60 +772,112 @@ export function normalizeAnswerOutput(params: {
 }
 
 async function runAnswerAttempt(params: {
-  organizationId: string;
   question: string;
-  questionEmbedding: number[];
-  topK: number;
+  scoredChunks: ScoredChunk[];
 }): Promise<AttemptResult> {
-  const retrievedChunks = await retrieveTopChunks({
-    organizationId: params.organizationId,
-    questionEmbedding: params.questionEmbedding,
-    questionText: params.question,
-    topK: params.topK
-  });
+  const selectedChunks = params.scoredChunks.slice(0, MAX_ANSWER_CHUNKS);
+  const bestSimilarity = selectedChunks[0]?.similarity ?? 0;
+  const fallbackCitations = selectedChunks.map(buildCitationFromChunk);
 
-  const bestSimilarity = retrievedChunks[0]?.similarity ?? 0;
-  const fallbackCitations = retrievedChunks.slice(0, MAX_CITATIONS + 1).map(buildCitationFromChunk);
-
-  if (!hasSufficientEvidence(retrievedChunks)) {
+  if (selectedChunks.length === 0 || bestSimilarity < MIN_TOP_SIMILARITY) {
     return {
       bestSimilarity,
       modelAnswer: NOT_FOUND_TEXT,
       modelConfidence: "low",
       modelNeedsReview: true,
+      modelHadFormatViolation: false,
       citationsFromModel: [],
-      fallbackCitations
+      fallbackCitations,
+      scoredChunks: selectedChunks
     };
   }
 
-  const groundedAnswer = await generateGroundedAnswer({
+  const snippets = selectedChunks.map((chunk) => ({
+    chunkId: chunk.chunkId,
+    docName: chunk.docName,
+    quotedSnippet: chunk.quotedSnippet
+  }));
+
+  const generation = await generateWithFormatEnforcement({
     question: params.question,
-    snippets: retrievedChunks.map((chunk) => ({
-      chunkId: chunk.chunkId,
-      docName: chunk.docName,
-      quotedSnippet: chunk.quotedSnippet
-    }))
+    snippets
   });
 
-  const chunkById = new Map(retrievedChunks.map((chunk) => [chunk.chunkId, chunk]));
-  const citationsFromModel = Array.from(new Set(groundedAnswer.citationChunkIds))
+  const chunkById = new Map(selectedChunks.map((chunk) => [chunk.chunkId, chunk]));
+  const citationsFromModel = Array.from(new Set(generation.output.citationChunkIds))
     .map((chunkId) => chunkById.get(chunkId))
-    .filter((value): value is RetrievedChunk => Boolean(value))
+    .filter((value): value is ScoredChunk => Boolean(value))
     .map(buildCitationFromChunk);
 
   return {
     bestSimilarity,
-    modelAnswer: groundedAnswer.answer,
-    modelConfidence: groundedAnswer.confidence,
-    modelNeedsReview: groundedAnswer.needsReview,
+    modelAnswer: generation.output.answer,
+    modelConfidence: generation.output.confidence,
+    modelNeedsReview: generation.output.needsReview,
+    modelHadFormatViolation: generation.hadFormatViolation,
     citationsFromModel,
-    fallbackCitations
+    fallbackCitations,
+    scoredChunks: selectedChunks
   };
 }
 
 function selectCitationsForNormalization(question: string, attempt: AttemptResult): Citation[] {
+  if (
+    attempt.modelHadFormatViolation &&
+    attempt.modelAnswer.trim() === NOT_FOUND_TEXT &&
+    attempt.citationsFromModel.length === 0
+  ) {
+    return [];
+  }
+
   const merged = dedupeCitations([...attempt.citationsFromModel, ...attempt.fallbackCitations]);
   return selectRelevantCitations(question, merged);
+}
+
+async function retrieveRelevantChunks(params: {
+  organizationId: string;
+  question: string;
+  questionEmbedding: number[];
+}): Promise<ScoredChunk[]> {
+  const initialChunks = await retrieveTopChunks({
+    organizationId: params.organizationId,
+    questionEmbedding: params.questionEmbedding,
+    questionText: params.question,
+    topK: TOP_K
+  });
+
+  let filtered = filterAndRerankChunks(params.question, initialChunks);
+  if (filtered.length > 0) {
+    return filtered;
+  }
+
+  const retryChunks = await retrieveTopChunks({
+    organizationId: params.organizationId,
+    questionEmbedding: params.questionEmbedding,
+    questionText: params.question,
+    topK: RETRY_TOP_K
+  });
+
+  filtered = filterAndRerankChunks(params.question, retryChunks);
+  return filtered;
+}
+
+async function retryWithAdditionalChunks(params: {
+  organizationId: string;
+  question: string;
+  questionEmbedding: number[];
+  excludeChunkIds: Set<string>;
+}): Promise<ScoredChunk[]> {
+  const retryChunks = await retrieveTopChunks({
+    organizationId: params.organizationId,
+    questionEmbedding: params.questionEmbedding,
+    questionText: params.question,
+    topK: RETRY_TOP_K
+  });
+
+  return filterAndRerankChunks(params.question, retryChunks).filter(
+    (chunk) => !params.excludeChunkIds.has(chunk.chunkId)
+  );
 }
 
 export async function answerQuestionWithEvidence(params: {
@@ -543,44 +895,57 @@ export async function answerQuestionWithEvidence(params: {
   }
 
   const questionEmbedding = await createEmbedding(question);
-
-  let attempt = await runAnswerAttempt({
+  const relevantChunks = await retrieveRelevantChunks({
     organizationId: params.organizationId,
     question,
-    questionEmbedding,
-    topK: TOP_K
+    questionEmbedding
   });
 
-  if (attempt.bestSimilarity < MIN_TOP_SIMILARITY) {
+  if (relevantChunks.length === 0 || relevantChunks[0].similarity < MIN_TOP_SIMILARITY) {
     return NOT_FOUND_RESPONSE;
   }
 
-  let citations = selectCitationsForNormalization(question, attempt);
+  let attempt = await runAnswerAttempt({
+    question,
+    scoredChunks: relevantChunks
+  });
 
+  let citations = selectCitationsForNormalization(question, attempt);
   if (citations.length === 0 && attempt.bestSimilarity >= MIN_TOP_SIMILARITY) {
-    attempt = await runAnswerAttempt({
+    const retryChunks = await retryWithAdditionalChunks({
       organizationId: params.organizationId,
       question,
       questionEmbedding,
-      topK: RETRY_TOP_K
+      excludeChunkIds: new Set(attempt.scoredChunks.map((chunk) => chunk.chunkId))
     });
 
-    if (attempt.bestSimilarity < MIN_TOP_SIMILARITY) {
-      return NOT_FOUND_RESPONSE;
-    }
+    if (retryChunks.length > 0) {
+      const retryAttempt = await runAnswerAttempt({
+        question,
+        scoredChunks: retryChunks
+      });
 
-    citations = selectCitationsForNormalization(question, attempt);
+      const retryCitations = selectCitationsForNormalization(question, retryAttempt);
+      if (retryCitations.length > 0) {
+        attempt = retryAttempt;
+        citations = retryCitations;
+      }
+    }
   }
 
-  if (citations.length === 0) {
+  if (citations.length === 0 || attempt.bestSimilarity < MIN_TOP_SIMILARITY) {
     return NOT_FOUND_RESPONSE;
   }
+
+  const overlapByChunk = new Map(attempt.scoredChunks.map((chunk) => [chunk.chunkId, chunk.overlapScore]));
 
   return normalizeAnswerOutput({
     question,
     modelAnswer: attempt.modelAnswer,
     modelConfidence: attempt.modelConfidence,
     modelNeedsReview: attempt.modelNeedsReview,
-    citations
+    modelHadFormatViolation: attempt.modelHadFormatViolation,
+    citations,
+    overlapScores: citations.map((citation) => overlapByChunk.get(citation.chunkId) ?? 0)
   });
 }
