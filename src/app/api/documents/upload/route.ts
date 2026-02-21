@@ -10,6 +10,8 @@ function toFriendlyName(filename: string): string {
 }
 
 export async function POST(request: Request) {
+  let createdDocumentId: string | null = null;
+
   try {
     const formData = await request.formData();
     const fileEntry = formData.get("file");
@@ -35,6 +37,7 @@ export async function POST(request: Request) {
         status: "UPLOADED"
       }
     });
+    createdDocumentId = document.id;
 
     const text = await extractText(fileEntry);
 
@@ -91,6 +94,17 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     console.error("Failed to upload document", error);
+    if (createdDocumentId) {
+      await prisma.document
+        .update({
+          where: { id: createdDocumentId },
+          data: { status: "ERROR" }
+        })
+        .catch(() => {
+          // Keep original request error as source of truth for response path.
+        });
+    }
+
     return NextResponse.json({ error: "Failed to upload document" }, { status: 500 });
   }
 }

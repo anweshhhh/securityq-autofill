@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { GET as listDocuments } from "../route";
 import { POST } from "./route";
@@ -44,6 +44,7 @@ describe.sequential("/api/documents/upload", () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await cleanupTestDocuments();
   });
 
@@ -108,5 +109,56 @@ describe.sequential("/api/documents/upload", () => {
     expect(listResponse.status).toBe(200);
     expect(listedDocument).toBeDefined();
     expect(listedDocument?.chunkCount).toBe(uploadPayload.document?.chunkCount);
+  });
+
+  it("uploads md without relying on mime type and stores chunks", async () => {
+    const fileName = `${TEST_FILE_PREFIX}${Date.now()}.md`;
+    const text = "# Access Controls\n\nWe enforce SAML SSO and MFA.";
+
+    const formData = new FormData();
+    formData.append("file", new File([text], fileName));
+
+    const uploadRequest = new Request("http://localhost/api/documents/upload", {
+      method: "POST",
+      body: formData
+    });
+
+    const uploadResponse = await POST(uploadRequest);
+    const uploadPayload = (await uploadResponse.json()) as {
+      document?: {
+        id: string;
+        status: string;
+        chunkCount: number;
+      };
+    };
+
+    expect(uploadResponse.status).toBe(201);
+    expect(uploadPayload.document?.status).toBe("CHUNKED");
+    expect(uploadPayload.document?.chunkCount).toBeGreaterThan(0);
+  });
+
+  it("marks document as ERROR when chunk persistence fails", async () => {
+    const fileName = `${TEST_FILE_PREFIX}${Date.now()}.md`;
+    const text = "# Failure Path\n\nThis should fail while storing chunks.";
+
+    vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("simulated failure"));
+
+    const formData = new FormData();
+    formData.append("file", new File([text], fileName, { type: "text/markdown" }));
+
+    const uploadRequest = new Request("http://localhost/api/documents/upload", {
+      method: "POST",
+      body: formData
+    });
+
+    const uploadResponse = await POST(uploadRequest);
+    expect(uploadResponse.status).toBe(500);
+
+    const failedDocument = await prisma.document.findFirst({
+      where: { originalName: fileName }
+    });
+
+    expect(failedDocument).not.toBeNull();
+    expect(failedDocument?.status).toBe("ERROR");
   });
 });

@@ -7,7 +7,7 @@ export const RETRIEVAL_SQL = `
 SELECT
   dc."id" AS "chunkId",
   d."name" AS "docName",
-  LEFT(dc."content", $4) AS "quotedSnippet",
+  LEFT(dc."content", $4::int) AS "quotedSnippet",
   (dc."embedding" <=> $1::vector) AS "distance"
 FROM "DocumentChunk" dc
 JOIN "Document" d ON d."id" = dc."documentId"
