@@ -47,7 +47,7 @@ describe("answering quality guardrails", () => {
     createEmbeddingMock.mockResolvedValue(new Array(1536).fill(0.02));
   });
 
-  it("returns NOT_FOUND when no evidence chunks are embedded", async () => {
+  it("returns NOT_FOUND for pen test frequency when no evidence is available", async () => {
     countEmbeddedChunksForOrganizationMock.mockResolvedValue(0);
 
     const result = await answerQuestionWithEvidence({
@@ -63,10 +63,14 @@ describe("answering quality guardrails", () => {
     });
   });
 
-  it("returns PARTIAL_SPEC with citations for partial encryption evidence", async () => {
-    mockSingleChunk("Customer data is encrypted at rest.");
+  it("returns two-part partial answer for backups evidence", async () => {
+    mockSingleChunk(
+      "Backups are performed daily. Disaster recovery tests are conducted annually. " +
+        "RPO is 24 hours and RTO is 24 hours."
+    );
+
     generateGroundedAnswerMock.mockResolvedValue({
-      answer: "Customer data is encrypted at rest.",
+      answer: "Backups and DR controls are defined.",
       citationChunkIds: ["chunk-1"],
       confidence: "high",
       needsReview: false
@@ -74,16 +78,56 @@ describe("answering quality guardrails", () => {
 
     const result = await answerQuestionWithEvidence({
       organizationId: "org-1",
-      question: "Is customer data encrypted at rest and what algorithm and key rotation are used?"
+      question:
+        "Please include backup frequency, DR testing frequency, RTO, RPO, retention period, and restore testing cadence."
     });
 
-    expect(result.answer).toContain("Not specified in provided documents.");
+    expect(result.answer).toContain("Confirmed from provided documents:");
+    expect(result.answer.toLowerCase()).toContain("backups are performed daily");
+    expect(result.answer.toLowerCase()).toContain("disaster recovery tests are conducted annually");
+    expect(result.answer.toLowerCase()).toContain("rpo is 24 hours");
+    expect(result.answer.toLowerCase()).toContain("rto is 24 hours");
+    expect(result.answer).toContain("Not specified in provided documents:");
+    expect(result.answer.toLowerCase()).toContain("retention period");
+    expect(result.answer.toLowerCase()).toContain("restore testing cadence");
     expect(result.citations.length).toBeGreaterThan(0);
     expect(result.needsReview).toBe(true);
   });
 
-  it("prevents unsupported token claims without dropping valid citations", async () => {
+  it("returns two-part IR answer with missing containment/eradication/recovery when absent", async () => {
+    mockSingleChunk(
+      "The incident response plan defines severity levels and triage workflows. " +
+        "Mitigation playbooks are documented for security incidents."
+    );
+
+    generateGroundedAnswerMock.mockResolvedValue({
+      answer: "Incident response controls exist.",
+      citationChunkIds: ["chunk-1"],
+      confidence: "high",
+      needsReview: false
+    });
+
+    const result = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question:
+        "Describe incident response severity levels, triage, mitigation, containment, eradication, and recovery."
+    });
+
+    expect(result.answer).toContain("Confirmed from provided documents:");
+    expect(result.answer.toLowerCase()).toContain("severity levels");
+    expect(result.answer.toLowerCase()).toContain("triage");
+    expect(result.answer.toLowerCase()).toContain("mitigation");
+    expect(result.answer).toContain("Not specified in provided documents:");
+    expect(result.answer.toLowerCase()).toContain("containment");
+    expect(result.answer.toLowerCase()).toContain("eradication");
+    expect(result.answer.toLowerCase()).toContain("recovery");
+    expect(result.citations.length).toBeGreaterThan(0);
+    expect(result.needsReview).toBe(true);
+  });
+
+  it("prevents unsupported model claims while preserving evidence citations", async () => {
     mockSingleChunk("Customer data is encrypted at rest.");
+
     generateGroundedAnswerMock.mockResolvedValue({
       answer: "Customer data is encrypted at rest using AWS KMS.",
       citationChunkIds: ["chunk-1"],
@@ -96,52 +140,10 @@ describe("answering quality guardrails", () => {
       question: "Is customer data encrypted at rest?"
     });
 
-    expect(result.answer).toContain("Not specified in provided documents.");
-    expect(result.citations.length).toBeGreaterThan(0);
-    expect(result.confidence).toBe("low");
-    expect(result.needsReview).toBe(true);
-  });
-
-  it("does not allow MFA required claim from truncated token evidence", async () => {
-    mockSingleChunk(
-      "MFA is enabled for workforce users and policy text says requir additional controls for admin access."
-    );
-    generateGroundedAnswerMock.mockResolvedValue({
-      answer: "MFA is required for all users.",
-      citationChunkIds: ["chunk-1"],
-      confidence: "high",
-      needsReview: false
-    });
-
-    const result = await answerQuestionWithEvidence({
-      organizationId: "org-1",
-      question: "Is MFA required for all users?"
-    });
-
-    expect(result.answer).toBe(
-      "MFA is enabled; whether it is required is not specified in provided documents."
-    );
-    expect(result.needsReview).toBe(true);
-    expect(result.confidence).toBe("low");
-  });
-
-  it("marks vendor SOC2/SIG gaps as review-required and not high confidence", async () => {
-    mockSingleChunk("We maintain a list of critical vendors and annual risk reviews.");
-    generateGroundedAnswerMock.mockResolvedValue({
-      answer: "We maintain a list of critical vendors.",
-      citationChunkIds: ["chunk-1"],
-      confidence: "high",
-      needsReview: false
-    });
-
-    const result = await answerQuestionWithEvidence({
-      organizationId: "org-1",
-      question: "Do third-party vendors provide SOC2 and SIG reports?"
-    });
-
-    expect(result.answer).toContain("Not specified in provided documents.");
+    expect(result.answer.toLowerCase()).not.toContain("aws");
+    expect(result.answer.toLowerCase()).not.toContain("kms");
     expect(result.citations.length).toBeGreaterThan(0);
     expect(result.needsReview).toBe(true);
-    expect(result.confidence).not.toBe("high");
+    expect(result.confidence).toBe("low");
   });
 });

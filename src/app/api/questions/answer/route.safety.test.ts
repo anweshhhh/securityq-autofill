@@ -65,7 +65,8 @@ describe("/api/questions/answer safety hardening", () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(payload.answer).toBe("Not specified in provided documents.");
+    expect(payload.answer.toLowerCase()).not.toContain("aws");
+    expect(payload.answer.toLowerCase()).not.toContain("kms");
     expect(payload.confidence).toBe("low");
     expect(payload.needsReview).toBe(true);
     expect(payload.citations.length).toBeGreaterThan(0);

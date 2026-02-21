@@ -435,3 +435,34 @@ This resolves the remaining observed failures: partial answers cannot carry misl
 3. `npm test`
 4. `npm run dev`
 5. Run IR / pen-test / encryption-detail / vendor SOC2+SIG questions in `/ask` and confirm outcome taxonomy behavior
+
+## Day 4 QA hardening v5: two-part answers
+
+### What changed
+
+- Updated shared answering logic to avoid overblocking partial evidence.
+- PARTIAL responses now use a deterministic two-part template:
+  - `Confirmed from provided documents:` bullet facts extracted from cited snippets
+  - `Not specified in provided documents:` bullet list of missing requested details
+- NOT_FOUND remains strict:
+  - exact `Not found in provided documents.`
+  - empty citations
+- Added deterministic ask extraction from question patterns (`include`, `specify`, parenthetical asks, frequency, retention, RTO/RPO, by whom, TLS/ciphers/HSTS, scope, keys, algorithm, timelines, SOC2/SIG, etc.).
+- Coverage scoring now uses asks list to decide FULL vs PARTIAL and missing detail labels.
+- Relevance handling improved:
+  - each citation must match question key terms
+  - if first pass is irrelevant but similarity is strong, retrieval retries once with higher `k`
+  - prefers 1-2 strongest citations to reduce noise
+
+### Why it matters
+
+Users now get actionable partial answers that preserve real evidence instead of losing useful facts behind a blanket `Not specified...` response.
+
+### Verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate deploy`
+3. `npm test`
+4. `npm run dev`
+5. Ask backup/IR/pen-test/vendor-detail questions at `/ask`
+6. Confirm partial outputs include both confirmed facts and explicit missing details, with non-empty citations when evidence exists

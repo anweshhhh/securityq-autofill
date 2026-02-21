@@ -32,12 +32,14 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
   - outcome taxonomy is deterministic:
     - FOUND => cited answer with non-empty citations
     - NOT_FOUND => exact `Not found in provided documents.` and empty citations
-    - PARTIAL_SPEC => answer contains `Not specified in provided documents.` and keeps citations to partial evidence
-  - if snippets are insufficient for a detail, answer uses `Not specified in provided documents.`
+    - PARTIAL_SPEC => two-part answer:
+      - `Confirmed from provided documents:` facts list
+      - `Not specified in provided documents:` missing details list
+      and keeps citations to partial evidence
+  - if snippets are insufficient for requested details, partial answers list missing details explicitly instead of collapsing the full response
   - deterministic claim-check downgrades unsupported claims to low confidence + needsReview
   - vendors/tools/algorithms are blocked unless terms appear in cited snippets
-  - partial/not-specified answers retain citations to the partial supporting evidence
-  - citation relevance filter drops unrelated snippets using question-term overlap
+  - citation relevance filter keeps only snippets with question-term overlap and retries retrieval once with larger top-k if needed
   - deterministic `normalizeAnswerOutput` post-processor is the single source of truth for all answer guardrails
   - coverage scoring marks missing requested details (SOC2/SIG/algorithm/scope/keys/rto/rpo/etc.) for review and caps confidence
   - MFA `required` is only allowed when evidence contains `required` or `must`/`enforced` near MFA; otherwise answer is rewritten to requirement-not-specified
