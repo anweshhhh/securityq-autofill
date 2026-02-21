@@ -28,6 +28,10 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
 - Document lifecycle clarity: `errorMessage` persisted on failed uploads and shown in UI
 - Embeddings pipeline with OpenAI `text-embedding-3-small` and pgvector `vector(1536)` storage
 - Retrieval + cited single-question answering at `/api/questions/answer`
+- Evidence-bounded answer guardrails:
+  - if snippets are insufficient for a detail, answer uses `Not specified in provided documents.`
+  - deterministic claim-check downgrades unsupported claims to low confidence + needsReview
+  - vendors/tools/algorithms are blocked unless terms appear in cited snippets
 - `/ask` UI for one-question evidence-grounded responses
 - Questionnaire CSV import + question-column selection + batch autofill + CSV export
 - `/questionnaires` UI for import, preview, autofill/resume, rerun-missing, archive, and export actions
@@ -90,6 +94,7 @@ Current required variables:
 - Avoid extras not requested in the prompt; prefer small, reviewable increments
 - Keep each change easy to verify locally
 - Prefer resumable operations and DB-backed progress for long-running tasks
+- Keep answer quality deterministic: strict prompt constraints plus post-generation claim checks
 
 ## 9) Next Milestones
 

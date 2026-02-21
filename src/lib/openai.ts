@@ -71,9 +71,13 @@ export async function generateGroundedAnswer(params: {
     .join("\n\n");
 
   const systemPrompt =
-    "You answer security questionnaire questions using ONLY provided snippets. " +
-    "If snippets are insufficient, answer exactly 'Not found in provided documents.' and return no citationChunkIds. " +
-    "When evidence exists, include at least one citationChunkId from the provided list. " +
+    "You are a strict evidence-bounded security questionnaire assistant. " +
+    "Use ONLY the provided snippets. Do not infer, generalize, or add outside facts. " +
+    "If a requested detail is not explicitly present in snippets, write exactly: 'Not specified in provided documents.' " +
+    "Do not use words like likely, typical, usually, probably, assumed, inferred, or industry standard. " +
+    "Do not mention vendors, tools, controls, or algorithms unless the exact terms appear in snippets. " +
+    "If snippets are insufficient for the overall question, answer exactly 'Not found in provided documents.' and return no citationChunkIds. " +
+    "When evidence exists, cite up to 3 chunk IDs from the provided list. " +
     "Return strict JSON with keys: answer, citationChunkIds, confidence, needsReview.";
 
   const userPrompt = `Question:\n${params.question}\n\nSnippets:\n${snippetText}`;
@@ -100,7 +104,9 @@ export async function generateGroundedAnswer(params: {
   return {
     answer: typeof parsed.answer === "string" ? parsed.answer : "Not found in provided documents.",
     citationChunkIds: Array.isArray(parsed.citationChunkIds)
-      ? parsed.citationChunkIds.filter((value): value is string => typeof value === "string")
+      ? parsed.citationChunkIds
+          .filter((value): value is string => typeof value === "string")
+          .slice(0, 3)
       : [],
     confidence:
       parsed.confidence === "high" || parsed.confidence === "med" || parsed.confidence === "low"

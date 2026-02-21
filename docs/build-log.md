@@ -293,3 +293,41 @@ Users can now inspect outputs, selectively improve completion after adding evide
 6. Create/import questionnaire, run autofill, then click `View` to inspect row-level answers/citations
 7. Click `Re-run Missing` after adding evidence and confirm only missing rows are retried
 8. Click `Archive` and confirm it disappears from the main list
+
+## Day 4 QA hardening: evidence-bounded answers
+
+### What we shipped
+
+- Hardened the shared answer engine used by both:
+  - `POST /api/questions/answer`
+  - questionnaire autofill and rerun-missing flows
+- Tightened model instructions to be evidence-bounded:
+  - only use provided snippets
+  - if a detail is not explicit, use `Not specified in provided documents.`
+  - no inferred vendors/tools/algorithms
+- Added deterministic post-generation claim check:
+  - extract key tokens from answer (versions, ALLCAPS, long terms, hyphenated specs, etc.)
+  - compare tokens against cited snippets
+  - if unsupported tokens appear, rewrite to `Not specified in provided documents.`, set `confidence=low`, `needsReview=true`
+- Improved citation snippet quality:
+  - larger snippet windows (~520 chars)
+  - context-focused substring selection
+  - cap citations to 3
+- Added tests for:
+  - unsupported vendor claim (`AWS`/`KMS`) downgrade
+  - partial evidence (`MFA enabled` must not become `MFA required`)
+  - route-level safety behavior with mocked LLM/retrieval
+
+### Why it matters
+
+This closes a key trust gap: answers are now constrained to evidence, unsupported specifics are programmatically suppressed, and confidence/needsReview are evidence-driven instead of model-only.
+
+### Verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate deploy`
+3. `npm test`
+4. `npm run dev`
+5. Upload docs and run embeddings (`POST /api/documents/embed`)
+6. Ask questions at `http://localhost:3000/ask`
+7. Confirm outputs never introduce unsupported vendor/tool/algorithm details

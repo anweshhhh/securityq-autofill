@@ -5,15 +5,31 @@ describe("retrieveTopChunks", () => {
   it("builds pgvector query and returns deterministic ordering", async () => {
     const mockDb = {
       $queryRawUnsafe: vi.fn().mockResolvedValue([
-        { chunkId: "chunk-b", docName: "Doc B", quotedSnippet: "snippet-b", distance: 0.2 },
-        { chunkId: "chunk-a", docName: "Doc A", quotedSnippet: "snippet-a", distance: 0.2 },
-        { chunkId: "chunk-c", docName: "Doc C", quotedSnippet: "snippet-c", distance: 0.7 }
+        {
+          chunkId: "chunk-b",
+          docName: "Doc B",
+          content: "this snippet includes tls 1.2 and encryption details in context",
+          distance: 0.2
+        },
+        {
+          chunkId: "chunk-a",
+          docName: "Doc A",
+          content: "sso is enabled and mfa is enabled for all user logins",
+          distance: 0.2
+        },
+        {
+          chunkId: "chunk-c",
+          docName: "Doc C",
+          content: "miscellaneous policy notes",
+          distance: 0.7
+        }
       ])
     };
 
     const result = await retrieveTopChunks({
       organizationId: "org-1",
       questionEmbedding: [0.1, 0.2, 0.3],
+      questionText: "Is TLS 1.2 enabled?",
       topK: 3,
       db: mockDb
     });
@@ -30,5 +46,6 @@ describe("retrieveTopChunks", () => {
     expect(result.map((chunk) => chunk.chunkId)).toEqual(["chunk-a", "chunk-b", "chunk-c"]);
     expect(result[0].similarity).toBeCloseTo(0.8, 5);
     expect(result[2].similarity).toBeCloseTo(0.3, 5);
+    expect(result[1].quotedSnippet.toLowerCase()).toContain("tls 1.2");
   });
 });
