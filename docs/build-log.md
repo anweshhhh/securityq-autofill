@@ -787,3 +787,51 @@ A strong evidence product depends first on:
    - MFA admin/RBAC/hosting/log retention questions return cited answers when matching evidence exists
    - secrets/tenant isolation/physical security/security contact return exact `Not found in provided documents.` when category evidence is absent
    - log retention output and citations show `30-90` (not malformed replacement character)
+
+## Day 4 hardening: notFoundReason + missing evidence report
+
+### What changed
+
+- Extended shared answer output with deterministic `notFoundReason` for NOT_FOUND outcomes:
+  - `NO_RELEVANT_EVIDENCE`
+  - `RETRIEVAL_BELOW_THRESHOLD`
+  - `FILTERED_AS_IRRELEVANT`
+- Added deterministic reason classification in the shared path used by both single-question and questionnaire autofill flows.
+- Persisted `Question.notFoundReason` in Prisma and batch/rerun writes:
+  - set on exact NOT_FOUND answers
+  - cleared to `null` on FOUND/PARTIAL
+- Export now appends `NotFoundReason` column after `Needs Review`.
+- Questionnaire details now show:
+  - per-row `NotFoundReason`
+  - Missing Evidence Report (grouped NOT_FOUND counts by detected category + recommended next upload)
+
+### Why this helps
+
+- Separates true evidence gaps from retrieval-quality issues.
+- Gives users an actionable upload plan instead of a generic NOT_FOUND bucket.
+- Keeps trust model deterministic and inspectable.
+
+### Tests added/updated
+
+- `src/lib/answering.quality.test.ts`
+  - Secrets no-evidence case returns `NO_RELEVANT_EVIDENCE`
+  - Low similarity case returns `RETRIEVAL_BELOW_THRESHOLD`
+  - Relevance-drop case returns `FILTERED_AS_IRRELEVANT`
+- `src/lib/export.test.ts`
+  - `NotFoundReason` column exists and values are exported
+- `src/app/api/questionnaires/[id]/autofill/route.test.ts`
+  - persists `notFoundReason`
+  - export includes `NotFoundReason` header and values
+- `src/app/api/questionnaires/[id]/rerun-missing/route.test.ts`
+  - clears `notFoundReason` on found rerun
+  - persists new `notFoundReason` on remaining NOT_FOUND
+
+### Verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate deploy`
+3. `npm test`
+4. Open `/questionnaires/[id]` and confirm:
+   - NOT_FOUND rows show `NotFoundReason`
+   - Missing Evidence Report groups by category with recommendations
+5. Export CSV and confirm `NotFoundReason` column is present and populated for NOT_FOUND rows.

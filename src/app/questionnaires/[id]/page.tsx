@@ -14,10 +14,12 @@ type QuestionRow = {
   id: string;
   rowIndex: number;
   text: string;
+  category: string;
   answer: string | null;
   citations: Citation[];
   confidence: string | null;
   needsReview: boolean | null;
+  notFoundReason: string | null;
 };
 
 type QuestionnaireDetailsPayload = {
@@ -36,6 +38,11 @@ type QuestionnaireDetailsPayload = {
     updatedAt: string;
   };
   questions: QuestionRow[];
+  missingEvidenceReport: Array<{
+    category: string;
+    count: number;
+    recommendation: string;
+  }>;
   error?: string;
 };
 
@@ -76,6 +83,7 @@ export default function QuestionnaireDetailsPage() {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [filter, setFilter] = useState<QuestionFilter>("ALL");
+  const [showMissingReport, setShowMissingReport] = useState(false);
 
   const loadDetails = useCallback(async () => {
     setIsLoading(true);
@@ -96,7 +104,8 @@ export default function QuestionnaireDetailsPage() {
         questions: (payload.questions ?? []).map((question) => ({
           ...question,
           citations: normalizeCitations(question.citations)
-        }))
+        })),
+        missingEvidenceReport: payload.missingEvidenceReport ?? []
       });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to load questionnaire");
@@ -193,12 +202,48 @@ export default function QuestionnaireDetailsPage() {
             </button>
           </section>
 
+          <section>
+            <button
+              type="button"
+              onClick={() => setShowMissingReport((current) => !current)}
+              disabled={data.missingEvidenceReport.length === 0}
+            >
+              {showMissingReport ? "Hide Missing Evidence Report" : "Show Missing Evidence Report"}
+            </button>
+            {showMissingReport ? (
+              data.missingEvidenceReport.length === 0 ? (
+                <p>No missing evidence report entries.</p>
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Category</th>
+                      <th>Not Found Count</th>
+                      <th>Recommended Upload</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.missingEvidenceReport.map((entry) => (
+                      <tr key={entry.category}>
+                        <td>{entry.category}</td>
+                        <td>{entry.count}</td>
+                        <td>{entry.recommendation}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )
+            ) : null}
+          </section>
+
           <table>
             <thead>
               <tr>
                 <th>Row</th>
                 <th>Question</th>
+                <th>Category</th>
                 <th>Answer</th>
+                <th>NotFoundReason</th>
                 <th>Confidence</th>
                 <th>Needs Review</th>
                 <th>Citations</th>
@@ -207,14 +252,16 @@ export default function QuestionnaireDetailsPage() {
             <tbody>
               {filteredQuestions.length === 0 ? (
                 <tr>
-                  <td colSpan={6}>No questions for the selected filter.</td>
+                  <td colSpan={8}>No questions for the selected filter.</td>
                 </tr>
               ) : (
                 filteredQuestions.map((question) => (
                   <tr key={question.id}>
                     <td>{question.rowIndex}</td>
                     <td>{question.text || "n/a"}</td>
+                    <td>{question.category || "OTHER"}</td>
                     <td>{question.answer ?? "Not answered yet"}</td>
+                    <td>{question.notFoundReason ?? ""}</td>
                     <td>{question.confidence ?? "n/a"}</td>
                     <td>{question.needsReview ? "yes" : "no"}</td>
                     <td>

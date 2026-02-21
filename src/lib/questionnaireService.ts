@@ -1,6 +1,7 @@
 import {
   NOT_FOUND_RESPONSE,
   answerQuestionWithEvidence,
+  categorizeQuestion,
   type EvidenceDebugInfo
 } from "@/lib/answering";
 import { parseCsvFile } from "@/lib/csv";
@@ -59,10 +60,17 @@ export type QuestionnaireDetails = {
     id: string;
     rowIndex: number;
     text: string;
+    category: string;
     answer: string | null;
     citations: unknown;
     confidence: string | null;
     needsReview: boolean | null;
+    notFoundReason: string | null;
+  }>;
+  missingEvidenceReport: Array<{
+    category: string;
+    count: number;
+    recommendation: string;
   }>;
 };
 
@@ -93,6 +101,61 @@ function mapStatus(value: string): AutofillProgress["status"] {
   }
 
   return "PENDING";
+}
+
+function reportCategoryForQuestion(questionText: string): string {
+  const category = categorizeQuestion(questionText);
+  const normalized = questionText.toLowerCase();
+
+  if (category === "ENCRYPTION" && /\bin transit\b|\btls\b|cipher|hsts/.test(normalized)) {
+    return "ENCRYPTION_IN_TRANSIT";
+  }
+
+  if ((category === "VENDOR" || category === "SUBPROCESSORS_VENDOR") && /\bsoc\s*2\b|\bsoc2\b/.test(normalized)) {
+    return "SOC2";
+  }
+
+  return category;
+}
+
+const MISSING_EVIDENCE_RECOMMENDATIONS: Record<string, string> = {
+  SECRETS: "Secrets Management policy (storage/rotation of API keys, DB creds)",
+  PEN_TEST: "Pen test summary (frequency + who performs)",
+  ENCRYPTION_IN_TRANSIT: "Network/TLS policy (TLS versions/ciphers/HSTS)",
+  SECURITY_CONTACT: "Security contact email / vulnerability disclosure policy",
+  TENANT_ISOLATION: "Multi-tenant isolation architecture note",
+  HOSTING: "Hosting/regions overview",
+  RBAC_LEAST_PRIV: "Access control/RBAC policy",
+  SOC2: "SOC 2 report/bridge letter/summary"
+};
+
+function buildMissingEvidenceReport(
+  questions: Array<{ answer: string | null; text: string }>
+): Array<{ category: string; count: number; recommendation: string }> {
+  const counts = new Map<string, number>();
+
+  for (const question of questions) {
+    if (question.answer !== NOT_FOUND_RESPONSE.answer) {
+      continue;
+    }
+
+    const category = reportCategoryForQuestion(question.text);
+    counts.set(category, (counts.get(category) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .map(([category, count]) => ({
+      category,
+      count,
+      recommendation: MISSING_EVIDENCE_RECOMMENDATIONS[category] ?? "Upload category-specific control evidence."
+    }))
+    .sort((left, right) => {
+      if (left.count !== right.count) {
+        return right.count - left.count;
+      }
+
+      return left.category.localeCompare(right.category);
+    });
 }
 
 function progressFromQuestionnaire(questionnaire: {
@@ -251,7 +314,8 @@ export async function getQuestionnaireDetails(
           answer: true,
           citations: true,
           confidence: true,
-          needsReview: true
+          needsReview: true,
+          notFoundReason: true
         }
       }
     }
@@ -260,6 +324,11 @@ export async function getQuestionnaireDetails(
   if (!questionnaire) {
     return null;
   }
+
+  const questions = questionnaire.questions.map((question) => ({
+    ...question,
+    category: reportCategoryForQuestion(question.text)
+  }));
 
   return {
     questionnaire: {
@@ -276,7 +345,8 @@ export async function getQuestionnaireDetails(
       createdAt: questionnaire.createdAt,
       updatedAt: questionnaire.updatedAt
     },
-    questions: questionnaire.questions
+    questions,
+    missingEvidenceReport: buildMissingEvidenceReport(questions)
   };
 }
 
@@ -464,6 +534,8 @@ export async function processQuestionnaireAutofillBatch(params: {
           citations: answer.citations,
           confidence: answer.confidence,
           needsReview: answer.needsReview,
+          notFoundReason:
+            answer.answer === NOT_FOUND_RESPONSE.answer ? (answer.notFoundReason ?? null) : null,
           ...(sourceRowUpdate ? { sourceRow: sourceRowUpdate } : {})
         }
       });
@@ -603,6 +675,8 @@ export async function processQuestionnaireRerunMissingBatch(params: {
           citations: answer.citations,
           confidence: answer.confidence,
           needsReview: answer.needsReview,
+          notFoundReason:
+            answer.answer === NOT_FOUND_RESPONSE.answer ? (answer.notFoundReason ?? null) : null,
           lastRerunAt: new Date()
         }
       });

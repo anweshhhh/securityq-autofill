@@ -89,6 +89,7 @@ model Question {
   citations       Json
   confidence      String?
   needsReview     Boolean?
+  notFoundReason  String?
   lastRerunAt     DateTime?
   createdAt       DateTime      @default(now())
   approvedAnswers ApprovedAnswer[]

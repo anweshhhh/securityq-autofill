@@ -56,6 +56,10 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
   - citation relevance filter keeps only snippets with question-term overlap and retries retrieval once with larger top-k if needed
   - category-specific fact extraction prevents irrelevant `Confirmed...` bullets (for example secrets/tenant-isolation/security-contact now require category-relevant evidence terms)
   - strict categories (`SECRETS`, `TENANT_ISOLATION`, `PHYSICAL_SECURITY`, `SECURITY_CONTACT`, etc.) return exact NOT_FOUND when must-match/fact extraction finds no qualifying evidence
+  - deterministic `notFoundReason` labeling for NOT_FOUND:
+    - `NO_RELEVANT_EVIDENCE` (must-match/category evidence gap)
+    - `RETRIEVAL_BELOW_THRESHOLD` (top similarity below threshold)
+    - `FILTERED_AS_IRRELEVANT` (relevance filtering drops candidates)
   - deterministic `normalizeAnswerOutput` post-processor is the single source of truth for all answer guardrails
   - coverage scoring marks missing requested details (SOC2/SIG/algorithm/scope/keys/rto/rpo/etc.) for review and caps confidence
   - SDLC questions use default coverage asks (code review, branch protection, CI/CD, change management, dependency/AppSec testing) so responses are partial unless full evidence is present
@@ -68,7 +72,7 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
 - `/ask` UI for one-question evidence-grounded responses, with a `Show debug` toggle that sends `debug: true` and renders retrieval diagnostics
 - Questionnaire CSV import + question-column selection + batch autofill + CSV export
 - `/questionnaires` UI for import, preview, autofill/resume, rerun-missing, archive, and export actions
-- Questionnaire details page at `/questionnaires/[id]` with per-question answers/citations filters
+- Questionnaire details page at `/questionnaires/[id]` with per-question answers/citations filters, `NotFoundReason`, and a Missing Evidence Report grouped by category
 - Resumable autofill run state on `Questionnaire` (`PENDING/RUNNING/COMPLETED/FAILED`) with progress counters
 - Homepage shortcuts: `Go to Documents`, `Go to Questionnaires`, `Go to Ask`, `Open API Health`, `Open API Documents`
 

@@ -130,7 +130,8 @@ describe.sequential("questionnaire rerun-missing route", () => {
           answer: NOT_FOUND_RESPONSE.answer,
           citations: [],
           confidence: "low",
-          needsReview: true
+          needsReview: true,
+          notFoundReason: "NO_RELEVANT_EVIDENCE"
         },
         {
           questionnaireId: questionnaire.id,
@@ -140,7 +141,8 @@ describe.sequential("questionnaire rerun-missing route", () => {
           answer: NOT_FOUND_RESPONSE.answer,
           citations: [],
           confidence: "low",
-          needsReview: true
+          needsReview: true,
+          notFoundReason: "NO_RELEVANT_EVIDENCE"
         }
       ]
     });
@@ -152,7 +154,10 @@ describe.sequential("questionnaire rerun-missing route", () => {
         confidence: "med",
         needsReview: false
       })
-      .mockResolvedValueOnce(NOT_FOUND_RESPONSE);
+      .mockResolvedValueOnce({
+        ...NOT_FOUND_RESPONSE,
+        notFoundReason: "FILTERED_AS_IRRELEVANT"
+      });
 
     const response = await rerunMissing(new Request("http://localhost"), {
       params: { id: questionnaire.id }
@@ -181,7 +186,9 @@ describe.sequential("questionnaire rerun-missing route", () => {
     expect(questions[0].answer).toBe("Already found answer");
     expect(questions[0].citations).toEqual([{ docName: "Doc A", chunkId: "c0", quotedSnippet: "Proof A" }]);
     expect(questions[1].answer).toBe("Updated found answer");
+    expect(questions[1].notFoundReason).toBeNull();
     expect(questions[2].answer).toBe(NOT_FOUND_RESPONSE.answer);
+    expect(questions[2].notFoundReason).toBe("FILTERED_AS_IRRELEVANT");
 
     const updatedQuestionnaire = await prisma.questionnaire.findUnique({
       where: { id: questionnaire.id }

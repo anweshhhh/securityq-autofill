@@ -22,8 +22,14 @@ export type EvidenceAnswer = {
   citations: Citation[];
   confidence: "low" | "med" | "high";
   needsReview: boolean;
+  notFoundReason?: NotFoundReason;
   debug?: EvidenceDebugInfo;
 };
+
+export type NotFoundReason =
+  | "NO_RELEVANT_EVIDENCE"
+  | "RETRIEVAL_BELOW_THRESHOLD"
+  | "FILTERED_AS_IRRELEVANT";
 
 type AskDefinition = {
   id: string;
@@ -84,6 +90,7 @@ export type EvidenceDebugInfo = {
   afterMustMatch: EvidenceDebugChunk[];
   droppedByMustMatch?: Array<{ chunkId: string; docName: string; reason: string }>;
   finalCitations: Array<{ chunkId: string; docName: string }>;
+  notFoundReason?: NotFoundReason;
 };
 
 type AttemptResult = {
@@ -630,6 +637,24 @@ export const NOT_FOUND_RESPONSE: EvidenceAnswer = {
   confidence: "low",
   needsReview: true
 };
+
+function createNotFoundResponse(reason: NotFoundReason): EvidenceAnswer {
+  return {
+    ...NOT_FOUND_RESPONSE,
+    notFoundReason: reason
+  };
+}
+
+function withDebugInfo(answer: EvidenceAnswer, debugEnabled: boolean, debug: EvidenceDebugInfo): EvidenceAnswer {
+  if (!debugEnabled) {
+    return answer;
+  }
+
+  return {
+    ...answer,
+    debug
+  };
+}
 
 export function normalizeForMatch(value: string): string {
   return sanitizeExtractedText(value)
@@ -2069,6 +2094,19 @@ async function retryWithAdditionalChunks(params: {
   );
 }
 
+function classifyNotFoundAfterRetrieval(debug: EvidenceDebugInfo): NotFoundReason {
+  if (debug.afterMustMatch.length === 0) {
+    return "NO_RELEVANT_EVIDENCE";
+  }
+
+  const topSimilarity = debug.retrievedTopK[0]?.similarity ?? 0;
+  if (topSimilarity > 0 && topSimilarity < debug.threshold) {
+    return "RETRIEVAL_BELOW_THRESHOLD";
+  }
+
+  return "FILTERED_AS_IRRELEVANT";
+}
+
 export async function answerQuestionWithEvidence(params: {
   organizationId: string;
   question: string;
@@ -2085,13 +2123,19 @@ export async function answerQuestionWithEvidence(params: {
     droppedByMustMatch: [],
     finalCitations: []
   };
+
+  const returnNotFound = (reason: NotFoundReason): EvidenceAnswer => {
+    debugInfo.notFoundReason = reason;
+    return withDebugInfo(createNotFoundResponse(reason), debugEnabled, debugInfo);
+  };
+
   if (!question) {
-    return debugEnabled ? { ...NOT_FOUND_RESPONSE, debug: debugInfo } : NOT_FOUND_RESPONSE;
+    return returnNotFound("NO_RELEVANT_EVIDENCE");
   }
 
   const embeddedChunkCount = await countEmbeddedChunksForOrganization(params.organizationId);
   if (embeddedChunkCount === 0) {
-    return debugEnabled ? { ...NOT_FOUND_RESPONSE, debug: debugInfo } : NOT_FOUND_RESPONSE;
+    return returnNotFound("NO_RELEVANT_EVIDENCE");
   }
 
   const questionEmbedding = await createEmbedding(question);
@@ -2106,8 +2150,12 @@ export async function answerQuestionWithEvidence(params: {
   debugInfo.afterMustMatch = retrieved.debug.afterMustMatch;
   debugInfo.droppedByMustMatch = retrieved.debug.droppedByMustMatch;
 
-  if (relevantChunks.length === 0 || relevantChunks[0].similarity < MIN_TOP_SIMILARITY) {
-    return debugEnabled ? { ...NOT_FOUND_RESPONSE, debug: debugInfo } : NOT_FOUND_RESPONSE;
+  if (relevantChunks.length === 0) {
+    return returnNotFound(classifyNotFoundAfterRetrieval(debugInfo));
+  }
+
+  if (relevantChunks[0].similarity < MIN_TOP_SIMILARITY) {
+    return returnNotFound("RETRIEVAL_BELOW_THRESHOLD");
   }
 
   let attempt = await runAnswerAttempt({
@@ -2139,8 +2187,12 @@ export async function answerQuestionWithEvidence(params: {
     }
   }
 
-  if (citations.length === 0 || attempt.bestSimilarity < MIN_TOP_SIMILARITY) {
-    return debugEnabled ? { ...NOT_FOUND_RESPONSE, debug: debugInfo } : NOT_FOUND_RESPONSE;
+  if (attempt.bestSimilarity < MIN_TOP_SIMILARITY) {
+    return returnNotFound("RETRIEVAL_BELOW_THRESHOLD");
+  }
+
+  if (citations.length === 0) {
+    return returnNotFound("FILTERED_AS_IRRELEVANT");
   }
 
   const overlapByChunk = new Map(attempt.scoredChunks.map((chunk) => [chunk.chunkId, chunk.overlapScore]));
@@ -2168,16 +2220,14 @@ export async function answerQuestionWithEvidence(params: {
     }
   }
 
-  if (!debugEnabled) {
-    return normalized;
+  if (normalized.answer === NOT_FOUND_TEXT) {
+    return returnNotFound("NO_RELEVANT_EVIDENCE");
   }
 
   debugInfo.finalCitations = normalized.citations.map((citation) => ({
     chunkId: citation.chunkId,
     docName: citation.docName
   }));
-  return {
-    ...normalized,
-    debug: debugInfo
-  };
+
+  return withDebugInfo(normalized, debugEnabled, debugInfo);
 }

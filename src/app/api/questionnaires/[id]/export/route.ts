@@ -92,7 +92,8 @@ export async function GET(_request: Request, context: { params: { id: string } }
         answer: question.answer ?? "",
         citations: toCitations(question.citations),
         confidence: question.confidence ?? "",
-        needsReview: question.needsReview ?? true
+        needsReview: question.needsReview ?? true,
+        notFoundReason: question.notFoundReason ?? ""
       }))
     );
 

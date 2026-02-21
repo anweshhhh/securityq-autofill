@@ -85,9 +85,64 @@ describe("answering quality guardrails", () => {
       answer: "Not found in provided documents.",
       citations: [],
       confidence: "low",
-      needsReview: true
+      needsReview: true,
+      notFoundReason: "NO_RELEVANT_EVIDENCE"
     });
 
+    expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
+  });
+
+  it("labels NOT_FOUND as RETRIEVAL_BELOW_THRESHOLD when top similarity is low", async () => {
+    mockSingleChunk("Production workloads are hosted on AWS.", undefined, 0.2);
+
+    const result = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "Which cloud provider hosts production?"
+    });
+
+    expect(result).toEqual({
+      answer: "Not found in provided documents.",
+      citations: [],
+      confidence: "low",
+      needsReview: true,
+      notFoundReason: "RETRIEVAL_BELOW_THRESHOLD"
+    });
+    expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
+  });
+
+  it("labels NOT_FOUND as FILTERED_AS_IRRELEVANT when relevance gate drops chunks", async () => {
+    retrieveTopChunksMock
+      .mockResolvedValueOnce([
+        {
+          chunkId: "chunk-1",
+          docName: "Encryption Policy",
+          quotedSnippet: "Encryption is enabled for production data.",
+          fullContent: "Encryption is enabled for production data.",
+          similarity: 0.91
+        }
+      ])
+      .mockResolvedValueOnce([
+        {
+          chunkId: "chunk-1",
+          docName: "Encryption Policy",
+          quotedSnippet: "Encryption is enabled for production data.",
+          fullContent: "Encryption is enabled for production data.",
+          similarity: 0.91
+        }
+      ]);
+
+    const result = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "What TLS version, HSTS policy, and cipher suites are enforced for external traffic?"
+    });
+
+    expect(result).toEqual({
+      answer: "Not found in provided documents.",
+      citations: [],
+      confidence: "low",
+      needsReview: true,
+      notFoundReason: "FILTERED_AS_IRRELEVANT"
+    });
     expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
   });
 
@@ -199,7 +254,8 @@ describe("answering quality guardrails", () => {
       answer: "Not found in provided documents.",
       citations: [],
       confidence: "low",
-      needsReview: true
+      needsReview: true,
+      notFoundReason: "NO_RELEVANT_EVIDENCE"
     });
     expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
 
@@ -257,7 +313,8 @@ describe("answering quality guardrails", () => {
       answer: "Not found in provided documents.",
       citations: [],
       confidence: "low",
-      needsReview: true
+      needsReview: true,
+      notFoundReason: "NO_RELEVANT_EVIDENCE"
     });
     expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
   });
@@ -289,7 +346,8 @@ describe("answering quality guardrails", () => {
       answer: "Not found in provided documents.",
       citations: [],
       confidence: "low",
-      needsReview: true
+      needsReview: true,
+      notFoundReason: "NO_RELEVANT_EVIDENCE"
     });
     expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
   });
@@ -306,7 +364,8 @@ describe("answering quality guardrails", () => {
       answer: "Not found in provided documents.",
       citations: [],
       confidence: "low",
-      needsReview: true
+      needsReview: true,
+      notFoundReason: "NO_RELEVANT_EVIDENCE"
     });
     expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
   });
@@ -330,7 +389,8 @@ describe("answering quality guardrails", () => {
       answer: "Not found in provided documents.",
       citations: [],
       confidence: "low",
-      needsReview: true
+      needsReview: true,
+      notFoundReason: "NO_RELEVANT_EVIDENCE"
     });
   });
 
@@ -485,7 +545,8 @@ describe("answering quality guardrails", () => {
       answer: "Not found in provided documents.",
       citations: [],
       confidence: "low",
-      needsReview: true
+      needsReview: true,
+      notFoundReason: "NO_RELEVANT_EVIDENCE"
     });
     expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
   });

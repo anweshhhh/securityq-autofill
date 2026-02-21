@@ -96,6 +96,12 @@ describe.sequential("questionnaire autofill + export", () => {
   });
 
   it("autofills in resumable batches and exports csv columns", async () => {
+    const notFoundNoRelevant = { ...NOT_FOUND_RESPONSE, notFoundReason: "NO_RELEVANT_EVIDENCE" as const };
+    const notFoundBelowThreshold = {
+      ...NOT_FOUND_RESPONSE,
+      notFoundReason: "RETRIEVAL_BELOW_THRESHOLD" as const
+    };
+
     const organization = await getOrCreateDefaultOrganization();
 
     const questionnaire = await prisma.questionnaire.create({
@@ -135,7 +141,7 @@ describe.sequential("questionnaire autofill + export", () => {
         confidence: "high",
         needsReview: false
       })
-      .mockResolvedValueOnce(NOT_FOUND_RESPONSE)
+      .mockResolvedValueOnce(notFoundNoRelevant)
       .mockResolvedValueOnce({
         answer: "Found A3",
         citations: [
@@ -148,8 +154,8 @@ describe.sequential("questionnaire autofill + export", () => {
         confidence: "med",
         needsReview: false
       })
-      .mockResolvedValueOnce(NOT_FOUND_RESPONSE)
-      .mockResolvedValueOnce(NOT_FOUND_RESPONSE)
+      .mockResolvedValueOnce(notFoundNoRelevant)
+      .mockResolvedValueOnce(notFoundBelowThreshold)
       .mockResolvedValueOnce({
         answer: "Found A6",
         citations: [
@@ -162,7 +168,7 @@ describe.sequential("questionnaire autofill + export", () => {
         confidence: "high",
         needsReview: false
       })
-      .mockResolvedValueOnce(NOT_FOUND_RESPONSE);
+      .mockResolvedValueOnce(notFoundNoRelevant);
 
     const firstResponse = await runAutofill(new Request("http://localhost"), {
       params: { id: questionnaire.id }
@@ -193,6 +199,8 @@ describe.sequential("questionnaire autofill + export", () => {
     expect(updatedQuestions).toHaveLength(7);
     expect(updatedQuestions[0].answer).toBe("Found A1");
     expect(updatedQuestions[1].answer).toBe("Not found in provided documents.");
+    expect(updatedQuestions[1].notFoundReason).toBe("NO_RELEVANT_EVIDENCE");
+    expect(updatedQuestions[4].notFoundReason).toBe("RETRIEVAL_BELOW_THRESHOLD");
     expect(updatedQuestions[6].answer).toBe("Not found in provided documents.");
 
     const exportResponse = await exportCsv(new Request("http://localhost"), {
@@ -202,9 +210,11 @@ describe.sequential("questionnaire autofill + export", () => {
     expect(exportResponse.status).toBe(200);
 
     const exportCsvText = await exportResponse.text();
-    expect(exportCsvText).toContain('"Answer","Citations","Confidence","Needs Review"');
+    expect(exportCsvText).toContain('"Answer","Citations","Confidence","Needs Review","NotFoundReason"');
     expect(exportCsvText).toContain("Found A1");
     expect(exportCsvText).toContain("Not found in provided documents.");
     expect(exportCsvText).toContain("Security Doc#chunk-1");
+    expect(exportCsvText).toContain("NO_RELEVANT_EVIDENCE");
+    expect(exportCsvText).toContain("RETRIEVAL_BELOW_THRESHOLD");
   });
 });
