@@ -9,6 +9,24 @@ function toFriendlyName(filename: string): string {
   return withoutExtension || filename || "untitled-document";
 }
 
+function toErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim().slice(0, 280);
+  }
+
+  return fallback;
+}
+
+async function setDocumentError(documentId: string, reason: string) {
+  await prisma.document.update({
+    where: { id: documentId },
+    data: {
+      status: "ERROR",
+      errorMessage: reason
+    }
+  });
+}
+
 export async function POST(request: Request) {
   let createdDocumentId: string | null = null;
 
@@ -34,7 +52,8 @@ export async function POST(request: Request) {
         name: toFriendlyName(fileEntry.name),
         originalName: fileEntry.name,
         mimeType: inferMimeType(fileEntry),
-        status: "UPLOADED"
+        status: "UPLOADED",
+        errorMessage: null
       }
     });
     createdDocumentId = document.id;
@@ -42,10 +61,7 @@ export async function POST(request: Request) {
     const text = await extractText(fileEntry);
 
     if (!text.trim()) {
-      await prisma.document.update({
-        where: { id: document.id },
-        data: { status: "ERROR" }
-      });
+      await setDocumentError(document.id, "Uploaded file is empty after text extraction");
 
       return NextResponse.json(
         { error: "Uploaded file is empty", documentId: document.id },
@@ -55,10 +71,7 @@ export async function POST(request: Request) {
 
     const chunks = chunkText(text);
     if (chunks.length === 0) {
-      await prisma.document.update({
-        where: { id: document.id },
-        data: { status: "ERROR" }
-      });
+      await setDocumentError(document.id, "No chunks generated from extracted text");
 
       return NextResponse.json(
         { error: "No chunks generated", documentId: document.id },
@@ -76,7 +89,7 @@ export async function POST(request: Request) {
       }),
       prisma.document.update({
         where: { id: document.id },
-        data: { status: "CHUNKED" }
+        data: { status: "CHUNKED", errorMessage: null }
       })
     ]);
 
@@ -95,11 +108,9 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("Failed to upload document", error);
     if (createdDocumentId) {
+      const reason = toErrorMessage(error, "Upload processing failed");
       await prisma.document
-        .update({
-          where: { id: createdDocumentId },
-          data: { status: "ERROR" }
-        })
+        .update({ where: { id: createdDocumentId }, data: { status: "ERROR", errorMessage: reason } })
         .catch(() => {
           // Keep original request error as source of truth for response path.
         });

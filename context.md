@@ -24,7 +24,8 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
 - Prisma models: `Organization`, `Document`, `DocumentChunk`, `ApprovedAnswer`, `Questionnaire`, `Question`
 - `/api/health` endpoint
 - Documents ingestion for `.txt` and `.md`: upload, extract text, chunk, store, list
-- `/documents` UI for upload and document list
+- `/documents` UI for upload, list, latest-only filtering, and delete controls (single + bulk)
+- Document lifecycle clarity: `errorMessage` persisted on failed uploads and shown in UI
 - Embeddings pipeline with OpenAI `text-embedding-3-small` and pgvector `vector(1536)` storage
 - Retrieval + cited single-question answering at `/api/questions/answer`
 - `/ask` UI for one-question evidence-grounded responses
@@ -44,6 +45,7 @@ Pages:
 API:
 - `GET /api/health`
 - `GET /api/documents`
+- `DELETE /api/documents/:id`
 - `POST /api/documents/upload`
 - `POST /api/documents/embed`
 - `POST /api/questions/answer`

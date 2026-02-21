@@ -1,23 +1,69 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type DocumentRow = {
   id: string;
   name: string;
+  displayName: string;
   originalName: string;
   status: string;
+  errorMessage: string | null;
   createdAt: string;
+  updatedAt: string;
   chunkCount: number;
 };
 
+function toTimeValue(value: string): number {
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function isNewerDocument(next: DocumentRow, current: DocumentRow): boolean {
+  const nextUpdated = toTimeValue(next.updatedAt);
+  const currentUpdated = toTimeValue(current.updatedAt);
+  if (nextUpdated !== currentUpdated) {
+    return nextUpdated > currentUpdated;
+  }
+
+  const nextCreated = toTimeValue(next.createdAt);
+  const currentCreated = toTimeValue(current.createdAt);
+  if (nextCreated !== currentCreated) {
+    return nextCreated > currentCreated;
+  }
+
+  return next.id > current.id;
+}
+
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<DocumentRow[]>([]);
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [showLatestOnly, setShowLatestOnly] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [message, setMessage] = useState<string>("");
+
+  const visibleDocuments = useMemo(() => {
+    if (!showLatestOnly) {
+      return [...documents];
+    }
+
+    const latestByOriginalName = new Map<string, DocumentRow>();
+    for (const document of documents) {
+      const key = document.originalName || document.name || document.id;
+      const existing = latestByOriginalName.get(key);
+      if (!existing || isNewerDocument(document, existing)) {
+        latestByOriginalName.set(key, document);
+      }
+    }
+
+    return Array.from(latestByOriginalName.values()).sort(
+      (left, right) => toTimeValue(right.updatedAt) - toTimeValue(left.updatedAt)
+    );
+  }, [documents, showLatestOnly]);
 
   async function fetchDocuments() {
     setIsLoading(true);
@@ -31,6 +77,9 @@ export default function DocumentsPage() {
       }
 
       setDocuments(payload.documents);
+      setSelectedDocumentIds((current) =>
+        current.filter((selectedId) => payload.documents.some((document) => document.id === selectedId))
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to fetch documents");
     } finally {
@@ -83,6 +132,59 @@ export default function DocumentsPage() {
     }
   }
 
+  async function deleteDocuments(ids: string[]) {
+    if (ids.length === 0) {
+      setMessage("Select at least one document to delete");
+      return;
+    }
+
+    const confirmMessage =
+      ids.length === 1
+        ? "Delete this document? This also removes stored chunks."
+        : `Delete ${ids.length} documents? This also removes stored chunks.`;
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setMessage("");
+
+    try {
+      const results = await Promise.all(
+        ids.map(async (id) => {
+          const response = await fetch(`/api/documents/${id}`, { method: "DELETE" });
+          const payload = (await response.json()) as { error?: string };
+          if (!response.ok) {
+            return { id, ok: false, error: payload.error ?? "Delete failed" };
+          }
+
+          return { id, ok: true };
+        })
+      );
+
+      const failed = results.filter((result) => !result.ok);
+      const succeeded = results.length - failed.length;
+
+      if (failed.length > 0) {
+        setMessage(`Deleted ${succeeded} document(s). ${failed.length} failed.`);
+      } else {
+        setMessage(`Deleted ${succeeded} document(s).`);
+      }
+
+      setSelectedDocumentIds([]);
+      await fetchDocuments();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Delete failed");
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
+  const allVisibleSelected =
+    visibleDocuments.length > 0 &&
+    visibleDocuments.every((document) => selectedDocumentIds.includes(document.id));
+
   return (
     <main>
       <p>
@@ -102,10 +204,33 @@ export default function DocumentsPage() {
         <button type="submit" disabled={isUploading}>
           {isUploading ? "Uploading..." : "Upload"}
         </button>
-        <button type="button" onClick={() => void fetchDocuments()} disabled={isLoading || isUploading}>
+        <button
+          type="button"
+          onClick={() => void fetchDocuments()}
+          disabled={isLoading || isUploading || isDeleting}
+        >
           Refresh
         </button>
       </form>
+
+      <p>
+        <label>
+          <input
+            type="checkbox"
+            checked={showLatestOnly}
+            onChange={(event) => setShowLatestOnly(event.target.checked)}
+          />{" "}
+          Show only latest per original filename
+        </label>
+      </p>
+
+      <button
+        type="button"
+        onClick={() => void deleteDocuments(selectedDocumentIds)}
+        disabled={isDeleting || selectedDocumentIds.length === 0}
+      >
+        {isDeleting ? "Deleting..." : "Delete selected"}
+      </button>
 
       {message ? <p>{message}</p> : null}
 
@@ -115,26 +240,83 @@ export default function DocumentsPage() {
       <table>
         <thead>
           <tr>
+            <th>
+              <input
+                type="checkbox"
+                aria-label="Select all visible documents"
+                checked={allVisibleSelected}
+                onChange={(event) => {
+                  if (event.target.checked) {
+                    setSelectedDocumentIds((current) => {
+                      const combined = new Set([...current, ...visibleDocuments.map((document) => document.id)]);
+                      return Array.from(combined);
+                    });
+                    return;
+                  }
+
+                  setSelectedDocumentIds((current) =>
+                    current.filter(
+                      (selectedId) => !visibleDocuments.some((document) => document.id === selectedId)
+                    )
+                  );
+                }}
+              />
+            </th>
             <th>Name</th>
             <th>Original Name</th>
             <th>Status</th>
             <th>Chunk Count</th>
-            <th>Created</th>
+            <th>Updated</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {documents.length === 0 ? (
+          {visibleDocuments.length === 0 ? (
             <tr>
-              <td colSpan={5}>No documents yet.</td>
+              <td colSpan={7}>No documents yet.</td>
             </tr>
           ) : (
-            documents.map((document) => (
+            visibleDocuments.map((document) => (
               <tr key={document.id}>
-                <td>{document.name}</td>
+                <td>
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${document.originalName}`}
+                    checked={selectedDocumentIds.includes(document.id)}
+                    onChange={(event) => {
+                      if (event.target.checked) {
+                        setSelectedDocumentIds((current) => [...current, document.id]);
+                        return;
+                      }
+
+                      setSelectedDocumentIds((current) =>
+                        current.filter((selectedId) => selectedId !== document.id)
+                      );
+                    }}
+                  />
+                </td>
+                <td>{document.displayName}</td>
                 <td>{document.originalName}</td>
-                <td>{document.status}</td>
+                <td>
+                  {document.status}
+                  {document.status === "ERROR" && document.errorMessage ? (
+                    <>
+                      {" "}
+                      - {document.errorMessage}
+                    </>
+                  ) : null}
+                </td>
                 <td>{document.chunkCount}</td>
-                <td>{new Date(document.createdAt).toLocaleString()}</td>
+                <td>{new Date(document.updatedAt).toLocaleString()}</td>
+                <td>
+                  <button
+                    type="button"
+                    onClick={() => void deleteDocuments([document.id])}
+                    disabled={isDeleting}
+                  >
+                    Delete
+                  </button>
+                </td>
               </tr>
             ))
           )}

@@ -38,6 +38,7 @@ model Document {
   originalName   String
   mimeType       String
   status         DocumentStatus @default(UPLOADED)
+  errorMessage   String?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   chunks         DocumentChunk[]

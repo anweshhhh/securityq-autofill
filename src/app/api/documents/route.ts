@@ -8,7 +8,7 @@ export async function GET() {
 
     const documents = await prisma.document.findMany({
       where: { organizationId: organization.id },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
       include: {
         _count: {
           select: { chunks: true }
@@ -20,9 +20,12 @@ export async function GET() {
       documents: documents.map((document) => ({
         id: document.id,
         name: document.name,
+        displayName: document.name || document.originalName,
         originalName: document.originalName,
         status: document.status,
+        errorMessage: document.errorMessage,
         createdAt: document.createdAt,
+        updatedAt: document.updatedAt,
         chunkCount: document._count.chunks
       }))
     });

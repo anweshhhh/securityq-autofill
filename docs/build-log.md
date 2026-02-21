@@ -235,3 +235,29 @@ This kept backend behavior consistent and testable while adding the minimum Day 
 6. Upload a tricky CSV (quoted commas/newlines), verify preview and column selection
 7. Click `Autofill/Resume` and watch status/progress move to `COMPLETED`
 8. Download CSV and confirm original columns + appended answer/citation fields
+
+## Day 4.x Documents Lifecycle Controls
+
+### What we shipped
+
+- Added `DELETE /api/documents/:id` to remove a document and its chunks
+- Enhanced `GET /api/documents` with `displayName`, `updatedAt`, and `errorMessage`
+- Added persisted upload failure reasons (`Document.errorMessage`) when status is `ERROR`
+- Updated `/documents` with:
+  - row delete + bulk delete actions
+  - default-on `Show only latest per original filename` toggle to reduce duplicate clutter
+  - inline error reason visibility for failed documents
+
+### Why it matters
+
+This removes dead/duplicate entries quickly and makes failures actionable instead of opaque, which improves day-to-day usability and keeps evidence datasets clean.
+
+### Verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate deploy`
+3. `npm test`
+4. `npm run dev`
+5. Open `http://localhost:3000/documents`
+6. Upload a valid file and a failing/empty file, confirm ERROR reason is visible
+7. Delete single and multiple documents, then refresh to confirm removal

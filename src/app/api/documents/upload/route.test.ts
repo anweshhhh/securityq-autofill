@@ -98,6 +98,9 @@ describe.sequential("/api/documents/upload", () => {
     const listPayload = (await listResponse.json()) as {
       documents: Array<{
         id: string;
+        displayName: string;
+        updatedAt: string;
+        errorMessage: string | null;
         chunkCount: number;
       }>;
     };
@@ -108,6 +111,9 @@ describe.sequential("/api/documents/upload", () => {
 
     expect(listResponse.status).toBe(200);
     expect(listedDocument).toBeDefined();
+    expect(listedDocument?.displayName).toBeTruthy();
+    expect(listedDocument?.updatedAt).toBeTruthy();
+    expect(listedDocument?.errorMessage).toBeNull();
     expect(listedDocument?.chunkCount).toBe(uploadPayload.document?.chunkCount);
   });
 
@@ -160,5 +166,6 @@ describe.sequential("/api/documents/upload", () => {
 
     expect(failedDocument).not.toBeNull();
     expect(failedDocument?.status).toBe("ERROR");
+    expect(failedDocument?.errorMessage).toContain("simulated failure");
   });
 });
