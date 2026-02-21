@@ -365,3 +365,36 @@ This closes remaining quality gaps where answers looked plausible but overreache
 4. `npm run dev`
 5. Ask detail-heavy questions in `/ask` (MFA required, SOC2/SIG, encryption algorithm/scope/keys)
 6. Confirm partial answers use `Not specified...`, omit citations, and downgrade confidence/review flags
+
+## Day 4 QA hardening v3: deterministic guardrails
+
+### What changed
+
+- Consolidated all answer safety post-processing into one deterministic function: `normalizeAnswerOutput` in the shared answering module.
+- Enforced strict citation rule:
+  - if answer is `Not found in provided documents.` or contains `Not specified in provided documents.`, citations are forced to `[]`
+  - if citations are `[]`, confidence is forced to `low` and `needsReview` is forced to `true`
+- Tightened snippet extraction:
+  - sentence/line-aware windows with whitespace-boundary snapping
+  - minimum context target so snippets are not clipped into partial words
+  - added tests ensuring no trailing partial token fragments
+- Hardened MFA-required claim logic:
+  - `required` allowed only with explicit evidence (`required`) or `must`/`enforced` near MFA
+  - otherwise rewritten to `MFA is enabled; whether it is required is not specified in provided documents.`
+- Strengthened coverage scoring:
+  - requested-detail tokens (algorithm/cipher/tls/hsts/scope/key/rotation/frequency/retention/rto/rpo/by whom/third-party/soc2/sig/certification)
+  - missing requested details force review-safe confidence handling
+  - SOC2/SIG gaps in vendor questions are explicitly treated as review-required
+
+### Why it matters
+
+This resolves the remaining observed failures: partial answers cannot carry misleading citations, truncated evidence no longer drives overclaims, and confidence/needsReview now consistently reflect missing requested details.
+
+### Verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate deploy`
+3. `npm test`
+4. `npm run dev`
+5. Test `/ask` with DSR, MFA-required, encryption-detail, and vendor SOC2/SIG questions
+6. Confirm partial/not-specified outputs return no citations and force low confidence + review

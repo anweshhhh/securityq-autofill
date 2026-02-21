@@ -51,5 +51,6 @@ describe("retrieveTopChunks", () => {
     expect(result[2].similarity).toBeCloseTo(0.3, 5);
     expect(result[1].quotedSnippet.toLowerCase()).toContain("tls 1.2");
     expect(result[1].quotedSnippet.endsWith("requir")).toBe(false);
+    expect(/[.!?]$/.test(result[1].quotedSnippet)).toBe(true);
   });
 });

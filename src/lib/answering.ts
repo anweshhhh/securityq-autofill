@@ -1,7 +1,6 @@
 import {
   NOT_SPECIFIED_RESPONSE_TEXT,
   applyClaimCheckGuardrails,
-  extractKeyTokens,
   extractQuestionKeyTerms
 } from "@/lib/claimCheck";
 import { createEmbedding, generateGroundedAnswer } from "@/lib/openai";
@@ -20,78 +19,112 @@ export type EvidenceAnswer = {
   needsReview: boolean;
 };
 
+type CoverageRule = {
+  key: string;
+  questionPattern: RegExp;
+  evidencePattern: RegExp;
+};
+
 type CoverageResult = {
-  requestedCount: number;
-  coveredCount: number;
-  missingRequested: string[];
-  coverageRatio: number;
+  requestedKeys: string[];
+  missingKeys: string[];
+  missingInfoInAnswer: boolean;
+  needsCoverageReview: boolean;
+  vendorEvidenceGap: boolean;
 };
 
 const TOP_K = 5;
 const MIN_TOP_SIMILARITY = 0.35;
 const MAX_CITATIONS = 3;
-const MAX_CITATION_SNIPPET_CHARS = 700;
-const MFA_REQUIRED_FALLBACK = "MFA is enabled; requirement is not specified in provided documents.";
+const NOT_FOUND_TEXT = "Not found in provided documents.";
+const MFA_REQUIRED_FALLBACK =
+  "MFA is enabled; whether it is required is not specified in provided documents.";
 
-const COVERAGE_INTENTS: Array<{
-  key: string;
-  requestPattern: RegExp;
-  evidencePatterns: RegExp[];
-}> = [
+const COVERAGE_RULES: CoverageRule[] = [
   {
     key: "algorithm",
-    requestPattern: /\balgorithm|cipher|aes|rsa|tls\b/i,
-    evidencePatterns: [/\balgorithm\b/i, /\baes[- ]?\d+\b/i, /\brsa\b/i, /\btls\s*\d+(?:\.\d+)?\b/i]
+    questionPattern: /\balgorithm\b/i,
+    evidencePattern: /\balgorithm\b|\bcipher\b|\baes\b|\brsa\b|\bchacha\b/i
+  },
+  {
+    key: "cipher",
+    questionPattern: /\bcipher\b/i,
+    evidencePattern: /\bcipher\b|\baes\b|\brsa\b|\bchacha\b/i
+  },
+  {
+    key: "tls",
+    questionPattern: /\btls\b/i,
+    evidencePattern: /\btls\b/i
+  },
+  {
+    key: "hsts",
+    questionPattern: /\bhsts\b/i,
+    evidencePattern: /\bhsts\b/i
   },
   {
     key: "scope",
-    requestPattern: /\bscope\b|which data|what data|applies to|in transit|at rest/i,
-    evidencePatterns: [/\bscope\b/i, /at rest/i, /in transit/i, /customer data/i, /all data/i]
+    questionPattern: /\bscope\b/i,
+    evidencePattern: /\bscope\b|at rest|in transit|customer data|all data/i
   },
   {
-    key: "keys",
-    requestPattern: /\bkeys?\b|kms|key management|key rotation/i,
-    evidencePatterns: [/\bkeys?\b/i, /kms/i, /key management/i, /key rotation/i]
+    key: "key",
+    questionPattern: /\bkey\b/i,
+    evidencePattern: /\bkey\b|kms|key management/i
+  },
+  {
+    key: "rotation",
+    questionPattern: /\brotation\b/i,
+    evidencePattern: /\brotation\b|rotate/i
   },
   {
     key: "frequency",
-    requestPattern: /\bfrequency\b|how often|periodic|every\s+\d+|daily|weekly|monthly|quarterly|annually/i,
-    evidencePatterns: [/daily|weekly|monthly|quarterly|annually|every\s+\d+/i, /frequency/i]
+    questionPattern: /\bfrequency\b|how often|daily|weekly|monthly|quarterly|annually/i,
+    evidencePattern: /\bfrequency\b|daily|weekly|monthly|quarterly|annually|every\s+\d+/i
   },
   {
     key: "retention",
-    requestPattern: /\bretention\b|retain|how long|kept for/i,
-    evidencePatterns: [/retention|retain|kept for|days|months|years/i]
+    questionPattern: /\bretention\b|how long|kept for|retain/i,
+    evidencePattern: /\bretention\b|retain|kept for|days|months|years/i
+  },
+  {
+    key: "rto",
+    questionPattern: /\brto\b/i,
+    evidencePattern: /\brto\b/i
+  },
+  {
+    key: "rpo",
+    questionPattern: /\brpo\b/i,
+    evidencePattern: /\brpo\b/i
   },
   {
     key: "by_whom",
-    requestPattern: /by whom|who\s+(reviews|approves|manages|owns)|owner|responsible/i,
-    evidencePatterns: [/owner|responsible|security team|compliance team|lead/i]
+    questionPattern: /by whom|who\s+(reviews|approves|manages|owns)|who\s+is\s+responsible/i,
+    evidencePattern: /owner|responsible|security team|compliance team|managed by|approved by/i
   },
   {
-    key: "criteria",
-    requestPattern: /\bcriteria\b|conditions|when\s+required|threshold/i,
-    evidencePatterns: [/criteria|condition|threshold|required when/i]
+    key: "third-party",
+    questionPattern: /third[- ]party|vendor/i,
+    evidencePattern: /third[- ]party|vendor/i
   },
   {
     key: "soc2",
-    requestPattern: /soc\s*2/i,
-    evidencePatterns: [/soc\s*2/i]
+    questionPattern: /soc\s*2/i,
+    evidencePattern: /soc\s*2/i
   },
   {
     key: "sig",
-    requestPattern: /\bsig\b/i,
-    evidencePatterns: [/\bsig\b/i]
+    questionPattern: /\bsig\b/i,
+    evidencePattern: /\bsig\b/i
   },
   {
-    key: "required",
-    requestPattern: /\brequired|mandatory|must|enforced|requirement\b/i,
-    evidencePatterns: [/\brequired|mandatory|must|enforced\b/i]
+    key: "certification",
+    questionPattern: /\bcertification\b/i,
+    evidencePattern: /\bcertification\b|certified/i
   }
 ];
 
 export const NOT_FOUND_RESPONSE: EvidenceAnswer = {
-  answer: "Not found in provided documents.",
+  answer: NOT_FOUND_TEXT,
   citations: [],
   confidence: "low",
   needsReview: true
@@ -109,13 +142,21 @@ function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function containsNotSpecified(answer: string): boolean {
+  return /not specified in provided documents\./i.test(answer);
+}
+
+function containsMissingInfoIndicator(answer: string): boolean {
+  return /not detailed|not specified/i.test(answer);
+}
+
 function appendNotSpecified(answer: string): string {
   const trimmed = answer.trim();
   if (!trimmed) {
     return NOT_SPECIFIED_RESPONSE_TEXT;
   }
 
-  if (trimmed.toLowerCase().includes(NOT_SPECIFIED_RESPONSE_TEXT.toLowerCase())) {
+  if (containsNotSpecified(trimmed)) {
     return trimmed;
   }
 
@@ -123,50 +164,40 @@ function appendNotSpecified(answer: string): string {
   return `${trimmed}${suffix} ${NOT_SPECIFIED_RESPONSE_TEXT}`;
 }
 
-function buildCitationSnippet(params: {
-  chunk: RetrievedChunk;
-  answer: string;
+function isMfaRequiredSupported(evidenceSnippets: string[]): boolean {
+  const evidence = evidenceSnippets.join(" \n ");
+
+  if (/\brequired\b/i.test(evidence)) {
+    return true;
+  }
+
+  const nearbyRule =
+    /(?:\bmfa\b|multi[- ]factor)[\s\S]{0,40}(must|enforced)/i.test(evidence) ||
+    /(must|enforced)[\s\S]{0,40}(\bmfa\b|multi[- ]factor)/i.test(evidence);
+
+  return nearbyRule;
+}
+
+function enforceMfaRequiredClaim(params: {
   question: string;
-}): string {
-  const fullContent = normalizeWhitespace(params.chunk.fullContent);
-  const fallbackSnippet = normalizeWhitespace(params.chunk.quotedSnippet);
+  answer: string;
+  evidenceSnippets: string[];
+}): { answer: string; forced: boolean } {
+  const mfaContext = /\bmfa\b|multi[- ]factor/i.test(params.question) || /\bmfa\b|multi[- ]factor/i.test(params.answer);
+  const answerClaimsRequired = /\brequired\b/i.test(params.answer);
 
-  if (!fullContent) {
-    return fallbackSnippet;
+  if (!mfaContext || !answerClaimsRequired) {
+    return { answer: params.answer, forced: false };
   }
 
-  if (fullContent.length <= MAX_CITATION_SNIPPET_CHARS) {
-    return fullContent;
+  if (isMfaRequiredSupported(params.evidenceSnippets)) {
+    return { answer: params.answer, forced: false };
   }
 
-  const anchorTokens = [
-    ...extractKeyTokens(params.answer),
-    ...extractKeyTokens(params.question)
-  ].filter((token) => token.length >= 4);
-
-  const contentLower = fullContent.toLowerCase();
-  let anchorIndex = -1;
-
-  for (const token of anchorTokens) {
-    const index = contentLower.indexOf(token.toLowerCase());
-    if (index >= 0 && (anchorIndex === -1 || index < anchorIndex)) {
-      anchorIndex = index;
-    }
-  }
-
-  const target = MAX_CITATION_SNIPPET_CHARS;
-  const startBase = anchorIndex >= 0 ? Math.max(0, anchorIndex - Math.floor(target / 3)) : 0;
-  let start = startBase;
-  while (start > 0 && /\S/.test(fullContent[start - 1])) {
-    start -= 1;
-  }
-
-  let end = Math.min(fullContent.length, start + target);
-  while (end < fullContent.length && /\S/.test(fullContent[end])) {
-    end += 1;
-  }
-
-  return fullContent.slice(start, end).trim();
+  return {
+    answer: MFA_REQUIRED_FALLBACK,
+    forced: true
+  };
 }
 
 function hasRelevantCitation(question: string, citations: Citation[]): boolean {
@@ -174,114 +205,132 @@ function hasRelevantCitation(question: string, citations: Citation[]): boolean {
     return false;
   }
 
-  const terms = extractQuestionKeyTerms(question).filter((term) => term.length >= 4);
-  if (terms.length === 0) {
+  const questionTerms = extractQuestionKeyTerms(question).filter((term) => term.length >= 4);
+  if (questionTerms.length === 0) {
     return true;
   }
 
-  const snippetText = citations.map((citation) => citation.quotedSnippet.toLowerCase()).join(" ");
-  return terms.some((term) => snippetText.includes(term));
+  const snippetsText = citations.map((citation) => citation.quotedSnippet.toLowerCase()).join(" ");
+  return questionTerms.some((term) => snippetsText.includes(term));
 }
 
-function enforceMfaRequirementRule(params: {
-  question: string;
-  answer: string;
-  evidenceSnippets: string[];
-}): { answer: string; forced: boolean } {
-  const asksMfa = /\bmfa\b|multi[- ]factor/i.test(params.question);
-  const asksRequired = /\brequired|requirement|mandatory|must|enforced\b/i.test(params.question);
-
-  if (!asksMfa || !asksRequired) {
-    return { answer: params.answer, forced: false };
-  }
-
-  const evidenceText = params.evidenceSnippets.join(" \n ");
-  const hasMfaMention = /\bmfa\b|multi[- ]factor/i.test(evidenceText);
-  const hasRequiredNearMfa =
-    /(?:\bmfa\b|multi[- ]factor)[^.!?\n]{0,60}(required|mandatory|must|enforced)/i.test(evidenceText) ||
-    /(required|mandatory|must|enforced)[^.!?\n]{0,60}(\bmfa\b|multi[- ]factor)/i.test(evidenceText);
-
-  if (hasRequiredNearMfa) {
-    return { answer: params.answer, forced: false };
-  }
-
-  if (hasMfaMention) {
-    return {
-      answer: MFA_REQUIRED_FALLBACK,
-      forced: true
-    };
-  }
-
-  return {
-    answer: NOT_SPECIFIED_RESPONSE_TEXT,
-    forced: true
-  };
-}
-
-function evaluateCoverage(question: string, evidenceSnippets: string[]): CoverageResult {
+function evaluateCoverage(question: string, evidenceSnippets: string[], answer: string): CoverageResult {
   const normalizedQuestion = question.toLowerCase();
   const normalizedEvidence = evidenceSnippets.join(" ").toLowerCase();
 
-  const requested = COVERAGE_INTENTS.filter((intent) => intent.requestPattern.test(normalizedQuestion));
-  if (requested.length === 0) {
-    return {
-      requestedCount: 0,
-      coveredCount: 0,
-      missingRequested: [],
-      coverageRatio: 1
-    };
-  }
+  const requested = COVERAGE_RULES.filter((rule) => rule.questionPattern.test(normalizedQuestion));
+  const missing = requested.filter((rule) => !rule.evidencePattern.test(normalizedEvidence));
 
-  const covered = requested.filter((intent) =>
-    intent.evidencePatterns.some((pattern) => pattern.test(normalizedEvidence))
-  );
+  const requestedKeys = requested.map((rule) => rule.key);
+  const missingKeys = missing.map((rule) => rule.key);
+  const missingInfoInAnswer = containsMissingInfoIndicator(answer);
+  const needsCoverageReview = requested.length > 0 && (missingInfoInAnswer || missing.length > 0);
 
-  const missingRequested = requested
-    .filter((intent) => !covered.some((coveredIntent) => coveredIntent.key === intent.key))
-    .map((intent) => intent.key);
+  const asksSoc2 = requestedKeys.includes("soc2");
+  const asksSig = requestedKeys.includes("sig");
+  const missingSoc2 = missingKeys.includes("soc2");
+  const missingSig = missingKeys.includes("sig");
 
   return {
-    requestedCount: requested.length,
-    coveredCount: covered.length,
-    missingRequested,
-    coverageRatio: covered.length / requested.length
+    requestedKeys,
+    missingKeys,
+    missingInfoInAnswer,
+    needsCoverageReview,
+    vendorEvidenceGap: (asksSoc2 && missingSoc2) || (asksSig && missingSig)
   };
 }
 
-function computeConfidence(params: {
+export function normalizeAnswerOutput(params: {
+  question: string;
   answer: string;
+  citations: Citation[];
+  confidence: "low" | "med" | "high";
   needsReview: boolean;
-  partial: boolean;
-  coverage: CoverageResult;
-  relevanceFailed: boolean;
-  initialConfidence: "low" | "med" | "high";
-  hasCitations: boolean;
-}): "low" | "med" | "high" {
-  if (params.answer === NOT_FOUND_RESPONSE.answer) {
-    return "low";
+}): EvidenceAnswer {
+  const trimmedAnswer = params.answer.trim();
+  if (!trimmedAnswer || trimmedAnswer === NOT_FOUND_TEXT) {
+    return NOT_FOUND_RESPONSE;
   }
 
-  if (!params.hasCitations && !params.partial) {
-    return "low";
+  const uniqueCitations = Array.from(
+    new Map(
+      params.citations.slice(0, MAX_CITATIONS).map((citation) => [
+        citation.chunkId,
+        {
+          docName: citation.docName,
+          chunkId: citation.chunkId,
+          quotedSnippet: normalizeWhitespace(citation.quotedSnippet)
+        }
+      ])
+    ).values()
+  );
+
+  const evidenceSnippets = uniqueCitations.map((citation) => citation.quotedSnippet);
+
+  const mfaAdjusted = enforceMfaRequiredClaim({
+    question: params.question,
+    answer: trimmedAnswer,
+    evidenceSnippets
+  });
+
+  const claimChecked = applyClaimCheckGuardrails({
+    answer: mfaAdjusted.answer,
+    quotedSnippets: evidenceSnippets,
+    confidence: params.confidence,
+    needsReview: params.needsReview
+  });
+
+  let finalAnswer = claimChecked.answer;
+  let coverage = evaluateCoverage(params.question, evidenceSnippets, finalAnswer);
+
+  if (coverage.missingKeys.length > 0 && !containsNotSpecified(finalAnswer)) {
+    finalAnswer = appendNotSpecified(finalAnswer);
+    coverage = evaluateCoverage(params.question, evidenceSnippets, finalAnswer);
   }
 
-  if (params.relevanceFailed) {
-    return "low";
+  let citations = uniqueCitations;
+  let relevanceFailed = false;
+
+  if (finalAnswer === NOT_FOUND_TEXT || containsNotSpecified(finalAnswer)) {
+    citations = [];
+  } else if (!hasRelevantCitation(params.question, citations)) {
+    citations = [];
+    relevanceFailed = true;
   }
 
-  if (params.partial) {
-    return "low";
+  let needsReview =
+    claimChecked.needsReview ||
+    mfaAdjusted.forced ||
+    relevanceFailed ||
+    coverage.needsCoverageReview;
+
+  let confidence: "low" | "med" | "high" = claimChecked.confidence;
+
+  if (coverage.needsCoverageReview && confidence === "high") {
+    confidence = "med";
   }
 
-  if (params.needsReview) {
-    return params.coverage.coverageRatio >= 0.75 ? "med" : "low";
+  if (coverage.vendorEvidenceGap && confidence === "high") {
+    confidence = "med";
   }
 
-  if (params.initialConfidence === "high") {
-    return "high";
+  if (containsNotSpecified(finalAnswer) || finalAnswer === NOT_FOUND_TEXT) {
+    needsReview = true;
+    confidence = "low";
   }
 
-  return "med";
+  // Hard rule: no citations means always low confidence and needs review.
+  if (citations.length === 0) {
+    needsReview = true;
+    confidence = "low";
+  }
+
+  return {
+    answer: finalAnswer,
+    citations,
+    confidence,
+    needsReview
+  };
 }
 
 export async function answerQuestionWithEvidence(params: {
@@ -328,79 +377,14 @@ export async function answerQuestionWithEvidence(params: {
     .map((chunk) => ({
       docName: chunk.docName,
       chunkId: chunk.chunkId,
-      quotedSnippet: buildCitationSnippet({
-        chunk,
-        answer: groundedAnswer.answer,
-        question
-      })
+      quotedSnippet: normalizeWhitespace(chunk.quotedSnippet)
     }));
 
-  const rawAnswer = groundedAnswer.answer.trim();
-  if (!rawAnswer || rawAnswer === NOT_FOUND_RESPONSE.answer || citations.length === 0) {
-    return NOT_FOUND_RESPONSE;
-  }
-
-  const evidenceSnippets = citations.map((citation) => citation.quotedSnippet);
-  const mfaAdjusted = enforceMfaRequirementRule({
+  return normalizeAnswerOutput({
     question,
-    answer: rawAnswer,
-    evidenceSnippets
-  });
-
-  const guarded = applyClaimCheckGuardrails({
-    answer: mfaAdjusted.answer,
-    quotedSnippets: evidenceSnippets,
+    answer: groundedAnswer.answer,
+    citations,
     confidence: groundedAnswer.confidence,
     needsReview: groundedAnswer.needsReview
   });
-
-  let finalAnswer = guarded.answer;
-  if (finalAnswer === NOT_FOUND_RESPONSE.answer) {
-    return NOT_FOUND_RESPONSE;
-  }
-
-  const coverage = evaluateCoverage(question, evidenceSnippets);
-  if (coverage.missingRequested.length > 0) {
-    finalAnswer = appendNotSpecified(finalAnswer);
-  }
-
-  const partial = finalAnswer.toLowerCase().includes(NOT_SPECIFIED_RESPONSE_TEXT.toLowerCase());
-
-  let finalCitations = citations;
-  let relevanceFailed = false;
-
-  if (finalAnswer === NOT_FOUND_RESPONSE.answer || partial) {
-    finalCitations = [];
-  } else if (!hasRelevantCitation(question, citations)) {
-    finalCitations = [];
-    relevanceFailed = true;
-  }
-
-  let needsReview =
-    guarded.needsReview ||
-    mfaAdjusted.forced ||
-    partial ||
-    relevanceFailed ||
-    coverage.missingRequested.length > 0;
-
-  if (finalCitations.length === 0 && !partial) {
-    needsReview = true;
-  }
-
-  const confidence = computeConfidence({
-    answer: finalAnswer,
-    needsReview,
-    partial,
-    coverage,
-    relevanceFailed,
-    initialConfidence: guarded.confidence,
-    hasCitations: finalCitations.length > 0
-  });
-
-  return {
-    answer: finalAnswer,
-    citations: finalCitations,
-    confidence,
-    needsReview
-  };
 }

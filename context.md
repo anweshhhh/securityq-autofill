@@ -34,8 +34,9 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
   - vendors/tools/algorithms are blocked unless terms appear in cited snippets
   - partial/not-specified answers always return empty citations
   - citation relevance filter drops unrelated snippets using question-term overlap
-  - coverage scoring marks missing requested details (SOC2/SIG/algorithm/scope/keys/etc.) for review
-  - MFA `required` is only claimed when evidence explicitly says required/must/enforced
+  - deterministic `normalizeAnswerOutput` post-processor is the single source of truth for all answer guardrails
+  - coverage scoring marks missing requested details (SOC2/SIG/algorithm/scope/keys/rto/rpo/etc.) for review and caps confidence
+  - MFA `required` is only allowed when evidence contains `required` or `must`/`enforced` near MFA; otherwise answer is rewritten to requirement-not-specified
 - `/ask` UI for one-question evidence-grounded responses
 - Questionnaire CSV import + question-column selection + batch autofill + CSV export
 - `/questionnaires` UI for import, preview, autofill/resume, rerun-missing, archive, and export actions

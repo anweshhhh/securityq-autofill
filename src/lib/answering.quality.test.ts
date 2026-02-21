@@ -64,6 +64,7 @@ describe("answering quality guardrails", () => {
     expect(result.answer).toBe("Not specified in provided documents.");
     expect(result.citations).toEqual([]);
     expect(result.needsReview).toBe(true);
+    expect(result.confidence).toBe("low");
   });
 
   it("drops irrelevant citations based on question-term relevance", async () => {
@@ -89,7 +90,9 @@ describe("answering quality guardrails", () => {
   });
 
   it("claims MFA required only when evidence says required", async () => {
-    mockSingleChunk("MFA is enabled for all workforce user accounts.");
+    mockSingleChunk(
+      "MFA is enabled for all workforce user accounts and authentication policy says requir additional controls."
+    );
     generateGroundedAnswerMock.mockResolvedValue({
       answer: "MFA is required for all users.",
       citationChunkIds: ["chunk-1"],
@@ -102,7 +105,9 @@ describe("answering quality guardrails", () => {
       question: "Is MFA required for all users?"
     });
 
-    expect(result.answer).toBe("MFA is enabled; requirement is not specified in provided documents.");
+    expect(result.answer).toBe(
+      "MFA is enabled; whether it is required is not specified in provided documents."
+    );
     expect(result.citations).toEqual([]);
     expect(result.needsReview).toBe(true);
     expect(result.confidence).toBe("low");

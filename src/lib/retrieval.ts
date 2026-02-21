@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 
 export const DEFAULT_TOP_K = 5;
 export const DEFAULT_SNIPPET_CHARS = 700;
-const MIN_SNIPPET_CHARS = 420;
+const MIN_SNIPPET_CHARS = 250;
 
 export const RETRIEVAL_SQL = `
 SELECT
@@ -108,6 +108,15 @@ function moveEndToWhitespaceBoundary(text: string, end: number): number {
   return nextEnd;
 }
 
+function moveEndToSentenceOrWhitespaceBoundary(text: string, end: number): number {
+  const nextSentenceEnd = findSentenceEnd(text, end);
+  if (nextSentenceEnd > end && nextSentenceEnd - end <= 120) {
+    return nextSentenceEnd;
+  }
+
+  return moveEndToWhitespaceBoundary(text, end);
+}
+
 function selectContextSnippet(params: {
   content: string;
   anchorTokens: string[];
@@ -136,10 +145,10 @@ function selectContextSnippet(params: {
 
   if (anchorIndex < 0) {
     let start = 0;
-    let end = moveEndToWhitespaceBoundary(normalizedContent, targetChars);
+    let end = moveEndToSentenceOrWhitespaceBoundary(normalizedContent, targetChars);
     if (end - start > targetChars) {
       end = targetChars;
-      end = moveEndToWhitespaceBoundary(normalizedContent, end);
+      end = moveEndToSentenceOrWhitespaceBoundary(normalizedContent, end);
     }
 
     return normalizedContent.slice(start, end).trim();
@@ -157,11 +166,11 @@ function selectContextSnippet(params: {
   }
 
   start = moveStartToWhitespaceBoundary(normalizedContent, start);
-  end = moveEndToWhitespaceBoundary(normalizedContent, end);
+  end = moveEndToSentenceOrWhitespaceBoundary(normalizedContent, end);
 
   if (end - start > targetChars) {
     end = start + targetChars;
-    end = moveEndToWhitespaceBoundary(normalizedContent, end);
+    end = moveEndToSentenceOrWhitespaceBoundary(normalizedContent, end);
     if (end > normalizedContent.length) {
       end = normalizedContent.length;
     }
