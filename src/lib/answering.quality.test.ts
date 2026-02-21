@@ -22,7 +22,7 @@ vi.mock("./retrieval", () => ({
   retrieveTopChunks: retrieveTopChunksMock
 }));
 
-import { answerQuestionWithEvidence } from "./answering";
+import { answerQuestionWithEvidence, categorizeQuestion } from "./answering";
 
 function mockSingleChunk(snippet: string, fullContent?: string, similarity = 0.9) {
   retrieveTopChunksMock.mockResolvedValue([
@@ -86,15 +86,37 @@ describe("answering quality guardrails", () => {
     expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
   });
 
+  it("categorizes common security questions deterministically", () => {
+    expect(categorizeQuestion("Are backups encrypted and what are RTO/RPO targets?")).toBe("BACKUP_DR");
+    expect(categorizeQuestion("Describe your SDLC and CI/CD branch protection controls.")).toBe("SDLC");
+    expect(categorizeQuestion("How often do you run penetration tests?")).toBe("PEN_TEST");
+  });
+
   it("returns two-part partial answer for backups evidence", async () => {
-    mockSingleChunk(
-      "Backups are performed daily. Disaster recovery tests are conducted annually. " +
-        "RPO is 24 hours and RTO is 24 hours."
-    );
+    retrieveTopChunksMock.mockResolvedValue([
+      {
+        chunkId: "chunk-ir",
+        docName: "Incident Response",
+        quotedSnippet:
+          "Incident response process defines severity levels, triage, mitigation, containment, and recovery.",
+        fullContent:
+          "Incident response process defines severity levels, triage, mitigation, containment, and recovery.",
+        similarity: 0.97
+      },
+      {
+        chunkId: "chunk-backup",
+        docName: "Backup and DR",
+        quotedSnippet:
+          "Backups are performed daily. Disaster recovery tests are conducted annually. RPO is 24 hours and RTO is 24 hours.",
+        fullContent:
+          "Backups are performed daily. Disaster recovery tests are conducted annually. RPO is 24 hours and RTO is 24 hours.",
+        similarity: 0.89
+      }
+    ]);
 
     generateGroundedAnswerMock.mockResolvedValue({
       answer: "Backups and DR controls are defined.",
-      citationChunkIds: ["chunk-1"],
+      citationChunkIds: ["chunk-backup"],
       confidence: "high",
       needsReview: false
     });
@@ -114,7 +136,41 @@ describe("answering quality guardrails", () => {
     expect(result.answer.toLowerCase()).toContain("retention period");
     expect(result.answer.toLowerCase()).toContain("restore testing cadence");
     expect(result.citations.length).toBeGreaterThan(0);
+    expect(result.citations.every((citation) => citation.chunkId !== "chunk-ir")).toBe(true);
+    expect(result.citations.some((citation) => citation.chunkId === "chunk-backup")).toBe(true);
     expect(result.needsReview).toBe(true);
+  });
+
+  it("returns NOT_FOUND for SDLC when only non-SDLC evidence exists", async () => {
+    retrieveTopChunksMock.mockResolvedValue([
+      {
+        chunkId: "chunk-ir",
+        docName: "Incident Response",
+        quotedSnippet: "Incident response process defines severity levels and triage workflows.",
+        fullContent: "Incident response process defines severity levels and triage workflows.",
+        similarity: 0.95
+      },
+      {
+        chunkId: "chunk-access",
+        docName: "Access Controls",
+        quotedSnippet: "MFA is required for all production systems.",
+        fullContent: "MFA is required for all production systems.",
+        similarity: 0.91
+      }
+    ]);
+
+    const result = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "Describe your SDLC controls including code review and CI/CD pipeline checks."
+    });
+
+    expect(result).toEqual({
+      answer: "Not found in provided documents.",
+      citations: [],
+      confidence: "low",
+      needsReview: true
+    });
+    expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
   });
 
   it("returns two-part IR answer with missing containment/eradication/recovery when absent", async () => {
@@ -170,20 +226,20 @@ describe("answering quality guardrails", () => {
     expect(result.confidence).toBe("low");
   });
 
-  it("falls back to NOT_FOUND when model returns invalid formatted output twice", async () => {
+  it("falls back to NOT_FOUND when model returns fragment output twice", async () => {
     mockSingleChunk(
       "Backups are performed daily. Disaster recovery tests are conducted annually. RPO is 24 hours and RTO is 24 hours."
     );
 
     generateGroundedAnswerMock
       .mockResolvedValueOnce({
-        answer: "## Backup Evidence\n- Backups are performed daily",
+        answer: "- - Backups daily",
         citationChunkIds: ["chunk-1"],
         confidence: "high",
         needsReview: false
       })
       .mockResolvedValueOnce({
-        answer: "# Evidence Pack\nBackups are performed daily",
+        answer: "- - Recovery annually",
         citationChunkIds: ["chunk-1"],
         confidence: "high",
         needsReview: false

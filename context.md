@@ -40,8 +40,11 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
   - deterministic claim-check downgrades unsupported claims to low confidence + needsReview
   - vendors/tools/algorithms are blocked unless terms appear in cited snippets
   - deterministic relevance gate filters retrieved chunks by keyword overlap before answer generation
+  - deterministic question category routing (`BACKUP_DR`, `SDLC`, `INCIDENT_RESPONSE`, `ACCESS_AUTH`, `ENCRYPTION`, `VENDOR`, `LOGGING`, `RETENTION_DELETION`, `PEN_TEST`, `OTHER`)
+  - category-specific must-match retrieval filters run before reranking; if no category-relevant chunks remain, result is `Not found in provided documents.`
   - reranking is deterministic: overlap desc, similarity desc, chunkId asc; top 3 chunks are used for answering
   - if relevance-filtered citations are empty, retrieval retries once with a larger pool and different chunks before returning NOT_FOUND
+  - citation selection is category-aware (e.g., backup/DR and incident-response snippets are preferred when available)
   - invalid model output format (markdown headings/raw evidence dumps) is rejected; one strict regeneration is attempted, then it falls back to NOT_FOUND
   - citation relevance filter keeps only snippets with question-term overlap and retries retrieval once with larger top-k if needed
   - deterministic `normalizeAnswerOutput` post-processor is the single source of truth for all answer guardrails
@@ -51,6 +54,7 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
     - NOT_FOUND => low confidence, needsReview true
     - PARTIAL => low/med confidence, needsReview true
     - FULL => med/high confidence only when all required details are covered
+  - confidence is never `high` when `needsReview=true`, when answer includes `Not specified...`, or when question category is `OTHER`
 - `/ask` UI for one-question evidence-grounded responses
 - Questionnaire CSV import + question-column selection + batch autofill + CSV export
 - `/questionnaires` UI for import, preview, autofill/resume, rerun-missing, archive, and export actions

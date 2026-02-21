@@ -506,3 +506,47 @@ Users now get actionable partial answers that preserve real evidence instead of 
 7. Open `http://localhost:3000/ask` and verify:
    - pen-test question returns `Not found in provided documents.` when no pen-test evidence exists
    - backup questions produce clean evidence summaries, not raw snippet dumps
+
+## Day 4 QA hardening v7: category routing + must-match retrieval
+
+### What changed
+
+- Added deterministic `categorizeQuestion(question)` routing with fixed categories:
+  - `BACKUP_DR`, `SDLC`, `INCIDENT_RESPONSE`, `ACCESS_AUTH`, `ENCRYPTION`, `VENDOR`, `LOGGING`, `RETENTION_DELETION`, `PEN_TEST`, `OTHER`
+- Added category-specific retrieval constraints:
+  - retrieve vector top-k first
+  - apply category must-match keyword filter
+  - if no category-matching chunks remain, return exact `Not found in provided documents.`
+  - then rerank remaining chunks deterministically (overlap desc, similarity desc, chunkId asc)
+- Added category-aware citation preference:
+  - backup/DR questions prefer backup/disaster-recovery evidence
+  - incident-response questions prefer incident/severity evidence
+- Tightened answer-format validation:
+  - rejects fragment outputs (`- - ...`) and markdown heading dumps from model output
+  - retries once with stricter instruction; falls back to NOT_FOUND if still invalid
+  - final normalized answer must be either:
+    - exact `Not found in provided documents.`
+    - or a `Confirmed from provided documents:` formatted answer
+- Tightened confidence behavior:
+  - never `high` when `needsReview=true`, when answer contains `Not specified...`, or for category `OTHER`
+  - SDLC questions without SDLC must-match evidence now return NOT_FOUND (not partial)
+
+### Tests added/updated
+
+- Category detection test for backup/SDLC/pen-test prompts.
+- Backup-vs-IR retrieval test ensuring backup question keeps backup evidence and excludes IR evidence.
+- SDLC test with only IR/access chunks ensures must-match filter returns NOT_FOUND and skips generation.
+- Fragment-format test ensures invalid `- - ...` model outputs are rejected and fallback to NOT_FOUND.
+
+### Verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate deploy`
+3. `npm test`
+4. `npm run lint`
+5. `npm run build`
+6. `npm run dev`
+7. Open `http://localhost:3000/ask` and verify:
+   - backup question cites backup/DR evidence
+   - SDLC question returns NOT_FOUND unless SDLC evidence exists
+   - answers are never raw fragments or heading dumps
