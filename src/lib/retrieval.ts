@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 
 export const DEFAULT_TOP_K = 5;
-export const DEFAULT_SNIPPET_CHARS = 520;
+export const DEFAULT_SNIPPET_CHARS = 700;
+const MIN_SNIPPET_CHARS = 420;
 
 export const RETRIEVAL_SQL = `
 SELECT
@@ -45,8 +46,66 @@ function normalizeWhitespace(value: string): string {
 }
 
 function getQuestionAnchorTokens(questionText: string): string[] {
-  const tokens = questionText.match(/\b[a-zA-Z][a-zA-Z0-9-]{3,}\b/g) ?? [];
-  return Array.from(new Set(tokens.map((token) => token.toLowerCase()))).slice(0, 20);
+  const tokens = new Set<string>();
+
+  for (const token of questionText.match(/\b[a-zA-Z][a-zA-Z0-9-]{3,}\b/g) ?? []) {
+    tokens.add(token.toLowerCase());
+  }
+
+  for (const token of questionText.match(/\b(?:tls|ssl|mfa|sig|soc2)\b/gi) ?? []) {
+    tokens.add(token.toLowerCase());
+  }
+
+  for (const token of questionText.match(/\b\d+(?:\.\d+)+\b/g) ?? []) {
+    tokens.add(token.toLowerCase());
+  }
+
+  return Array.from(tokens).slice(0, 24);
+}
+
+function findSentenceStart(text: string, index: number): number {
+  for (let i = Math.max(0, index); i > 0; i -= 1) {
+    const char = text[i];
+    if (char === "." || char === "!" || char === "?" || char === "\n") {
+      let start = i + 1;
+      while (start < text.length && /\s/.test(text[start])) {
+        start += 1;
+      }
+
+      return start;
+    }
+  }
+
+  return 0;
+}
+
+function findSentenceEnd(text: string, index: number): number {
+  for (let i = Math.min(text.length - 1, index); i < text.length; i += 1) {
+    const char = text[i];
+    if (char === "." || char === "!" || char === "?" || char === "\n") {
+      return i + 1;
+    }
+  }
+
+  return text.length;
+}
+
+function moveStartToWhitespaceBoundary(text: string, start: number): number {
+  let nextStart = Math.max(0, start);
+  while (nextStart > 0 && /\S/.test(text[nextStart - 1])) {
+    nextStart -= 1;
+  }
+
+  return nextStart;
+}
+
+function moveEndToWhitespaceBoundary(text: string, end: number): number {
+  let nextEnd = Math.min(text.length, end);
+  while (nextEnd < text.length && /\S/.test(text[nextEnd])) {
+    nextEnd += 1;
+  }
+
+  return nextEnd;
 }
 
 function selectContextSnippet(params: {
@@ -63,23 +122,55 @@ function selectContextSnippet(params: {
     return normalizedContent;
   }
 
+  const targetChars = Math.max(400, Math.min(800, params.snippetChars));
+  const minChars = Math.min(MIN_SNIPPET_CHARS, targetChars);
   const contentLower = normalizedContent.toLowerCase();
-  let anchorIndex = -1;
 
+  let anchorIndex = -1;
   for (const token of params.anchorTokens) {
     const index = contentLower.indexOf(token);
-    if (index >= 0 && (anchorIndex === -1 || index < anchorIndex)) {
+    if (index >= 0 && (anchorIndex < 0 || index < anchorIndex)) {
       anchorIndex = index;
     }
   }
 
   if (anchorIndex < 0) {
-    return normalizedContent.slice(0, params.snippetChars).trim();
+    let start = 0;
+    let end = moveEndToWhitespaceBoundary(normalizedContent, targetChars);
+    if (end - start > targetChars) {
+      end = targetChars;
+      end = moveEndToWhitespaceBoundary(normalizedContent, end);
+    }
+
+    return normalizedContent.slice(start, end).trim();
   }
 
-  const contextBefore = Math.floor(params.snippetChars / 3);
-  const start = Math.max(0, anchorIndex - contextBefore);
-  const end = Math.min(normalizedContent.length, start + params.snippetChars);
+  let start = findSentenceStart(normalizedContent, anchorIndex);
+  let end = findSentenceEnd(normalizedContent, anchorIndex);
+
+  if (end - start < minChars) {
+    const extra = minChars - (end - start);
+    const addBefore = Math.floor(extra / 2);
+    const addAfter = extra - addBefore;
+    start = Math.max(0, start - addBefore);
+    end = Math.min(normalizedContent.length, end + addAfter);
+  }
+
+  start = moveStartToWhitespaceBoundary(normalizedContent, start);
+  end = moveEndToWhitespaceBoundary(normalizedContent, end);
+
+  if (end - start > targetChars) {
+    end = start + targetChars;
+    end = moveEndToWhitespaceBoundary(normalizedContent, end);
+    if (end > normalizedContent.length) {
+      end = normalizedContent.length;
+    }
+
+    if (end - start > targetChars) {
+      start = Math.max(0, end - targetChars);
+      start = moveStartToWhitespaceBoundary(normalizedContent, start);
+    }
+  }
 
   return normalizedContent.slice(start, end).trim();
 }

@@ -4,26 +4,42 @@ const STOPWORDS = new Set([
   "about",
   "across",
   "after",
+  "against",
   "answer",
   "based",
   "before",
   "between",
   "could",
+  "details",
   "documents",
   "evidence",
   "given",
+  "have",
+  "into",
+  "like",
   "likely",
   "maybe",
   "might",
+  "only",
+  "please",
+  "provide",
   "provided",
   "question",
+  "regarding",
   "should",
   "since",
+  "than",
+  "that",
+  "their",
   "there",
   "these",
   "those",
   "using",
+  "what",
+  "when",
+  "which",
   "while",
+  "with",
   "within",
   "would"
 ]);
@@ -43,12 +59,21 @@ function collectMatches(target: Set<string>, value: string, regex: RegExp) {
   }
 }
 
+export function extractQuestionKeyTerms(question: string): string[] {
+  const tokens = question.match(/\b[a-zA-Z][a-zA-Z0-9-]{3,}\b/g) ?? [];
+
+  return Array.from(
+    new Set(
+      tokens
+        .map((token) => token.toLowerCase())
+        .filter((token) => !STOPWORDS.has(token))
+    )
+  );
+}
+
 export function extractKeyTokens(value: string): string[] {
   const tokens = new Set<string>();
-  const normalizedInput = value.replace(
-    /not specified in provided documents\./gi,
-    " "
-  );
+  const normalizedInput = value.replace(/not specified in provided documents\./gi, " ");
 
   collectMatches(tokens, normalizedInput, /\b(?:tls|ssl)\s*\d+(?:\.\d+)?\b/gi);
   collectMatches(tokens, normalizedInput, /\b[a-zA-Z]+-\d+(?:\.\d+)?\b/g);
@@ -77,6 +102,16 @@ export function applyClaimCheckGuardrails(params: {
   needsReview: boolean;
 }) {
   const answer = params.answer.trim();
+
+  if (answer.toLowerCase().includes(NOT_SPECIFIED_RESPONSE_TEXT.toLowerCase())) {
+    return {
+      answer,
+      confidence: "low" as const,
+      needsReview: true,
+      unsupportedTokens: [] as string[]
+    };
+  }
+
   const unsupportedTokens = findUnsupportedKeyTokens({
     answer,
     quotedSnippets: params.quotedSnippets
@@ -85,15 +120,6 @@ export function applyClaimCheckGuardrails(params: {
   if (unsupportedTokens.length > 0) {
     return {
       answer: NOT_SPECIFIED_RESPONSE_TEXT,
-      confidence: "low" as const,
-      needsReview: true,
-      unsupportedTokens
-    };
-  }
-
-  if (answer.includes(NOT_SPECIFIED_RESPONSE_TEXT)) {
-    return {
-      answer,
       confidence: "low" as const,
       needsReview: true,
       unsupportedTokens

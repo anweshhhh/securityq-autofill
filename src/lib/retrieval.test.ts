@@ -8,7 +8,10 @@ describe("retrieveTopChunks", () => {
         {
           chunkId: "chunk-b",
           docName: "Doc B",
-          content: "this snippet includes tls 1.2 and encryption details in context",
+          content:
+            "Encryption policy scope statement. ".repeat(20) +
+            "TLS 1.2 is required for all external connections and customer traffic. " +
+            "Additional monitoring controls are documented.",
           distance: 0.2
         },
         {
@@ -47,5 +50,6 @@ describe("retrieveTopChunks", () => {
     expect(result[0].similarity).toBeCloseTo(0.8, 5);
     expect(result[2].similarity).toBeCloseTo(0.3, 5);
     expect(result[1].quotedSnippet.toLowerCase()).toContain("tls 1.2");
+    expect(result[1].quotedSnippet.endsWith("requir")).toBe(false);
   });
 });

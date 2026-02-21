@@ -331,3 +331,37 @@ This closes a key trust gap: answers are now constrained to evidence, unsupporte
 5. Upload docs and run embeddings (`POST /api/documents/embed`)
 6. Ask questions at `http://localhost:3000/ask`
 7. Confirm outputs never introduce unsupported vendor/tool/algorithm details
+
+## Day 4 QA hardening v2: citation relevance + coverage scoring
+
+### What changed
+
+- Enforced citation policy in shared answer logic:
+  - if final answer is `Not found in provided documents.` or contains `Not specified in provided documents.`, citations are always `[]`
+- Added citation relevance filter:
+  - extracts key terms from question
+  - drops citations if no overlap with cited snippet text
+  - forces `needsReview=true`, `confidence=low`
+- Improved snippet extraction quality:
+  - larger context windows (~700 chars target)
+  - sentence-aware anchoring around matched evidence
+  - word-boundary clipping to avoid mid-word truncation
+- Added deterministic MFA requirement rule:
+  - `required` only when evidence explicitly contains `required`/`must`/`enforced` near MFA
+  - otherwise returns `MFA is enabled; requirement is not specified in provided documents.`
+- Added coverage scoring:
+  - detects requested detail intents (e.g., SOC2, SIG, algorithm, scope, keys, retention, frequency, criteria)
+  - marks missing intents as partial coverage and forces review-safe confidence handling
+
+### Why it matters
+
+This closes remaining quality gaps where answers looked plausible but overreached evidence, and makes confidence/needsReview behavior deterministic when details are missing.
+
+### Verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate deploy`
+3. `npm test`
+4. `npm run dev`
+5. Ask detail-heavy questions in `/ask` (MFA required, SOC2/SIG, encryption algorithm/scope/keys)
+6. Confirm partial answers use `Not specified...`, omit citations, and downgrade confidence/review flags
