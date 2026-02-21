@@ -2,38 +2,31 @@ import { describe, expect, it, vi } from "vitest";
 
 const {
   getOrCreateDefaultOrganizationMock,
-  countEmbeddedChunksForOrganizationMock,
-  createEmbeddingMock,
-  retrieveTopChunksMock,
-  generateGroundedAnswerMock
+  answerQuestionWithEvidenceMock
 } = vi.hoisted(() => ({
   getOrCreateDefaultOrganizationMock: vi.fn(),
-  countEmbeddedChunksForOrganizationMock: vi.fn(),
-  createEmbeddingMock: vi.fn(),
-  retrieveTopChunksMock: vi.fn(),
-  generateGroundedAnswerMock: vi.fn()
+  answerQuestionWithEvidenceMock: vi.fn()
 }));
 
 vi.mock("@/lib/defaultOrg", () => ({
   getOrCreateDefaultOrganization: getOrCreateDefaultOrganizationMock
 }));
 
-vi.mock("@/lib/retrieval", () => ({
-  countEmbeddedChunksForOrganization: countEmbeddedChunksForOrganizationMock,
-  retrieveTopChunks: retrieveTopChunksMock
-}));
-
-vi.mock("@/lib/openai", () => ({
-  createEmbedding: createEmbeddingMock,
-  generateGroundedAnswer: generateGroundedAnswerMock
+vi.mock("@/lib/answering", () => ({
+  answerQuestionWithEvidence: answerQuestionWithEvidenceMock
 }));
 
 import { POST } from "./route";
 
 describe("/api/questions/answer", () => {
-  it("returns not found payload when no embedded chunks exist", async () => {
+  it("returns answer payload from shared evidence-answering logic", async () => {
     getOrCreateDefaultOrganizationMock.mockResolvedValue({ id: "org-default" });
-    countEmbeddedChunksForOrganizationMock.mockResolvedValue(0);
+    answerQuestionWithEvidenceMock.mockResolvedValue({
+      answer: "Not found in provided documents.",
+      citations: [],
+      confidence: "low",
+      needsReview: true
+    });
 
     const request = new Request("http://localhost/api/questions/answer", {
       method: "POST",
@@ -54,8 +47,9 @@ describe("/api/questions/answer", () => {
       needsReview: true
     });
 
-    expect(createEmbeddingMock).not.toHaveBeenCalled();
-    expect(retrieveTopChunksMock).not.toHaveBeenCalled();
-    expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
+    expect(answerQuestionWithEvidenceMock).toHaveBeenCalledWith({
+      organizationId: "org-default",
+      question: "Do we support SSO?"
+    });
   });
 });

@@ -17,7 +17,7 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
 - Delivery discipline: PR-sized changes with tests, acceptance criteria, and clear commit messages
 - MVP-first: keep implementation minimal before adding advanced capabilities
 
-## 4) Current Implemented Features (Day 1-3)
+## 4) Current Implemented Features (Day 1-4)
 
 - Next.js App Router scaffold (TypeScript) with `src/` layout
 - Docker Postgres with pgvector enabled
@@ -28,13 +28,16 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
 - Embeddings pipeline with OpenAI `text-embedding-3-small` and pgvector `vector(1536)` storage
 - Retrieval + cited single-question answering at `/api/questions/answer`
 - `/ask` UI for one-question evidence-grounded responses
-- Homepage shortcuts: `Go to Documents`, `Go to Ask`, `Open API Health`, `Open API Documents`
+- Questionnaire CSV import + question-column selection + batch autofill + CSV export
+- `/questionnaires` UI for import, autofill, and export actions
+- Homepage shortcuts: `Go to Documents`, `Go to Questionnaires`, `Go to Ask`, `Open API Health`, `Open API Documents`
 
 ## 5) Current Endpoints and Pages
 
 Pages:
 - `/` (home)
 - `/documents` (upload + list)
+- `/questionnaires` (CSV import + autofill + export)
 - `/ask` (single-question answering)
 
 API:
@@ -43,6 +46,11 @@ API:
 - `POST /api/documents/upload`
 - `POST /api/documents/embed`
 - `POST /api/questions/answer`
+- `GET /api/questionnaires`
+- `POST /api/questionnaires/headers`
+- `POST /api/questionnaires/import`
+- `POST /api/questionnaires/:id/autofill`
+- `GET /api/questionnaires/:id/export`
 
 ## 6) Local Runbook
 
@@ -56,6 +64,7 @@ npm run dev
 Then open:
 - `http://localhost:3000/`
 - `http://localhost:3000/documents`
+- `http://localhost:3000/questionnaires`
 - `http://localhost:3000/ask`
 
 ## 7) Environment Variables
@@ -74,5 +83,5 @@ Current required variables:
 
 ## 9) Next Milestones
 
-- Day 4: CSV batch autofill
 - Day 5: evidence-aware answer approval workflow and reviewer UX
+- Day 6: XLSX support + larger questionnaire performance improvements

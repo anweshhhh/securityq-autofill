@@ -12,6 +12,9 @@ export default function Home() {
           <Link href="/documents">Go to Documents</Link>
         </li>
         <li>
+          <Link href="/questionnaires">Go to Questionnaires</Link>
+        </li>
+        <li>
           <Link href="/ask">Go to Ask</Link>
         </li>
         <li>

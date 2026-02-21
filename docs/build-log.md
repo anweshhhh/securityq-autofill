@@ -160,3 +160,42 @@ This pattern prevented scope drift and kept changes runnable end-to-end while en
 - Fixed retrieval SQL snippet extraction cast to avoid runtime 500 (`LEFT(content, $4::int)`).
 - Hardened upload route so unexpected failures after document creation mark status as `ERROR` instead of leaving `UPLOADED`.
 - Added upload tests for `.md` and explicit failure-path coverage.
+
+## Day 4 Summary
+
+### What we shipped
+
+- CSV questionnaire import flow with question-column selection
+- `/questionnaires` UI for:
+  - CSV upload
+  - Questionnaire list
+  - Batch autofill trigger
+  - CSV export download
+- Batch autofill endpoint: `POST /api/questionnaires/:id/autofill`
+  - Reuses the same Day 3 evidence-answering logic used by `/api/questions/answer`
+  - Persists per-question `answer`, `citations`, `confidence`, and `needsReview`
+  - Enforces strict fallback: `Not found in provided documents.` + empty citations + low confidence + needsReview=true
+- CSV export endpoint: `GET /api/questionnaires/:id/export`
+  - Preserves original columns and row order
+  - Appends `Answer`, `Citations`, `Confidence`, `Needs Review`
+  - Uses proper CSV escaping and compact citation formatting
+
+### Prompt pattern used and why it worked
+
+- One PR-sized change with explicit scope boundaries
+- Hard acceptance criteria for import/autofill/export behavior
+- Explicit non-goals to avoid extra features
+- Evidence-first output contract carried from Day 3 into batch mode
+
+This kept backend behavior consistent and testable while adding the minimum Day 4 surface area.
+
+### How to verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate deploy`
+3. `npm test`
+4. `npm run dev`
+5. Open `http://localhost:3000/questionnaires`
+6. Upload a CSV and select the question column
+7. Click `Autofill`
+8. Click `Download CSV` and confirm added columns + citations

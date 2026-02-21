@@ -53,6 +53,9 @@ model Questionnaire {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
   name           String
+  sourceFileName String?
+  questionColumn String?
+  sourceHeaders  Json?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   questions      Question[]
@@ -62,9 +65,17 @@ model Question {
   id              String        @id @default(cuid())
   questionnaireId String
   questionnaire   Questionnaire @relation(fields: [questionnaireId], references: [id])
+  rowIndex        Int
+  sourceRow       Json
   text            String
+  answer          String?
+  citations       Json
+  confidence      String?
+  needsReview     Boolean?
   createdAt       DateTime      @default(now())
   approvedAnswers ApprovedAnswer[]
+
+  @@unique([questionnaireId, rowIndex])
 }
 
 model ApprovedAnswer {
