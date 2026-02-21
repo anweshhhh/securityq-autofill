@@ -72,8 +72,8 @@ export type EvidenceDebugInfo = {
   threshold: number;
   retrievedTopK: EvidenceDebugChunk[];
   afterMustMatch: EvidenceDebugChunk[];
-  droppedByMustMatch: Array<{ chunkId: string; reason: string }>;
-  finalCitations: Citation[];
+  droppedByMustMatch?: Array<{ chunkId: string; docName: string; reason: string }>;
+  finalCitations: Array<{ chunkId: string; docName: string }>;
 };
 
 type AttemptResult = {
@@ -1282,6 +1282,7 @@ async function retrieveRelevantChunks(params: {
     afterMustMatch: toDebugChunks(params.question, mustMatchInitial.kept),
     droppedByMustMatch: mustMatchInitial.dropped.map((entry) => ({
       chunkId: entry.chunk.chunkId,
+      docName: entry.chunk.docName,
       reason: entry.reason
     }))
   };
@@ -1317,6 +1318,7 @@ async function retrieveRelevantChunks(params: {
         afterMustMatch: toDebugChunks(params.question, mustMatchRetry.kept),
         droppedByMustMatch: mustMatchRetry.dropped.map((entry) => ({
           chunkId: entry.chunk.chunkId,
+          docName: entry.chunk.docName,
           reason: entry.reason
         }))
       }
@@ -1331,6 +1333,7 @@ async function retrieveRelevantChunks(params: {
       afterMustMatch: toDebugChunks(params.question, mustMatchRetry.kept),
       droppedByMustMatch: mustMatchRetry.dropped.map((entry) => ({
         chunkId: entry.chunk.chunkId,
+        docName: entry.chunk.docName,
         reason: entry.reason
       }))
     }
@@ -1452,7 +1455,10 @@ export async function answerQuestionWithEvidence(params: {
     return normalized;
   }
 
-  debugInfo.finalCitations = normalized.citations;
+  debugInfo.finalCitations = normalized.citations.map((citation) => ({
+    chunkId: citation.chunkId,
+    docName: citation.docName
+  }));
   return {
     ...normalized,
     debug: debugInfo

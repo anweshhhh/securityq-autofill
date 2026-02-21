@@ -608,3 +608,37 @@ This removes routing blind spots that produced false NOT_FOUND for valid IR cont
 7. Debug check:
    - `POST /api/questions/answer?debug=true`
    - confirm returned debug fields show must-match filtering and final citations
+
+## Day 4 QA hardening v9: /ask debug toggle
+
+### What changed
+
+- Added a `Show debug` checkbox on `/ask`.
+- `/ask` now sends `debug: true` in the JSON body when the toggle is checked.
+- `/api/questions/answer` already accepted `debug`; this was wired through UI and tests.
+- Aligned debug payload shape for easier troubleshooting:
+  - `retrievedTopK`: `{ chunkId, docName, similarity, overlap }`
+  - `afterMustMatch`: `{ chunkId, docName, similarity, overlap }`
+  - `droppedByMustMatch`: `{ chunkId, docName, reason }`
+  - `finalCitations`: `{ chunkId, docName }`
+- Kept behavior strict: when debug is omitted/false, no `debug` field is returned.
+
+### Why this matters
+
+This makes retrieval/routing failures visible directly from `/ask`, so we can diagnose false negatives or wrong-evidence selection quickly without additional scripts.
+
+### Tests added/updated
+
+- Route test verifies default `debug=false` response excludes `debug`.
+- Route test verifies body `debug=true` includes `debug` with `category`.
+- Existing safety tests remain passing with the updated routing diagnostics shape.
+
+### Verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate deploy`
+3. `npm test`
+4. `npm run dev`
+5. Open `http://localhost:3000/ask`
+6. Submit once with `Show debug` unchecked and confirm no `debug` field.
+7. Submit again with `Show debug` checked and confirm `debug` object is present.

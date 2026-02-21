@@ -8,11 +8,19 @@ type AnswerPayload = {
   citations: Array<{ docName: string; chunkId: string; quotedSnippet: string }>;
   confidence: "low" | "med" | "high";
   needsReview: boolean;
+  debug?: {
+    category: string;
+    retrievedTopK: Array<{ chunkId: string; docName: string; similarity?: number; overlap?: number }>;
+    afterMustMatch: Array<{ chunkId: string; docName: string; similarity?: number; overlap?: number }>;
+    droppedByMustMatch?: Array<{ chunkId: string; docName: string; reason: string }>;
+    finalCitations: Array<{ chunkId: string; docName: string }>;
+  };
 };
 
 export default function AskPage() {
   const [question, setQuestion] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
   const [result, setResult] = useState<AnswerPayload | null>(null);
   const [error, setError] = useState("");
 
@@ -33,7 +41,7 @@ export default function AskPage() {
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ question })
+        body: JSON.stringify({ question, debug: showDebug })
       });
 
       const payload = (await response.json()) as AnswerPayload & { error?: string };
@@ -66,6 +74,15 @@ export default function AskPage() {
           onChange={(event) => setQuestion(event.target.value)}
           placeholder="Enter one security question"
         />
+        <br />
+        <label>
+          <input
+            type="checkbox"
+            checked={showDebug}
+            onChange={(event) => setShowDebug(event.target.checked)}
+          />{" "}
+          Show debug
+        </label>
         <br />
         <button type="submit" disabled={isLoading}>
           {isLoading ? "Answering..." : "Submit"}

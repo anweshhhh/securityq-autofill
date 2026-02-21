@@ -60,7 +60,7 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
     - PARTIAL => low/med confidence, needsReview true
     - FULL => med/high confidence only when all required details are covered
   - confidence is never `high` when `needsReview=true`, when answer includes `Not specified...`, or when question category is `OTHER`
-- `/ask` UI for one-question evidence-grounded responses
+- `/ask` UI for one-question evidence-grounded responses, with a `Show debug` toggle that sends `debug: true` and renders retrieval diagnostics
 - Questionnaire CSV import + question-column selection + batch autofill + CSV export
 - `/questionnaires` UI for import, preview, autofill/resume, rerun-missing, archive, and export actions
 - Questionnaire details page at `/questionnaires/[id]` with per-question answers/citations filters

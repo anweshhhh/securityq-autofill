@@ -54,7 +54,7 @@ describe("/api/questions/answer", () => {
     });
   });
 
-  it("passes debug mode from query param", async () => {
+  it("passes debug mode from request body and returns debug payload", async () => {
     getOrCreateDefaultOrganizationMock.mockResolvedValue({ id: "org-default" });
     answerQuestionWithEvidenceMock.mockResolvedValue({
       answer: "Not found in provided documents.",
@@ -62,28 +62,28 @@ describe("/api/questions/answer", () => {
       confidence: "low",
       needsReview: true,
       debug: {
-        category: "OTHER",
+        category: "ACCESS_AUTH",
         threshold: 0.35,
-        retrievedTopK: [],
-        afterMustMatch: [],
-        droppedByMustMatch: [],
-        finalCitations: []
+        retrievedTopK: [{ chunkId: "chunk-1", docName: "Doc 1", similarity: 0.77, overlap: 2 }],
+        afterMustMatch: [{ chunkId: "chunk-1", docName: "Doc 1", similarity: 0.77, overlap: 2 }],
+        droppedByMustMatch: [{ chunkId: "chunk-2", docName: "Doc 2", reason: "No must-match terms found" }],
+        finalCitations: [{ chunkId: "chunk-1", docName: "Doc 1" }]
       }
     });
 
-    const request = new Request("http://localhost/api/questions/answer?debug=true", {
+    const request = new Request("http://localhost/api/questions/answer", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ question: "Do we support SSO?" })
+      body: JSON.stringify({ question: "Do we support SSO?", debug: true })
     });
 
     const response = await POST(request);
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(payload.debug?.category).toBe("OTHER");
+    expect(payload.debug?.category).toBe("ACCESS_AUTH");
     expect(answerQuestionWithEvidenceMock).toHaveBeenCalledWith({
       organizationId: "org-default",
       question: "Do we support SSO?",
