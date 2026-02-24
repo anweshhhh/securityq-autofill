@@ -13,6 +13,17 @@ enum DocumentStatus {
   ERROR
 }
 
+enum QuestionReviewStatus {
+  DRAFT
+  NEEDS_REVIEW
+  APPROVED
+}
+
+enum ApprovedAnswerSource {
+  GENERATED
+  MANUAL_EDIT
+}
+
 model Organization {
   id              String            @id @default(cuid())
   name            String
@@ -64,27 +75,33 @@ model Questionnaire {
 }
 
 model Question {
-  id              String        @id @default(cuid())
+  id              String               @id @default(cuid())
   questionnaireId String
-  questionnaire   Questionnaire @relation(fields: [questionnaireId], references: [id])
+  questionnaire   Questionnaire        @relation(fields: [questionnaireId], references: [id])
   rowIndex        Int
   sourceRow       Json
   text            String
   answer          String?
   citations       Json
-  createdAt       DateTime      @default(now())
-  approvedAnswers ApprovedAnswer[]
+  reviewStatus    QuestionReviewStatus @default(DRAFT)
+  createdAt       DateTime             @default(now())
+  approvedAnswer  ApprovedAnswer?
 
   @@unique([questionnaireId, rowIndex])
 }
 
 model ApprovedAnswer {
-  id             String       @id @default(cuid())
+  id             String               @id @default(cuid())
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  organization   Organization         @relation(fields: [organizationId], references: [id])
   /// TODO(mvp-followup): decouple approvals from strict questionId binding so approved answers can be reused across semantically equivalent questions with evidence checks.
-  questionId     String
-  question       Question     @relation(fields: [questionId], references: [id])
-  answer         String
-  createdAt      DateTime     @default(now())
+  questionId      String               @unique
+  question        Question             @relation(fields: [questionId], references: [id])
+  answerText      String
+  citationChunkIds String[]
+  source          ApprovedAnswerSource
+  approvedBy      String?              @default("system")
+  note            String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
 }
