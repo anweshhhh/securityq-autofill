@@ -4,12 +4,14 @@ import { getEmbeddingAvailability, processQuestionnaireAutofillBatch } from "@/l
 
 export async function POST(_request: Request, context: { params: { id: string } }) {
   try {
+    const isDevMode = process.env.DEV_MODE === "true";
     const url = new URL(_request.url);
-    let debug = url.searchParams.get("debug") === "true";
-    if (!debug && _request.headers.get("content-type")?.includes("application/json")) {
+    let debugRequested = url.searchParams.get("debug") === "true";
+    if (!debugRequested && _request.headers.get("content-type")?.includes("application/json")) {
       const payload = (await _request.json().catch(() => null)) as { debug?: boolean } | null;
-      debug = payload?.debug === true;
+      debugRequested = payload?.debug === true;
     }
+    const debug = isDevMode && debugRequested;
     const organization = await getOrCreateDefaultOrganization();
     const availability = await getEmbeddingAvailability(organization.id);
 
@@ -37,6 +39,11 @@ export async function POST(_request: Request, context: { params: { id: string } 
       questionnaireId: context.params.id,
       debug
     });
+
+    if (!isDevMode && progress && typeof progress === "object" && "debug" in progress) {
+      const { debug: _debug, ...withoutDebug } = progress as typeof progress & { debug?: unknown };
+      return NextResponse.json(withoutDebug);
+    }
 
     return NextResponse.json(progress);
   } catch (error) {

@@ -1,0 +1,3 @@
+Two-factor authentication is enabled for workforce sign-in.
+All client connections use SSL/TLS.
+Encryption keys are managed through a centralized key management service.

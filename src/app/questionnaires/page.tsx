@@ -11,30 +11,17 @@ type QuestionnaireRow = {
   createdAt: string;
   questionCount: number;
   answeredCount: number;
-  foundCount: number;
   notFoundCount: number;
-  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
-  progressPercent: number;
-  lastError: string | null;
 };
 
-type RunProgress = {
+type AutofillResult = {
   questionnaireId: string;
-  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
-  processedCount: number;
   totalCount: number;
+  answeredCount: number;
   foundCount: number;
   notFoundCount: number;
-  progressPercent: number;
-  lastError: string | null;
   error?: string;
 };
-
-const POLL_INTERVAL_MS = 450;
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 export default function QuestionnairesPage() {
   const [questionnaires, setQuestionnaires] = useState<QuestionnaireRow[]>([]);
@@ -48,8 +35,7 @@ export default function QuestionnairesPage() {
   const [isParsing, setIsParsing] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [activeAutofillId, setActiveAutofillId] = useState<string | null>(null);
-  const [activeRerunId, setActiveRerunId] = useState<string | null>(null);
-  const [activeArchiveId, setActiveArchiveId] = useState<string | null>(null);
+  const [activeDeleteId, setActiveDeleteId] = useState<string | null>(null);
 
   const previewHeaders = useMemo(() => headers, [headers]);
 
@@ -177,78 +163,56 @@ export default function QuestionnairesPage() {
     }
   }
 
-  async function runLoop(
-    questionnaireId: string,
-    endpointPath: "autofill" | "rerun-missing",
-    setActiveId: (id: string | null) => void,
-    label: string
-  ) {
-    setActiveId(questionnaireId);
+  async function runAutofill(questionnaireId: string) {
+    setActiveAutofillId(questionnaireId);
     setMessage("");
 
     try {
-      while (true) {
-        const response = await fetch(`/api/questionnaires/${questionnaireId}/${endpointPath}`, {
-          method: "POST"
-        });
-
-        const payload = (await response.json()) as RunProgress;
-
-        if (!response.ok) {
-          throw new Error(payload.error ?? `${label} failed`);
-        }
-
-        setMessage(
-          `${label} ${payload.status}: ${payload.processedCount}/${payload.totalCount} (${payload.progressPercent}%)`
-        );
-
-        await fetchQuestionnaires();
-
-        if (payload.status === "COMPLETED") {
-          break;
-        }
-
-        if (payload.status === "FAILED") {
-          throw new Error(payload.lastError ?? `${label} failed`);
-        }
-
-        await sleep(POLL_INTERVAL_MS);
-      }
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : `${label} failed`);
-    } finally {
-      setActiveId(null);
-    }
-  }
-
-  async function archiveQuestionnaireById(questionnaireId: string) {
-    if (!window.confirm("Archive this questionnaire from the list?")) {
-      return;
-    }
-
-    setActiveArchiveId(questionnaireId);
-    setMessage("");
-
-    try {
-      const response = await fetch(`/api/questionnaires/${questionnaireId}/archive`, {
+      const response = await fetch(`/api/questionnaires/${questionnaireId}/autofill`, {
         method: "POST"
       });
 
-      const payload = (await response.json()) as {
-        ok?: boolean;
-        error?: string;
-      };
+      const payload = (await response.json()) as AutofillResult;
 
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error ?? "Archive failed");
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Autofill failed");
       }
 
-      setMessage("Questionnaire archived.");
+      setMessage(
+        `Autofill complete: ${payload.answeredCount}/${payload.totalCount} answered, ${payload.notFoundCount} not found.`
+      );
       await fetchQuestionnaires();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Archive failed");
+      setMessage(error instanceof Error ? error.message : "Autofill failed");
     } finally {
-      setActiveArchiveId(null);
+      setActiveAutofillId(null);
+    }
+  }
+
+  async function deleteQuestionnaire(questionnaireId: string) {
+    if (!window.confirm("Delete this questionnaire?")) {
+      return;
+    }
+
+    setActiveDeleteId(questionnaireId);
+    setMessage("");
+
+    try {
+      const response = await fetch(`/api/questionnaires/${questionnaireId}`, {
+        method: "DELETE"
+      });
+      const payload = (await response.json()) as { ok?: boolean; error?: string };
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? "Delete failed");
+      }
+
+      setMessage("Questionnaire deleted.");
+      await fetchQuestionnaires();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Delete failed");
+    } finally {
+      setActiveDeleteId(null);
     }
   }
 
@@ -333,9 +297,8 @@ export default function QuestionnairesPage() {
         <thead>
           <tr>
             <th>Name</th>
-            <th>Status</th>
-            <th>Progress</th>
-            <th>Found</th>
+            <th>Questions</th>
+            <th>Answered</th>
             <th>Not Found</th>
             <th>Created</th>
             <th>Actions</th>
@@ -344,62 +307,33 @@ export default function QuestionnairesPage() {
         <tbody>
           {questionnaires.length === 0 ? (
             <tr>
-              <td colSpan={7}>No questionnaires yet.</td>
+              <td colSpan={6}>No questionnaires yet.</td>
             </tr>
           ) : (
             questionnaires.map((questionnaire) => (
               <tr key={questionnaire.id}>
                 <td>{questionnaire.name}</td>
-                <td>{questionnaire.status}</td>
-                <td>
-                  {questionnaire.answeredCount}/{questionnaire.questionCount} ({questionnaire.progressPercent}%)
-                </td>
-                <td>{questionnaire.foundCount}</td>
+                <td>{questionnaire.questionCount}</td>
+                <td>{questionnaire.answeredCount}</td>
                 <td>{questionnaire.notFoundCount}</td>
                 <td>{new Date(questionnaire.createdAt).toLocaleString()}</td>
                 <td>
                   <Link href={`/questionnaires/${questionnaire.id}`}>View</Link>{" "}
                   <button
                     type="button"
-                    onClick={() =>
-                      void runLoop(questionnaire.id, "autofill", setActiveAutofillId, "Autofill")
-                    }
-                    disabled={
-                      activeAutofillId === questionnaire.id ||
-                      activeRerunId === questionnaire.id ||
-                      activeArchiveId === questionnaire.id ||
-                      isLoadingList
-                    }
+                    onClick={() => void runAutofill(questionnaire.id)}
+                    disabled={activeAutofillId === questionnaire.id || activeDeleteId === questionnaire.id}
                   >
-                    {activeAutofillId === questionnaire.id ? "Running..." : "Autofill/Resume"}
+                    {activeAutofillId === questionnaire.id ? "Running..." : "Run Autofill"}
                   </button>{" "}
+                  <a href={`/api/questionnaires/${questionnaire.id}/export`}>Download CSV</a>{" "}
                   <button
                     type="button"
-                    onClick={() =>
-                      void runLoop(questionnaire.id, "rerun-missing", setActiveRerunId, "Re-run Missing")
-                    }
-                    disabled={
-                      activeAutofillId === questionnaire.id ||
-                      activeRerunId === questionnaire.id ||
-                      activeArchiveId === questionnaire.id ||
-                      isLoadingList
-                    }
+                    onClick={() => void deleteQuestionnaire(questionnaire.id)}
+                    disabled={activeAutofillId === questionnaire.id || activeDeleteId === questionnaire.id}
                   >
-                    {activeRerunId === questionnaire.id ? "Running..." : "Re-run Missing"}
-                  </button>{" "}
-                  <button
-                    type="button"
-                    onClick={() => void archiveQuestionnaireById(questionnaire.id)}
-                    disabled={
-                      activeAutofillId === questionnaire.id ||
-                      activeRerunId === questionnaire.id ||
-                      activeArchiveId === questionnaire.id ||
-                      isLoadingList
-                    }
-                  >
-                    {activeArchiveId === questionnaire.id ? "Archiving..." : "Archive"}
-                  </button>{" "}
-                  <a href={`/api/questionnaires/${questionnaire.id}/export`}>Download CSV</a>
+                    {activeDeleteId === questionnaire.id ? "Deleting..." : "Delete"}
+                  </button>
                 </td>
               </tr>
             ))

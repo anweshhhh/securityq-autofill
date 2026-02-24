@@ -140,31 +140,6 @@ function buildSectionSnippet(params: {
     return "";
   }
 
-  if (/recovery objectives/i.test(snippet) && (!/\brto\b/i.test(snippet) || !/\brpo\b/i.test(snippet))) {
-    const lastIndex = params.startLineIndex + selectedLines.length;
-    for (
-      let index = lastIndex;
-      index < params.lines.length && selectedLines.length < params.maxLines + 6;
-      index += 1
-    ) {
-      const nextLine = params.lines[index];
-      const extraChars = 1 + nextLine.length;
-      if (currentChars + extraChars > params.maxChars) {
-        break;
-      }
-
-      selectedLines.push(nextLine);
-      currentChars += extraChars;
-
-      const expandedSnippet = selectedLines.join("\n");
-      if (/\brto\b/i.test(expandedSnippet) && /\brpo\b/i.test(expandedSnippet)) {
-        break;
-      }
-    }
-
-    snippet = selectedLines.join("\n").trim();
-  }
-
   return snippet;
 }
 
@@ -202,14 +177,6 @@ function getQuestionAnchorTokens(questionText: string): string[] {
   const tokens = new Set<string>();
 
   for (const token of questionText.match(/\b[a-zA-Z][a-zA-Z0-9-]{3,}\b/g) ?? []) {
-    tokens.add(token.toLowerCase());
-  }
-
-  for (const token of questionText.match(/\b(?:tls|ssl|mfa|sig|soc2)\b/gi) ?? []) {
-    tokens.add(token.toLowerCase());
-  }
-
-  for (const token of questionText.match(/\b(?:rto|rpo|sdlc|ir)\b/gi) ?? []) {
     tokens.add(token.toLowerCase());
   }
 
@@ -405,61 +372,4 @@ export async function retrieveTopChunks(params: {
   });
 
   return mapped;
-}
-
-export async function searchChunksByKeywordTerms(params: {
-  organizationId: string;
-  questionText: string;
-  terms: string[];
-  limit?: number;
-}): Promise<RetrievedChunk[]> {
-  const limit = params.limit ?? 5;
-  const normalizedTerms = Array.from(
-    new Set(
-      params.terms
-        .map((term) => sanitizeExtractedText(term).replace(/\*+$/g, "").trim())
-        .filter((term) => term.length >= 3)
-    )
-  ).slice(0, 12);
-  if (normalizedTerms.length === 0) {
-    return [];
-  }
-
-  const rows = await prisma.documentChunk.findMany({
-    where: {
-      document: {
-        organizationId: params.organizationId
-      },
-      OR: normalizedTerms.map((term) => ({
-        content: {
-          contains: term,
-          mode: "insensitive"
-        }
-      }))
-    },
-    include: {
-      document: {
-        select: {
-          name: true
-        }
-      }
-    },
-    orderBy: {
-      id: "asc"
-    },
-    take: limit
-  });
-  const anchorTokens = getQuestionAnchorTokens(params.questionText);
-
-  return rows.map((row) => ({
-    chunkId: row.id,
-    docName: row.document.name,
-    quotedSnippet: selectContextSnippet({
-      content: row.content,
-      anchorTokens,
-      snippetChars: DEFAULT_SNIPPET_CHARS
-    }),
-    fullContent: normalizeWhitespace(row.content),
-    similarity: 0.36
-  }));
 }

@@ -1,14 +1,7 @@
-import {
-  NOT_FOUND_RESPONSE,
-  answerQuestionWithEvidence,
-  categorizeQuestion,
-  type EvidenceDebugInfo
-} from "@/lib/answering";
+import { NOT_FOUND_RESPONSE, type EvidenceDebugInfo } from "@/lib/answering";
 import { parseCsvFile } from "@/lib/csv";
 import { prisma } from "@/lib/prisma";
-
-export const AUTOFILL_BATCH_SIZE = 5;
-const MODEL_CALL_DELAY_MS = 200;
+import { answerQuestion } from "@/server/answerEngine";
 
 type ImportQuestionnaireInput = {
   organizationId: string;
@@ -17,28 +10,31 @@ type ImportQuestionnaireInput = {
   questionnaireName?: string;
 };
 
-export type AutofillProgress = {
-  questionnaireId: string;
-  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
-  processedCount: number;
-  totalCount: number;
-  foundCount: number;
-  notFoundCount: number;
-  progressPercent: number;
-  lastError: string | null;
-};
-
 export type AutofillDebugEntry = {
   questionId: string;
   rowIndex: number;
   debug: EvidenceDebugInfo;
 };
 
-export type AutofillBatchResult = AutofillProgress & {
+export type AutofillResult = {
+  questionnaireId: string;
+  totalCount: number;
+  answeredCount: number;
+  foundCount: number;
+  notFoundCount: number;
   debug?: {
     enabled: boolean;
     entries: AutofillDebugEntry[];
   };
+};
+
+export type QuestionnaireListItem = {
+  id: string;
+  name: string;
+  createdAt: Date;
+  questionCount: number;
+  answeredCount: number;
+  notFoundCount: number;
 };
 
 export type QuestionnaireDetails = {
@@ -47,12 +43,9 @@ export type QuestionnaireDetails = {
     name: string;
     sourceFileName: string | null;
     questionColumn: string | null;
-    status: AutofillProgress["status"];
-    totalCount: number;
-    processedCount: number;
-    foundCount: number;
+    questionCount: number;
+    answeredCount: number;
     notFoundCount: number;
-    progressPercent: number;
     createdAt: Date;
     updatedAt: Date;
   };
@@ -60,23 +53,10 @@ export type QuestionnaireDetails = {
     id: string;
     rowIndex: number;
     text: string;
-    category: string;
     answer: string | null;
     citations: unknown;
-    confidence: string | null;
-    needsReview: boolean | null;
-    notFoundReason: string | null;
-  }>;
-  missingEvidenceReport: Array<{
-    category: string;
-    count: number;
-    recommendation: string;
   }>;
 };
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function toQuestionnaireName(fileName: string, providedName?: string): string {
   if (providedName?.trim()) {
@@ -87,133 +67,19 @@ function toQuestionnaireName(fileName: string, providedName?: string): string {
   return withoutExtension || "Questionnaire";
 }
 
-function toProgressPercent(processedCount: number, totalCount: number): number {
-  if (totalCount <= 0) {
-    return 0;
-  }
-
-  return Math.round((processedCount / totalCount) * 100);
-}
-
-function mapStatus(value: string): AutofillProgress["status"] {
-  if (value === "RUNNING" || value === "COMPLETED" || value === "FAILED") {
-    return value;
-  }
-
-  return "PENDING";
-}
-
-function reportCategoryForQuestion(questionText: string): string {
-  return categorizeQuestion(questionText);
-}
-
-const MISSING_EVIDENCE_RECOMMENDATIONS: Record<string, string> = {
-  GENERAL: "Upload documents that explicitly answer these questions."
-};
-
-function buildMissingEvidenceReport(
-  questions: Array<{ answer: string | null; text: string }>
-): Array<{ category: string; count: number; recommendation: string }> {
-  const counts = new Map<string, number>();
-
-  for (const question of questions) {
-    if (question.answer !== NOT_FOUND_RESPONSE.answer) {
-      continue;
-    }
-
-    const category = reportCategoryForQuestion(question.text);
-    counts.set(category, (counts.get(category) ?? 0) + 1);
-  }
-
-  return Array.from(counts.entries())
-    .map(([category, count]) => ({
-      category,
-      count,
-      recommendation:
-        MISSING_EVIDENCE_RECOMMENDATIONS[category] ??
-        "Upload documents that explicitly answer these questions."
-    }))
-    .sort((left, right) => {
-      if (left.count !== right.count) {
-        return right.count - left.count;
-      }
-
-      return left.category.localeCompare(right.category);
-    });
-}
-
-function progressFromQuestionnaire(questionnaire: {
-  id: string;
-  runStatus: string;
-  processedCount: number;
-  totalCount: number;
-  foundCount: number;
+function summarizeAnswers(answers: Array<string | null>): {
+  answeredCount: number;
   notFoundCount: number;
-  lastError: string | null;
-}): AutofillProgress {
-  return {
-    questionnaireId: questionnaire.id,
-    status: mapStatus(questionnaire.runStatus),
-    processedCount: questionnaire.processedCount,
-    totalCount: questionnaire.totalCount,
-    foundCount: questionnaire.foundCount,
-    notFoundCount: questionnaire.notFoundCount,
-    progressPercent: toProgressPercent(questionnaire.processedCount, questionnaire.totalCount),
-    lastError: questionnaire.lastError
-  };
-}
-
-async function computeQuestionnaireCounts(questionnaireId: string) {
-  const [totalCount, processedCount, notFoundCount] = await Promise.all([
-    prisma.question.count({ where: { questionnaireId } }),
-    prisma.question.count({
-      where: {
-        questionnaireId,
-        answer: {
-          not: null
-        }
-      }
-    }),
-    prisma.question.count({
-      where: {
-        questionnaireId,
-        answer: NOT_FOUND_RESPONSE.answer
-      }
-    })
-  ]);
+  foundCount: number;
+} {
+  const answeredCount = answers.filter((answer) => answer !== null).length;
+  const notFoundCount = answers.filter((answer) => answer === NOT_FOUND_RESPONSE.answer).length;
 
   return {
-    totalCount,
-    processedCount,
+    answeredCount,
     notFoundCount,
-    foundCount: Math.max(processedCount - notFoundCount, 0)
+    foundCount: Math.max(answeredCount - notFoundCount, 0)
   };
-}
-
-async function updateQuestionnaireProgress(params: {
-  questionnaireId: string;
-  runStatus: AutofillProgress["status"];
-  lastError: string | null;
-  startedAt?: Date | null;
-  finishedAt?: Date | null;
-}) {
-  const counts = await computeQuestionnaireCounts(params.questionnaireId);
-
-  const updated = await prisma.questionnaire.update({
-    where: { id: params.questionnaireId },
-    data: {
-      totalCount: counts.totalCount,
-      processedCount: counts.processedCount,
-      foundCount: counts.foundCount,
-      notFoundCount: counts.notFoundCount,
-      runStatus: params.runStatus,
-      lastError: params.lastError,
-      startedAt: params.startedAt,
-      finishedAt: params.finishedAt
-    }
-  });
-
-  return progressFromQuestionnaire(updated);
 }
 
 export async function importQuestionnaireFromCsv(input: ImportQuestionnaireInput) {
@@ -230,11 +96,7 @@ export async function importQuestionnaireFromCsv(input: ImportQuestionnaireInput
       sourceFileName: input.file.name,
       questionColumn: input.questionColumn,
       sourceHeaders: parsed.headers,
-      totalCount: parsed.rows.length,
-      processedCount: 0,
-      foundCount: 0,
-      notFoundCount: 0,
-      runStatus: "PENDING"
+      totalCount: parsed.rows.length
     }
   });
 
@@ -255,27 +117,33 @@ export async function importQuestionnaireFromCsv(input: ImportQuestionnaireInput
   };
 }
 
-export async function listQuestionnairesForOrganization(organizationId: string) {
+export async function listQuestionnairesForOrganization(
+  organizationId: string
+): Promise<QuestionnaireListItem[]> {
   const questionnaires = await prisma.questionnaire.findMany({
-    where: {
-      organizationId,
-      archivedAt: null
-    },
-    orderBy: { createdAt: "desc" }
+    where: { organizationId },
+    orderBy: { createdAt: "desc" },
+    include: {
+      questions: {
+        select: {
+          answer: true
+        }
+      }
+    }
   });
 
-  return questionnaires.map((questionnaire) => ({
-    id: questionnaire.id,
-    name: questionnaire.name,
-    createdAt: questionnaire.createdAt,
-    questionCount: questionnaire.totalCount,
-    answeredCount: questionnaire.processedCount,
-    foundCount: questionnaire.foundCount,
-    notFoundCount: questionnaire.notFoundCount,
-    status: mapStatus(questionnaire.runStatus),
-    progressPercent: toProgressPercent(questionnaire.processedCount, questionnaire.totalCount),
-    lastError: questionnaire.lastError
-  }));
+  return questionnaires.map((questionnaire) => {
+    const summary = summarizeAnswers(questionnaire.questions.map((question) => question.answer));
+
+    return {
+      id: questionnaire.id,
+      name: questionnaire.name,
+      createdAt: questionnaire.createdAt,
+      questionCount: questionnaire.questions.length,
+      answeredCount: summary.answeredCount,
+      notFoundCount: summary.notFoundCount
+    };
+  });
 }
 
 export async function getQuestionnaireDetails(
@@ -285,8 +153,7 @@ export async function getQuestionnaireDetails(
   const questionnaire = await prisma.questionnaire.findFirst({
     where: {
       id: questionnaireId,
-      organizationId,
-      archivedAt: null
+      organizationId
     },
     include: {
       questions: {
@@ -296,10 +163,7 @@ export async function getQuestionnaireDetails(
           rowIndex: true,
           text: true,
           answer: true,
-          citations: true,
-          confidence: true,
-          needsReview: true,
-          notFoundReason: true
+          citations: true
         }
       }
     }
@@ -309,10 +173,7 @@ export async function getQuestionnaireDetails(
     return null;
   }
 
-  const questions = questionnaire.questions.map((question) => ({
-    ...question,
-    category: reportCategoryForQuestion(question.text)
-  }));
+  const summary = summarizeAnswers(questionnaire.questions.map((question) => question.answer));
 
   return {
     questionnaire: {
@@ -320,33 +181,14 @@ export async function getQuestionnaireDetails(
       name: questionnaire.name,
       sourceFileName: questionnaire.sourceFileName,
       questionColumn: questionnaire.questionColumn,
-      status: mapStatus(questionnaire.runStatus),
-      totalCount: questionnaire.totalCount,
-      processedCount: questionnaire.processedCount,
-      foundCount: questionnaire.foundCount,
-      notFoundCount: questionnaire.notFoundCount,
-      progressPercent: toProgressPercent(questionnaire.processedCount, questionnaire.totalCount),
+      questionCount: questionnaire.questions.length,
+      answeredCount: summary.answeredCount,
+      notFoundCount: summary.notFoundCount,
       createdAt: questionnaire.createdAt,
       updatedAt: questionnaire.updatedAt
     },
-    questions,
-    missingEvidenceReport: buildMissingEvidenceReport(questions)
+    questions: questionnaire.questions
   };
-}
-
-export async function archiveQuestionnaire(organizationId: string, questionnaireId: string) {
-  const result = await prisma.questionnaire.updateMany({
-    where: {
-      id: questionnaireId,
-      organizationId,
-      archivedAt: null
-    },
-    data: {
-      archivedAt: new Date()
-    }
-  });
-
-  return result.count > 0;
 }
 
 export async function deleteQuestionnaire(organizationId: string, questionnaireId: string) {
@@ -411,24 +253,20 @@ export async function getEmbeddingAvailability(organizationId: string) {
 export async function processQuestionnaireAutofillBatch(params: {
   organizationId: string;
   questionnaireId: string;
-  batchSize?: number;
   debug?: boolean;
-}): Promise<AutofillBatchResult> {
-  const batchSize = params.batchSize ?? AUTOFILL_BATCH_SIZE;
-  const debugEnabled = params.debug === true;
+}): Promise<AutofillResult> {
+  const devModeEnabled = process.env.DEV_MODE === "true";
+  const debugEnabled = devModeEnabled && params.debug === true;
   const persistDebug = debugEnabled && process.env.DEBUG_EVIDENCE === "true";
   const debugEntries: AutofillDebugEntry[] = [];
 
   const questionnaire = await prisma.questionnaire.findFirst({
     where: {
       id: params.questionnaireId,
-      organizationId: params.organizationId,
-      archivedAt: null
+      organizationId: params.organizationId
     },
     select: {
-      id: true,
-      runStatus: true,
-      startedAt: true
+      id: true
     }
   });
 
@@ -436,260 +274,83 @@ export async function processQuestionnaireAutofillBatch(params: {
     throw new Error("Questionnaire not found");
   }
 
-  const runStartedAt = questionnaire.startedAt ?? new Date();
-
-  if (questionnaire.runStatus !== "RUNNING") {
-    await prisma.questionnaire.update({
-      where: { id: questionnaire.id },
-      data: {
-        runStatus: "RUNNING",
-        lastError: null,
-        startedAt: runStartedAt,
-        finishedAt: null
-      }
-    });
-  }
-
-  const batchQuestions = await prisma.question.findMany({
+  const questions = await prisma.question.findMany({
     where: {
-      questionnaireId: questionnaire.id,
-      answer: null
+      questionnaireId: questionnaire.id
     },
     orderBy: {
       rowIndex: "asc"
-    },
-    take: batchSize
+    }
   });
 
-  if (batchQuestions.length === 0) {
-    const progress = await updateQuestionnaireProgress({
+  for (const question of questions) {
+    const answer = await answerQuestion({
+      orgId: params.organizationId,
       questionnaireId: questionnaire.id,
-      runStatus: "COMPLETED",
-      lastError: null,
-      startedAt: runStartedAt,
-      finishedAt: new Date()
+      questionId: question.id,
+      questionText: question.text,
+      debug: debugEnabled
     });
 
-    return debugEnabled
-      ? {
-          ...progress,
-          debug: {
-            enabled: true,
-            entries: debugEntries
-          }
-        }
-      : progress;
-  }
-
-  try {
-    for (let index = 0; index < batchQuestions.length; index += 1) {
-      const question = batchQuestions[index];
-      const answer = await answerQuestionWithEvidence({
-        organizationId: params.organizationId,
-        question: question.text,
-        debug: debugEnabled
+    if (debugEnabled && answer.debug) {
+      debugEntries.push({
+        questionId: question.id,
+        rowIndex: question.rowIndex,
+        debug: answer.debug
       });
-
-      if (debugEnabled && answer.debug) {
-        debugEntries.push({
-          questionId: question.id,
-          rowIndex: question.rowIndex,
-          debug: answer.debug
-        });
-      }
-
-      let sourceRowUpdate = undefined;
-      if (persistDebug && answer.debug) {
-        const existingSourceRow =
-          question.sourceRow && typeof question.sourceRow === "object" && !Array.isArray(question.sourceRow)
-            ? (question.sourceRow as Record<string, unknown>)
-            : {};
-
-        sourceRowUpdate = {
-          ...existingSourceRow,
-          __answerDebug: answer.debug
-        };
-      }
-
-      await prisma.question.update({
-        where: { id: question.id },
-        data: {
-          answer: answer.answer,
-          citations: answer.citations,
-          confidence: answer.confidence,
-          needsReview: answer.needsReview,
-          notFoundReason:
-            answer.answer === NOT_FOUND_RESPONSE.answer ? (answer.notFoundReason ?? null) : null,
-          ...(sourceRowUpdate ? { sourceRow: sourceRowUpdate } : {})
-        }
-      });
-
-      if (index < batchQuestions.length - 1) {
-        await sleep(MODEL_CALL_DELAY_MS);
-      }
     }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Autofill batch failed";
 
-    const progress = await updateQuestionnaireProgress({
-      questionnaireId: questionnaire.id,
-      runStatus: "FAILED",
-      lastError: message,
-      startedAt: runStartedAt,
-      finishedAt: null
+    let sourceRowUpdate = undefined;
+    if (persistDebug && answer.debug) {
+      const existingSourceRow =
+        question.sourceRow && typeof question.sourceRow === "object" && !Array.isArray(question.sourceRow)
+          ? (question.sourceRow as Record<string, unknown>)
+          : {};
+
+      sourceRowUpdate = {
+        ...existingSourceRow,
+        __answerDebug: answer.debug
+      };
+    }
+
+    await prisma.question.update({
+      where: { id: question.id },
+      data: {
+        answer: answer.answer,
+        citations: answer.citations,
+        ...(sourceRowUpdate ? { sourceRow: sourceRowUpdate } : {})
+      }
     });
-
-    return debugEnabled
-      ? {
-          ...progress,
-          debug: {
-            enabled: true,
-            entries: debugEntries
-          }
-        }
-      : progress;
   }
 
-  const remaining = await prisma.question.count({
+  const refreshedQuestions = await prisma.question.findMany({
     where: {
-      questionnaireId: questionnaire.id,
-      answer: null
+      questionnaireId: questionnaire.id
+    },
+    select: {
+      answer: true
     }
   });
 
-  const progress = await updateQuestionnaireProgress({
-    questionnaireId: questionnaire.id,
-    runStatus: remaining === 0 ? "COMPLETED" : "RUNNING",
-    lastError: null,
-    startedAt: runStartedAt,
-    finishedAt: remaining === 0 ? new Date() : null
-  });
+  const summary = summarizeAnswers(refreshedQuestions.map((question) => question.answer));
 
   return debugEnabled
     ? {
-        ...progress,
+        questionnaireId: questionnaire.id,
+        totalCount: refreshedQuestions.length,
+        answeredCount: summary.answeredCount,
+        foundCount: summary.foundCount,
+        notFoundCount: summary.notFoundCount,
         debug: {
           enabled: true,
           entries: debugEntries
         }
       }
-    : progress;
-}
-
-export async function processQuestionnaireRerunMissingBatch(params: {
-  organizationId: string;
-  questionnaireId: string;
-  batchSize?: number;
-}): Promise<AutofillProgress> {
-  const batchSize = params.batchSize ?? AUTOFILL_BATCH_SIZE;
-
-  const questionnaire = await prisma.questionnaire.findFirst({
-    where: {
-      id: params.questionnaireId,
-      organizationId: params.organizationId,
-      archivedAt: null
-    },
-    select: {
-      id: true,
-      runStatus: true,
-      startedAt: true
-    }
-  });
-
-  if (!questionnaire) {
-    throw new Error("Questionnaire not found");
-  }
-
-  const isContinuingRun = questionnaire.runStatus === "RUNNING" && questionnaire.startedAt !== null;
-  const runStartedAt: Date =
-    isContinuingRun && questionnaire.startedAt ? questionnaire.startedAt : new Date();
-
-  if (!isContinuingRun) {
-    await prisma.questionnaire.update({
-      where: { id: questionnaire.id },
-      data: {
-        runStatus: "RUNNING",
-        lastError: null,
-        startedAt: runStartedAt,
-        finishedAt: null
-      }
-    });
-  }
-
-  const rerunFilter = {
-    questionnaireId: questionnaire.id,
-    OR: [{ answer: null }, { answer: NOT_FOUND_RESPONSE.answer }],
-    AND: [
-      {
-        OR: [{ lastRerunAt: null }, { lastRerunAt: { lt: runStartedAt } }]
-      }
-    ]
-  };
-
-  const batchQuestions = await prisma.question.findMany({
-    where: rerunFilter,
-    orderBy: {
-      rowIndex: "asc"
-    },
-    take: batchSize
-  });
-
-  if (batchQuestions.length === 0) {
-    return updateQuestionnaireProgress({
-      questionnaireId: questionnaire.id,
-      runStatus: "COMPLETED",
-      lastError: null,
-      startedAt: runStartedAt,
-      finishedAt: new Date()
-    });
-  }
-
-  try {
-    for (let index = 0; index < batchQuestions.length; index += 1) {
-      const question = batchQuestions[index];
-      const answer = await answerQuestionWithEvidence({
-        organizationId: params.organizationId,
-        question: question.text
-      });
-
-      await prisma.question.update({
-        where: { id: question.id },
-        data: {
-          answer: answer.answer,
-          citations: answer.citations,
-          confidence: answer.confidence,
-          needsReview: answer.needsReview,
-          notFoundReason:
-            answer.answer === NOT_FOUND_RESPONSE.answer ? (answer.notFoundReason ?? null) : null,
-          lastRerunAt: new Date()
-        }
-      });
-
-      if (index < batchQuestions.length - 1) {
-        await sleep(MODEL_CALL_DELAY_MS);
-      }
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Re-run missing batch failed";
-
-    return updateQuestionnaireProgress({
-      questionnaireId: questionnaire.id,
-      runStatus: "FAILED",
-      lastError: message,
-      startedAt: runStartedAt,
-      finishedAt: null
-    });
-  }
-
-  const remaining = await prisma.question.count({
-    where: rerunFilter
-  });
-
-  return updateQuestionnaireProgress({
-    questionnaireId: questionnaire.id,
-    runStatus: remaining === 0 ? "COMPLETED" : "RUNNING",
-    lastError: null,
-    startedAt: runStartedAt,
-    finishedAt: remaining === 0 ? new Date() : null
-  });
+    : {
+        questionnaireId: questionnaire.id,
+        totalCount: refreshedQuestions.length,
+        answeredCount: summary.answeredCount,
+        foundCount: summary.foundCount,
+        notFoundCount: summary.notFoundCount
+      };
 }

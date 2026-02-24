@@ -5,18 +5,9 @@ export type QuestionnaireExportRow = {
   sourceRow: Record<string, string>;
   answer: string;
   citations: Citation[];
-  confidence: string;
-  needsReview: boolean;
-  notFoundReason: string;
 };
 
-export const EXPORT_APPEND_HEADERS = [
-  "Answer",
-  "Citations",
-  "Confidence",
-  "Needs Review",
-  "NotFoundReason"
-];
+export const EXPORT_APPEND_HEADERS = ["Answer", "Citations"];
 
 export function escapeCsvValue(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;
@@ -34,10 +25,7 @@ export function buildQuestionnaireExportCsv(
 
     const appendedColumns = [
       escapeCsvValue(row.answer),
-      escapeCsvValue(formatCitationsCompact(row.citations)),
-      escapeCsvValue(row.confidence),
-      escapeCsvValue(String(row.needsReview)),
-      escapeCsvValue(row.notFoundReason)
+      escapeCsvValue(formatCitationsCompact(row.citations))
     ];
 
     return [...sourceColumns, ...appendedColumns].join(",");

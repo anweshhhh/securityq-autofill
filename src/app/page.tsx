@@ -1,12 +1,12 @@
 import Link from "next/link";
 
 export default function Home() {
+  const isDevMode = process.env.DEV_MODE === "true";
+
   return (
     <main>
       <h1>SecurityQ Autofill</h1>
-      <p>
-        Scaffold is live. The API health check is available at <code>/api/health</code>.
-      </p>
+      <p>Evidence-first security questionnaire workflows.</p>
       <ul>
         <li>
           <Link href="/documents">Go to Documents</Link>
@@ -14,19 +14,11 @@ export default function Home() {
         <li>
           <Link href="/questionnaires">Go to Questionnaires</Link>
         </li>
-        <li>
-          <Link href="/ask">Go to Ask</Link>
-        </li>
-        <li>
-          <a href="/api/health" target="_blank" rel="noreferrer">
-            Open API Health
-          </a>
-        </li>
-        <li>
-          <a href="/api/documents" target="_blank" rel="noreferrer">
-            Open API Documents
-          </a>
-        </li>
+        {isDevMode ? (
+          <li>
+            <Link href="/ask">Go to Ask</Link>
+          </li>
+        ) : null}
       </ul>
     </main>
   );

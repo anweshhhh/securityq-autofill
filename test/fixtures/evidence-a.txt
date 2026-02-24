@@ -1,0 +1,3 @@
+MFA is enabled for all employee accounts.
+TLS 1.2 is required for external traffic.
+Customer data is encrypted at rest using AES-256.

@@ -14,12 +14,8 @@ type QuestionRow = {
   id: string;
   rowIndex: number;
   text: string;
-  category: string;
   answer: string | null;
   citations: Citation[];
-  confidence: string | null;
-  needsReview: boolean | null;
-  notFoundReason: string | null;
 };
 
 type QuestionnaireDetailsPayload = {
@@ -28,25 +24,17 @@ type QuestionnaireDetailsPayload = {
     name: string;
     sourceFileName: string | null;
     questionColumn: string | null;
-    status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
-    totalCount: number;
-    processedCount: number;
-    foundCount: number;
+    questionCount: number;
+    answeredCount: number;
     notFoundCount: number;
-    progressPercent: number;
     createdAt: string;
     updatedAt: string;
   };
   questions: QuestionRow[];
-  missingEvidenceReport: Array<{
-    category: string;
-    count: number;
-    recommendation: string;
-  }>;
   error?: string;
 };
 
-type QuestionFilter = "ALL" | "FOUND" | "NOT_FOUND" | "NEEDS_REVIEW";
+type QuestionFilter = "ALL" | "ANSWERED" | "NOT_FOUND";
 
 const NOT_FOUND_ANSWER = "Not found in provided documents.";
 
@@ -83,7 +71,6 @@ export default function QuestionnaireDetailsPage() {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [filter, setFilter] = useState<QuestionFilter>("ALL");
-  const [showMissingReport, setShowMissingReport] = useState(false);
 
   const loadDetails = useCallback(async () => {
     setIsLoading(true);
@@ -104,8 +91,7 @@ export default function QuestionnaireDetailsPage() {
         questions: (payload.questions ?? []).map((question) => ({
           ...question,
           citations: normalizeCitations(question.citations)
-        })),
-        missingEvidenceReport: payload.missingEvidenceReport ?? []
+        }))
       });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to load questionnaire");
@@ -127,20 +113,15 @@ export default function QuestionnaireDetailsPage() {
     }
 
     return data.questions.filter((question) => {
-      const hasFoundAnswer = Boolean(question.answer && question.answer !== NOT_FOUND_ANSWER);
-      const isNotFound = !question.answer || question.answer === NOT_FOUND_ANSWER;
-      const isNeedsReview = question.needsReview === true;
+      const answered = Boolean(question.answer);
+      const notFound = question.answer === NOT_FOUND_ANSWER;
 
-      if (filter === "FOUND") {
-        return hasFoundAnswer;
+      if (filter === "ANSWERED") {
+        return answered;
       }
 
       if (filter === "NOT_FOUND") {
-        return isNotFound;
-      }
-
-      if (filter === "NEEDS_REVIEW") {
-        return isNeedsReview;
+        return notFound;
       }
 
       return true;
@@ -166,13 +147,9 @@ export default function QuestionnaireDetailsPage() {
         <>
           <section>
             <h2>{data.questionnaire.name}</h2>
-            <p>Status: {data.questionnaire.status}</p>
             <p>
-              Progress: {data.questionnaire.processedCount}/{data.questionnaire.totalCount} (
-              {data.questionnaire.progressPercent}%)
-            </p>
-            <p>
-              Found: {data.questionnaire.foundCount} | Not Found: {data.questionnaire.notFoundCount}
+              Questions: {data.questionnaire.questionCount} | Answered: {data.questionnaire.answeredCount} | Not
+              Found: {data.questionnaire.notFoundCount}
             </p>
             <p>Source: {data.questionnaire.sourceFileName ?? "n/a"}</p>
             <p>Question column: {data.questionnaire.questionColumn ?? "n/a"}</p>
@@ -183,8 +160,12 @@ export default function QuestionnaireDetailsPage() {
             <button type="button" onClick={() => setFilter("ALL")} disabled={filter === "ALL"}>
               All
             </button>{" "}
-            <button type="button" onClick={() => setFilter("FOUND")} disabled={filter === "FOUND"}>
-              Found
+            <button
+              type="button"
+              onClick={() => setFilter("ANSWERED")}
+              disabled={filter === "ANSWERED"}
+            >
+              Answered
             </button>{" "}
             <button
               type="button"
@@ -192,48 +173,7 @@ export default function QuestionnaireDetailsPage() {
               disabled={filter === "NOT_FOUND"}
             >
               Not Found
-            </button>{" "}
-            <button
-              type="button"
-              onClick={() => setFilter("NEEDS_REVIEW")}
-              disabled={filter === "NEEDS_REVIEW"}
-            >
-              Needs Review
             </button>
-          </section>
-
-          <section>
-            <button
-              type="button"
-              onClick={() => setShowMissingReport((current) => !current)}
-              disabled={data.missingEvidenceReport.length === 0}
-            >
-              {showMissingReport ? "Hide Missing Evidence Report" : "Show Missing Evidence Report"}
-            </button>
-            {showMissingReport ? (
-              data.missingEvidenceReport.length === 0 ? (
-                <p>No missing evidence report entries.</p>
-              ) : (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Category</th>
-                      <th>Not Found Count</th>
-                      <th>Recommended Upload</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.missingEvidenceReport.map((entry) => (
-                      <tr key={entry.category}>
-                        <td>{entry.category}</td>
-                        <td>{entry.count}</td>
-                        <td>{entry.recommendation}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )
-            ) : null}
           </section>
 
           <table>
@@ -241,29 +181,21 @@ export default function QuestionnaireDetailsPage() {
               <tr>
                 <th>Row</th>
                 <th>Question</th>
-                <th>Category</th>
                 <th>Answer</th>
-                <th>NotFoundReason</th>
-                <th>Confidence</th>
-                <th>Needs Review</th>
                 <th>Citations</th>
               </tr>
             </thead>
             <tbody>
               {filteredQuestions.length === 0 ? (
                 <tr>
-                  <td colSpan={8}>No questions for the selected filter.</td>
+                  <td colSpan={4}>No questions for the selected filter.</td>
                 </tr>
               ) : (
                 filteredQuestions.map((question) => (
                   <tr key={question.id}>
                     <td>{question.rowIndex}</td>
                     <td>{question.text || "n/a"}</td>
-                    <td>{question.category || "OTHER"}</td>
                     <td>{question.answer ?? "Not answered yet"}</td>
-                    <td>{question.notFoundReason ?? ""}</td>
-                    <td>{question.confidence ?? "n/a"}</td>
-                    <td>{question.needsReview ? "yes" : "no"}</td>
                     <td>
                       {question.citations.length === 0 ? (
                         "none"

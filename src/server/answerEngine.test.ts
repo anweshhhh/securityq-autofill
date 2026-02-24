@@ -1,0 +1,163 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const {
+  createEmbeddingMock,
+  generateGroundedAnswerMock,
+  generateEvidenceSufficiencyMock,
+  countEmbeddedChunksForOrganizationMock,
+  retrieveTopChunksMock
+} = vi.hoisted(() => ({
+  createEmbeddingMock: vi.fn(),
+  generateGroundedAnswerMock: vi.fn(),
+  generateEvidenceSufficiencyMock: vi.fn(),
+  countEmbeddedChunksForOrganizationMock: vi.fn(),
+  retrieveTopChunksMock: vi.fn()
+}));
+
+vi.mock("@/lib/openai", () => ({
+  createEmbedding: createEmbeddingMock,
+  generateGroundedAnswer: generateGroundedAnswerMock,
+  generateEvidenceSufficiency: generateEvidenceSufficiencyMock
+}));
+
+vi.mock("@/lib/retrieval", () => ({
+  countEmbeddedChunksForOrganization: countEmbeddedChunksForOrganizationMock,
+  retrieveTopChunks: retrieveTopChunksMock
+}));
+
+import { answerQuestion } from "./answerEngine";
+
+function fixture(name: string): string {
+  return readFileSync(join(process.cwd(), `test/fixtures/${name}`), "utf8");
+}
+
+describe("MVP answer engine contract", () => {
+  beforeEach(() => {
+    process.env.DEV_MODE = "false";
+    createEmbeddingMock.mockReset();
+    generateGroundedAnswerMock.mockReset();
+    generateEvidenceSufficiencyMock.mockReset();
+    countEmbeddedChunksForOrganizationMock.mockReset();
+    retrieveTopChunksMock.mockReset();
+
+    countEmbeddedChunksForOrganizationMock.mockResolvedValue(1);
+    createEmbeddingMock.mockResolvedValue(new Array(1536).fill(0.02));
+  });
+
+  it("FOUND: returns answer with non-empty citations and citation subset of selected chunks", async () => {
+    const evidenceB = fixture("evidence-b.txt");
+
+    retrieveTopChunksMock.mockResolvedValue([
+      {
+        chunkId: "chunk-b1",
+        docName: "Evidence B",
+        quotedSnippet: evidenceB,
+        fullContent: evidenceB,
+        similarity: 0.87
+      },
+      {
+        chunkId: "chunk-b2",
+        docName: "Evidence B",
+        quotedSnippet: "Auxiliary control text.",
+        fullContent: "Auxiliary control text.",
+        similarity: 0.62
+      }
+    ]);
+
+    generateEvidenceSufficiencyMock.mockResolvedValue({
+      sufficient: true,
+      bestChunkIds: ["chunk-b1"],
+      missingPoints: []
+    });
+
+    generateGroundedAnswerMock.mockResolvedValue({
+      answer: "Two-factor authentication is enabled for workforce sign-in.",
+      citations: [
+        { chunkId: "chunk-b1", quotedSnippet: "Two-factor authentication is enabled for workforce sign-in." },
+        { chunkId: "not-selected", quotedSnippet: "should be dropped" }
+      ],
+      confidence: "high",
+      needsReview: false
+    });
+
+    const result = await answerQuestion({
+      orgId: "org-1",
+      questionText: "Do you enforce MFA for workforce sign-in?",
+      debug: true
+    });
+
+    expect(result.answer).not.toBe("Not found in provided documents.");
+    expect(result.citations.length).toBeGreaterThan(0);
+
+    const chosenChunkIds = new Set(result.debug?.chosenChunks.map((chunk) => chunk.chunkId) ?? []);
+    expect(chosenChunkIds.size).toBeGreaterThan(0);
+    for (const citation of result.citations) {
+      expect(chosenChunkIds.has(citation.chunkId)).toBe(true);
+    }
+  });
+
+  it("NOT_FOUND: returns exact text and empty citations when evidence is insufficient", async () => {
+    const evidenceA = fixture("evidence-a.txt");
+
+    retrieveTopChunksMock.mockResolvedValue([
+      {
+        chunkId: "chunk-a1",
+        docName: "Evidence A",
+        quotedSnippet: evidenceA,
+        fullContent: evidenceA,
+        similarity: 0.78
+      }
+    ]);
+
+    generateEvidenceSufficiencyMock.mockResolvedValue({
+      sufficient: false,
+      bestChunkIds: [],
+      missingPoints: ["No retention period"]
+    });
+
+    const result = await answerQuestion({
+      orgId: "org-1",
+      questionText: "How long are logs retained?"
+    });
+
+    expect(result.answer).toBe("Not found in provided documents.");
+    expect(result.citations).toEqual([]);
+  });
+
+  it("PARTIAL: returns Not specified text with non-empty citations when evidence is partial", async () => {
+    const evidenceA = fixture("evidence-a.txt");
+
+    retrieveTopChunksMock.mockResolvedValue([
+      {
+        chunkId: "chunk-a1",
+        docName: "Evidence A",
+        quotedSnippet: evidenceA,
+        fullContent: evidenceA,
+        similarity: 0.89
+      }
+    ]);
+
+    generateEvidenceSufficiencyMock.mockResolvedValue({
+      sufficient: true,
+      bestChunkIds: ["chunk-a1"],
+      missingPoints: []
+    });
+
+    generateGroundedAnswerMock.mockResolvedValue({
+      answer: "Not specified in provided documents.",
+      citations: [{ chunkId: "chunk-a1", quotedSnippet: "MFA is enabled for all employee accounts." }],
+      confidence: "med",
+      needsReview: false
+    });
+
+    const result = await answerQuestion({
+      orgId: "org-1",
+      questionText: "Is MFA required for all employee accounts?"
+    });
+
+    expect(result.answer).toBe("Not specified in provided documents.");
+    expect(result.citations.length).toBeGreaterThan(0);
+  });
+});

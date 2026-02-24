@@ -90,10 +90,7 @@ export async function GET(_request: Request, context: { params: { id: string } }
       questionnaire.questions.map((question) => ({
         sourceRow: toStringRecord(question.sourceRow),
         answer: question.answer ?? "",
-        citations: toCitations(question.citations),
-        confidence: question.confidence ?? "",
-        needsReview: question.needsReview ?? true,
-        notFoundReason: question.notFoundReason ?? ""
+        citations: toCitations(question.citations)
       }))
     );
 
