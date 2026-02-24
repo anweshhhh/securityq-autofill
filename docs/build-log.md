@@ -835,3 +835,58 @@ A strong evidence product depends first on:
    - NOT_FOUND rows show `NotFoundReason`
    - Missing Evidence Report groups by category with recommendations
 5. Export CSV and confirm `NotFoundReason` column is present and populated for NOT_FOUND rows.
+
+## Day 4 hardening: category coverage + keyword fallback + fact whitelists
+
+### What changed
+
+- Expanded deterministic category coverage in shared answering:
+  - added `POLICIES` and `SOC2` routing so policy/SOC2 prompts no longer default to `OTHER`
+  - strengthened `TENANT_ISOLATION` and `SUBPROCESSORS_VENDOR` keyword routing
+- Added/updated must-match sets for:
+  - `POLICIES`, `SOC2`, `TENANT_ISOLATION`, `SUBPROCESSORS_VENDOR`
+- Refined NOT_FOUND reason semantics:
+  - policy/SOC2 gaps from empty must-match now classify as `NO_RELEVANT_EVIDENCE`
+  - `FILTERED_AS_IRRELEVANT` is reserved for retrieved-but-filtered cases
+- Added deterministic keyword fallback retrieval when top similarity is below threshold for:
+  - `ACCESS_AUTH`
+  - `RBAC_LEAST_PRIV`
+  - `HOSTING`
+  - `LOG_RETENTION`
+  - `SUBPROCESSORS_VENDOR`
+- Implemented fallback DB text scan in retrieval (`searchChunksByKeywordTerms`) and reused it from shared answer logic.
+- Tightened category fact extraction whitelists to prevent drift:
+  - `LOGGING` excludes subprocessors/encryption/backup drift
+  - `HOSTING` confirms host/provider/region-only lines
+  - `SUBPROCESSORS_VENDOR` confirms onboarding/review/monitoring governance evidence
+  - `TENANT_ISOLATION` confirms tenant-isolation lines only
+
+### Why this helps
+
+- Reduces false NOT_FOUND for low-similarity but present evidence (MFA/RBAC/hosting/log retention).
+- Prevents incorrect confident confirmations sourced from unrelated snippets.
+- Keeps outcomes deterministic and consistent across `/api/questions/answer` and questionnaire autofill.
+
+### Tests added/updated
+
+- `src/lib/answering.quality.test.ts`
+  - policy + SOC2 categorization assertions
+  - policy/SOC2 no-must-match => `NO_RELEVANT_EVIDENCE`
+  - keyword fallback recovery tests for MFA and RBAC low-similarity cases
+  - logging extraction excludes subprocessors/encryption drift
+  - tenant isolation no-evidence => NOT_FOUND
+  - subcontractor/vendor assessment evidence => cited answer
+- `src/app/api/questions/answer/route.safety.test.ts`
+  - retrieval mocks updated for keyword-fallback path compatibility
+
+### Verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate deploy`
+3. `npm test`
+4. Run 25-question questionnaire autofill and confirm:
+   - policy/SOC2 map to `POLICIES`/`SOC2`
+   - MFA/RBAC recover cited answers when low similarity occurs
+   - logging answers do not include subprocessors/encryption lines
+   - tenant isolation remains NOT_FOUND until tenant evidence exists
+   - vendor assessment cites onboarding/review/monitor evidence when present

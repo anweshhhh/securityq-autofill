@@ -406,3 +406,60 @@ export async function retrieveTopChunks(params: {
 
   return mapped;
 }
+
+export async function searchChunksByKeywordTerms(params: {
+  organizationId: string;
+  questionText: string;
+  terms: string[];
+  limit?: number;
+}): Promise<RetrievedChunk[]> {
+  const limit = params.limit ?? 5;
+  const normalizedTerms = Array.from(
+    new Set(
+      params.terms
+        .map((term) => sanitizeExtractedText(term).replace(/\*+$/g, "").trim())
+        .filter((term) => term.length >= 3)
+    )
+  ).slice(0, 12);
+  if (normalizedTerms.length === 0) {
+    return [];
+  }
+
+  const rows = await prisma.documentChunk.findMany({
+    where: {
+      document: {
+        organizationId: params.organizationId
+      },
+      OR: normalizedTerms.map((term) => ({
+        content: {
+          contains: term,
+          mode: "insensitive"
+        }
+      }))
+    },
+    include: {
+      document: {
+        select: {
+          name: true
+        }
+      }
+    },
+    orderBy: {
+      id: "asc"
+    },
+    take: limit
+  });
+  const anchorTokens = getQuestionAnchorTokens(params.questionText);
+
+  return rows.map((row) => ({
+    chunkId: row.id,
+    docName: row.document.name,
+    quotedSnippet: selectContextSnippet({
+      content: row.content,
+      anchorTokens,
+      snippetChars: DEFAULT_SNIPPET_CHARS
+    }),
+    fullContent: normalizeWhitespace(row.content),
+    similarity: 0.36
+  }));
+}

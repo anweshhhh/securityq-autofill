@@ -4,12 +4,14 @@ const {
   createEmbeddingMock,
   generateGroundedAnswerMock,
   countEmbeddedChunksForOrganizationMock,
-  retrieveTopChunksMock
+  retrieveTopChunksMock,
+  searchChunksByKeywordTermsMock
 } = vi.hoisted(() => ({
   createEmbeddingMock: vi.fn(),
   generateGroundedAnswerMock: vi.fn(),
   countEmbeddedChunksForOrganizationMock: vi.fn(),
-  retrieveTopChunksMock: vi.fn()
+  retrieveTopChunksMock: vi.fn(),
+  searchChunksByKeywordTermsMock: vi.fn()
 }));
 
 vi.mock("./openai", () => ({
@@ -19,7 +21,8 @@ vi.mock("./openai", () => ({
 
 vi.mock("./retrieval", () => ({
   countEmbeddedChunksForOrganization: countEmbeddedChunksForOrganizationMock,
-  retrieveTopChunks: retrieveTopChunksMock
+  retrieveTopChunks: retrieveTopChunksMock,
+  searchChunksByKeywordTerms: searchChunksByKeywordTermsMock
 }));
 
 import {
@@ -68,9 +71,11 @@ describe("answering quality guardrails", () => {
     generateGroundedAnswerMock.mockReset();
     countEmbeddedChunksForOrganizationMock.mockReset();
     retrieveTopChunksMock.mockReset();
+    searchChunksByKeywordTermsMock.mockReset();
 
     countEmbeddedChunksForOrganizationMock.mockResolvedValue(1);
     createEmbeddingMock.mockResolvedValue(new Array(1536).fill(0.02));
+    searchChunksByKeywordTermsMock.mockResolvedValue([]);
   });
 
   it("returns NOT_FOUND when only irrelevant backup chunks exist for pen tests", async () => {
@@ -110,6 +115,67 @@ describe("answering quality guardrails", () => {
     expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
   });
 
+  it("uses keyword fallback to recover MFA evidence when similarity is below threshold", async () => {
+    mockSingleChunk("MFA is enabled for privileged/admin accounts.", undefined, 0.2);
+
+    searchChunksByKeywordTermsMock.mockResolvedValue([
+      {
+        chunkId: "chunk-fallback",
+        docName: "Access Controls",
+        quotedSnippet: "MFA is required for privileged/admin accounts.",
+        fullContent: "MFA is required for privileged/admin accounts.",
+        similarity: 0.36
+      }
+    ]);
+
+    generateGroundedAnswerMock.mockResolvedValue({
+      answer: "MFA is required for privileged/admin accounts.",
+      citationChunkIds: ["chunk-fallback"],
+      confidence: "med",
+      needsReview: false
+    });
+
+    const result = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "Is MFA required for admin access?"
+    });
+
+    expect(result.answer).not.toBe("Not found in provided documents.");
+    expect(result.answer.toLowerCase()).toContain("mfa is required");
+    expect(result.citations.some((citation) => citation.chunkId === "chunk-fallback")).toBe(true);
+    expect(searchChunksByKeywordTermsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses keyword fallback to recover RBAC evidence when similarity is below threshold", async () => {
+    mockSingleChunk("Least privilege access controls are enforced.", undefined, 0.2);
+
+    searchChunksByKeywordTermsMock.mockResolvedValue([
+      {
+        chunkId: "chunk-rbac-fallback",
+        docName: "Access Policy",
+        quotedSnippet: "We follow least privilege and RBAC. Admin access is restricted and reviewed quarterly.",
+        fullContent: "We follow least privilege and RBAC. Admin access is restricted and reviewed quarterly.",
+        similarity: 0.36
+      }
+    ]);
+
+    generateGroundedAnswerMock.mockResolvedValue({
+      answer: "Least privilege and RBAC are enforced for admin access.",
+      citationChunkIds: ["chunk-rbac-fallback"],
+      confidence: "med",
+      needsReview: false
+    });
+
+    const result = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "Describe least privilege and RBAC for admin access."
+    });
+
+    expect(result.answer).not.toBe("Not found in provided documents.");
+    expect(result.answer.toLowerCase()).toContain("least privilege");
+    expect(result.citations.some((citation) => citation.chunkId === "chunk-rbac-fallback")).toBe(true);
+  });
+
   it("labels NOT_FOUND as FILTERED_AS_IRRELEVANT when relevance gate drops chunks", async () => {
     retrieveTopChunksMock
       .mockResolvedValueOnce([
@@ -146,11 +212,39 @@ describe("answering quality guardrails", () => {
     expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
   });
 
+  it("returns NO_RELEVANT_EVIDENCE for policy and SOC2 questions when must-match evidence is absent", async () => {
+    retrieveTopChunksMock.mockResolvedValue([
+      {
+        chunkId: "chunk-1",
+        docName: "General Notes",
+        quotedSnippet: "Backups are performed daily and tested annually.",
+        fullContent: "Backups are performed daily and tested annually.",
+        similarity: 0.9
+      }
+    ]);
+
+    const policyResult = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "Do you maintain a written information security policy?"
+    });
+    const soc2Result = await answerQuestionWithEvidence({
+      organizationId: "org-1",
+      question: "Do you have a SOC 2 Type II report?"
+    });
+
+    expect(policyResult.notFoundReason).toBe("NO_RELEVANT_EVIDENCE");
+    expect(soc2Result.notFoundReason).toBe("NO_RELEVANT_EVIDENCE");
+  });
+
   it("categorizes common security questions deterministically", () => {
     expect(categorizeQuestion("Are backups encrypted and what are RTO/RPO targets?")).toBe("BACKUP_DR");
     expect(categorizeQuestion("Describe your SDLC and CI/CD branch protection controls.")).toBe("SDLC");
     expect(categorizeQuestion("How often do you run penetration tests?")).toBe("PEN_TEST");
     expect(categorizeQuestion("Describe your IR process and severity levels.")).toBe("INCIDENT_RESPONSE");
+    expect(categorizeQuestion("Do you have a written information security policy?")).toBe("POLICIES");
+    expect(categorizeQuestion("Do you maintain a SOC 2 Type II report aligned to Trust Services Criteria?")).toBe(
+      "SOC2"
+    );
     expect(categorizeQuestion("Is MFA required for privileged admin access?")).toBe("ACCESS_AUTH");
     expect(categorizeQuestion("Do you enforce RBAC and least privilege?")).toBe("RBAC_LEAST_PRIV");
     expect(categorizeQuestion("Which cloud provider hosts production data and region?")).toBe("HOSTING");
@@ -416,9 +510,11 @@ describe("answering quality guardrails", () => {
     expect(result.citations).toHaveLength(1);
   });
 
-  it("keeps logging answers focused on logging facts, not backup lines", async () => {
+  it("keeps logging answers focused on logging facts, not mixed subprocessors/encryption lines", async () => {
     mockSingleChunk(
-      "Security logs are centralized and monitored continuously. Backups are performed daily."
+      "Security logs are centralized and monitored continuously. " +
+        "Subprocessors are reviewed before onboarding. " +
+        "Encryption at rest uses AES-256."
     );
 
     generateGroundedAnswerMock.mockResolvedValue({
@@ -435,7 +531,8 @@ describe("answering quality guardrails", () => {
 
     expect(result.answer).not.toBe("Not found in provided documents.");
     expect(result.answer.toLowerCase()).toContain("logs are centralized");
-    expect(result.answer.toLowerCase()).not.toContain("backups are performed daily");
+    expect(result.answer.toLowerCase()).not.toContain("subprocessors");
+    expect(result.answer.toLowerCase()).not.toContain("encryption");
   });
 
   it("returns log-retention answer with normalized 30-90 range", async () => {

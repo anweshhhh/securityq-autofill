@@ -5,13 +5,15 @@ const {
   createEmbeddingMock,
   generateGroundedAnswerMock,
   countEmbeddedChunksForOrganizationMock,
-  retrieveTopChunksMock
+  retrieveTopChunksMock,
+  searchChunksByKeywordTermsMock
 } = vi.hoisted(() => ({
   getOrCreateDefaultOrganizationMock: vi.fn(),
   createEmbeddingMock: vi.fn(),
   generateGroundedAnswerMock: vi.fn(),
   countEmbeddedChunksForOrganizationMock: vi.fn(),
-  retrieveTopChunksMock: vi.fn()
+  retrieveTopChunksMock: vi.fn(),
+  searchChunksByKeywordTermsMock: vi.fn()
 }));
 
 vi.mock("@/lib/defaultOrg", () => ({
@@ -25,7 +27,8 @@ vi.mock("@/lib/openai", () => ({
 
 vi.mock("@/lib/retrieval", () => ({
   countEmbeddedChunksForOrganization: countEmbeddedChunksForOrganizationMock,
-  retrieveTopChunks: retrieveTopChunksMock
+  retrieveTopChunks: retrieveTopChunksMock,
+  searchChunksByKeywordTerms: searchChunksByKeywordTermsMock
 }));
 
 import { POST } from "./route";
@@ -37,6 +40,8 @@ describe("/api/questions/answer safety hardening", () => {
     generateGroundedAnswerMock.mockReset();
     countEmbeddedChunksForOrganizationMock.mockReset();
     retrieveTopChunksMock.mockReset();
+    searchChunksByKeywordTermsMock.mockReset();
+    searchChunksByKeywordTermsMock.mockResolvedValue([]);
   });
 
   it("downgrades unsupported claims after claim check", async () => {

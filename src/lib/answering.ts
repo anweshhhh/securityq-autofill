@@ -8,7 +8,12 @@ import {
   generateGroundedAnswer,
   type GroundedAnswerModelOutput
 } from "@/lib/openai";
-import { countEmbeddedChunksForOrganization, retrieveTopChunks, type RetrievedChunk } from "@/lib/retrieval";
+import {
+  countEmbeddedChunksForOrganization,
+  retrieveTopChunks,
+  searchChunksByKeywordTerms,
+  type RetrievedChunk
+} from "@/lib/retrieval";
 import { sanitizeExtractedText } from "@/lib/textNormalization";
 
 export type Citation = {
@@ -53,6 +58,8 @@ export type QuestionCategory =
   | "BACKUP_DR"
   | "SDLC"
   | "INCIDENT_RESPONSE"
+  | "POLICIES"
+  | "SOC2"
   | "ACCESS_AUTH"
   | "RBAC_LEAST_PRIV"
   | "HOSTING"
@@ -148,6 +155,22 @@ const CATEGORY_RULES: Record<QuestionCategory, CategoryRule> = {
     niceToMatch: ["containment", "eradication", "recovery", "playbook", "sev-"],
     preferredSnippetTerms: ["incident response", "severity"]
   },
+  POLICIES: {
+    mustMatchAny: [
+      ["policy*"],
+      ["policies"],
+      ["security policy"],
+      ["information security policy"],
+      ["written policy"]
+    ],
+    niceToMatch: ["documented", "approved", "reviewed"],
+    preferredSnippetTerms: ["security policy", "information security policy", "written policy"]
+  },
+  SOC2: {
+    mustMatchAny: [["soc"], ["soc2"], ["trust services"], ["type ii"], ["type 2"], ["tsc"]],
+    niceToMatch: ["audit", "attestation", "report", "bridge letter"],
+    preferredSnippetTerms: ["soc 2", "trust services criteria", "type ii", "type 2", "tsc"]
+  },
   ACCESS_AUTH: {
     mustMatchAny: [
       ["mfa"],
@@ -198,6 +221,7 @@ const CATEGORY_RULES: Record<QuestionCategory, CategoryRule> = {
       ["subcontractor*"],
       ["sub", "contractor*"],
       ["third", "party"],
+      ["vendor"],
       ["vendor", "assess*"],
       ["vendor", "review*"],
       ["onboarding", "vendor"]
@@ -293,6 +317,22 @@ const CATEGORY_RULES: Record<QuestionCategory, CategoryRule> = {
   }
 };
 
+const KEYWORD_FALLBACK_CATEGORIES = new Set<QuestionCategory>([
+  "ACCESS_AUTH",
+  "RBAC_LEAST_PRIV",
+  "HOSTING",
+  "LOG_RETENTION",
+  "SUBPROCESSORS_VENDOR"
+]);
+
+const KEYWORD_FALLBACK_TERMS: Partial<Record<QuestionCategory, string[]>> = {
+  ACCESS_AUTH: ["mfa", "multi-factor", "multi factor", "admin", "privileged", "authentication", "sso", "saml"],
+  RBAC_LEAST_PRIV: ["least privilege", "rbac", "role-based", "role based", "access control", "admin access"],
+  HOSTING: ["hosted", "hosting", "aws", "cloud provider", "region"],
+  LOG_RETENTION: ["log retention", "logs are retained", "retain logs", "retention"],
+  SUBPROCESSORS_VENDOR: ["subprocessor", "vendor", "third party", "onboarding", "reviewed", "monitored"]
+};
+
 const QUESTION_KEY_PHRASES = [
   "pen test",
   "penetration",
@@ -307,6 +347,14 @@ const QUESTION_KEY_PHRASES = [
   "dependency scanning",
   "static analysis",
   "security testing",
+  "security policy",
+  "information security policy",
+  "written policy",
+  "soc 2",
+  "soc2",
+  "trust services criteria",
+  "trust services",
+  "tsc",
   "ci/cd",
   "branch",
   "tls",
@@ -777,6 +825,28 @@ export function categorizeQuestion(question: string): QuestionCategory {
   }
 
   if (
+    containsNormalizedTerm(normalized, "soc2") ||
+    containsNormalizedTerm(normalized, "soc 2") ||
+    containsNormalizedTerm(normalized, "trust services criteria") ||
+    containsNormalizedTerm(normalized, "trust services") ||
+    containsNormalizedTerm(normalized, "tsc") ||
+    containsNormalizedTerm(normalized, "type ii") ||
+    containsNormalizedTerm(normalized, "type 2")
+  ) {
+    return "SOC2";
+  }
+
+  if (
+    containsNormalizedTerm(normalized, "information security policy") ||
+    containsNormalizedTerm(normalized, "security policy") ||
+    containsNormalizedTerm(normalized, "written policy") ||
+    (containsNormalizedTerm(normalized, "policy") &&
+      (containsNormalizedTerm(normalized, "security") || containsNormalizedTerm(normalized, "information")))
+  ) {
+    return "POLICIES";
+  }
+
+  if (
     containsNormalizedTerm(normalized, "security contact") ||
     (containsNormalizedTerm(normalized, "contact") && containsNormalizedTerm(normalized, "email")) ||
     containsNormalizedTerm(normalized, "security email")
@@ -814,16 +884,12 @@ export function categorizeQuestion(question: string): QuestionCategory {
   }
 
   if (
-    containsNormalizedTerm(normalized, "subprocessor") ||
     containsNormalizedTerm(normalized, "subprocessor*") ||
     containsNormalizedTerm(normalized, "sub processor*") ||
     containsNormalizedTerm(normalized, "subcontractor*") ||
     containsNormalizedTerm(normalized, "sub contractor*") ||
     containsNormalizedTerm(normalized, "third party") ||
-    (containsNormalizedTerm(normalized, "vendor") &&
-      (containsNormalizedTerm(normalized, "onboarding") ||
-        containsNormalizedTerm(normalized, "assessed") ||
-        containsNormalizedTerm(normalized, "reviewed")))
+    containsNormalizedTerm(normalized, "vendor")
   ) {
     return "SUBPROCESSORS_VENDOR";
   }
@@ -1188,6 +1254,8 @@ function evaluateAsksCoverage(
 const EMAIL_LIKE_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
 
 const STRICT_FACT_MATCH_CATEGORIES = new Set<QuestionCategory>([
+  "POLICIES",
+  "SOC2",
   "ACCESS_AUTH",
   "RBAC_LEAST_PRIV",
   "HOSTING",
@@ -1321,6 +1389,22 @@ function extractAccessAuthFacts(citations: Citation[]): string[] {
   });
 }
 
+function extractPoliciesFacts(citations: Citation[]): string[] {
+  return extractFactsBySentenceMatch({
+    citations,
+    include: [/information security policy|security policy|written policy|policies?/i],
+    limit: 5
+  });
+}
+
+function extractSoc2Facts(citations: Citation[]): string[] {
+  return extractFactsBySentenceMatch({
+    citations,
+    include: [/soc\s*2|soc2|trust services criteria|trust services|tsc|type ii|type 2/i],
+    limit: 4
+  });
+}
+
 function extractRbacLeastPrivilegeFacts(citations: Citation[]): string[] {
   return extractFactsBySentenceMatch({
     citations,
@@ -1337,8 +1421,8 @@ function extractHostingFacts(citations: Citation[]): string[] {
   return extractFactsBySentenceMatch({
     citations,
     include: [
-      /(hosted|hosting|cloud provider|infrastructure)[^.!?\n]{0,60}(aws|azure|gcp)/i,
-      /(aws|azure|gcp)[^.!?\n]{0,60}(hosted|hosting|cloud)/i,
+      /(host|hosted|hosting)/i,
+      /\baws\b|\bazure\b|\bgcp\b/i,
       /\bregion\b|\b(?:us|eu|ap|ca|sa|me|af)-(?:east|west|central|north|south|southeast|southwest|northeast|northwest)-\d\b/i
     ],
     limit: 4
@@ -1369,6 +1453,7 @@ function extractLogRetentionFacts(citations: Citation[]): string[] {
 function extractSubprocessorsVendorFacts(citations: Citation[]): string[] {
   const entityPattern = /sub\s*-?\s*processor|subprocessor|sub\s*-?\s*contractor|subcontractor|third[- ]party|vendor/i;
   const governancePattern = /(assessed|assessment|reviewed|review|onboarding|monitored|monitoring|due diligence)/i;
+  const vendorListPattern = /\b(?:includes?|including|such as|list)\b/i;
 
   const entityFacts = new Set<string>();
   const governanceFacts = new Set<string>();
@@ -1382,11 +1467,12 @@ function extractSubprocessorsVendorFacts(citations: Citation[]): string[] {
 
       const hasEntity = entityPattern.test(normalizedSentence);
       const hasGovernance = governancePattern.test(normalizedSentence);
+      const hasVendorList = vendorListPattern.test(normalizedSentence);
       if (!hasEntity) {
         continue;
       }
 
-      if (hasEntity) {
+      if (hasEntity && (hasGovernance || hasVendorList)) {
         entityFacts.add(normalizedSentence);
       }
 
@@ -1446,8 +1532,12 @@ function extractSecurityContactFacts(citations: Citation[]): string[] {
 function extractLoggingFacts(citations: Citation[]): string[] {
   return extractFactsBySentenceMatch({
     citations,
-    include: [/log|logging|audit|monitoring|siem|alert/i],
-    exclude: [/backup|disaster recovery|\brto\b|\brpo\b/i],
+    include: [/log|logging|monitor|alert|auth|admin action|event/i],
+    exclude: [
+      /backup|disaster recovery|\brto\b|\brpo\b/i,
+      /subprocessor|subcontractor|vendor|third[- ]party/i,
+      /encrypt|encryption|tls|hsts|cipher/i
+    ],
     limit: 5
   });
 }
@@ -1458,6 +1548,10 @@ function extractCategorySpecificFacts(category: QuestionCategory, citations: Cit
       return extractBackupDrFacts(citations);
     case "ACCESS_AUTH":
       return extractAccessAuthFacts(citations);
+    case "POLICIES":
+      return extractPoliciesFacts(citations);
+    case "SOC2":
+      return extractSoc2Facts(citations);
     case "RBAC_LEAST_PRIV":
       return extractRbacLeastPrivilegeFacts(citations);
     case "HOSTING":
@@ -1634,6 +1728,15 @@ function extractCategoryRelevanceTerms(category: QuestionCategory): string[] {
   }
 
   return Array.from(terms);
+}
+
+function getKeywordFallbackTerms(category: QuestionCategory): string[] {
+  const explicitTerms = KEYWORD_FALLBACK_TERMS[category] ?? [];
+  if (explicitTerms.length > 0) {
+    return explicitTerms;
+  }
+
+  return extractCategoryRelevanceTerms(category).map((term) => term.replace(/\*+$/g, ""));
 }
 
 function isCitationRelevant(question: string, category: QuestionCategory, citation: Citation): boolean {
@@ -2094,6 +2197,38 @@ async function retryWithAdditionalChunks(params: {
   );
 }
 
+async function keywordFallbackChunks(params: {
+  organizationId: string;
+  question: string;
+  category: QuestionCategory;
+}): Promise<ScoredChunk[]> {
+  if (!KEYWORD_FALLBACK_CATEGORIES.has(params.category)) {
+    return [];
+  }
+
+  const terms = getKeywordFallbackTerms(params.category);
+  if (terms.length === 0) {
+    return [];
+  }
+
+  const keywordMatches = await searchChunksByKeywordTerms({
+    organizationId: params.organizationId,
+    questionText: params.question,
+    terms,
+    limit: 5
+  });
+  if (keywordMatches.length === 0) {
+    return [];
+  }
+
+  const mustMatch = filterChunksByCategoryMustMatch(params.category, keywordMatches).kept;
+  if (mustMatch.length === 0) {
+    return [];
+  }
+
+  return filterAndRerankChunks(params.question, mustMatch, params.category);
+}
+
 function classifyNotFoundAfterRetrieval(debug: EvidenceDebugInfo): NotFoundReason {
   if (debug.afterMustMatch.length === 0) {
     return "NO_RELEVANT_EVIDENCE";
@@ -2145,7 +2280,7 @@ export async function answerQuestionWithEvidence(params: {
     questionEmbedding,
     category
   });
-  const relevantChunks = retrieved.chunks;
+  let relevantChunks = retrieved.chunks;
   debugInfo.retrievedTopK = retrieved.debug.retrievedTopK;
   debugInfo.afterMustMatch = retrieved.debug.afterMustMatch;
   debugInfo.droppedByMustMatch = retrieved.debug.droppedByMustMatch;
@@ -2155,7 +2290,17 @@ export async function answerQuestionWithEvidence(params: {
   }
 
   if (relevantChunks[0].similarity < MIN_TOP_SIMILARITY) {
-    return returnNotFound("RETRIEVAL_BELOW_THRESHOLD");
+    const keywordFallback = await keywordFallbackChunks({
+      organizationId: params.organizationId,
+      question,
+      category
+    });
+
+    if (keywordFallback.length === 0) {
+      return returnNotFound("RETRIEVAL_BELOW_THRESHOLD");
+    }
+
+    relevantChunks = keywordFallback;
   }
 
   let attempt = await runAnswerAttempt({
