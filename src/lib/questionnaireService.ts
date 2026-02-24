@@ -104,29 +104,11 @@ function mapStatus(value: string): AutofillProgress["status"] {
 }
 
 function reportCategoryForQuestion(questionText: string): string {
-  const category = categorizeQuestion(questionText);
-  const normalized = questionText.toLowerCase();
-
-  if (category === "ENCRYPTION" && /\bin transit\b|\btls\b|cipher|hsts/.test(normalized)) {
-    return "ENCRYPTION_IN_TRANSIT";
-  }
-
-  if ((category === "VENDOR" || category === "SUBPROCESSORS_VENDOR") && /\bsoc\s*2\b|\bsoc2\b/.test(normalized)) {
-    return "SOC2";
-  }
-
-  return category;
+  return categorizeQuestion(questionText);
 }
 
 const MISSING_EVIDENCE_RECOMMENDATIONS: Record<string, string> = {
-  SECRETS: "Secrets Management policy (storage/rotation of API keys, DB creds)",
-  PEN_TEST: "Pen test summary (frequency + who performs)",
-  ENCRYPTION_IN_TRANSIT: "Network/TLS policy (TLS versions/ciphers/HSTS)",
-  SECURITY_CONTACT: "Security contact email / vulnerability disclosure policy",
-  TENANT_ISOLATION: "Multi-tenant isolation architecture note",
-  HOSTING: "Hosting/regions overview",
-  RBAC_LEAST_PRIV: "Access control/RBAC policy",
-  SOC2: "SOC 2 report/bridge letter/summary"
+  GENERAL: "Upload documents that explicitly answer these questions."
 };
 
 function buildMissingEvidenceReport(
@@ -147,7 +129,9 @@ function buildMissingEvidenceReport(
     .map(([category, count]) => ({
       category,
       count,
-      recommendation: MISSING_EVIDENCE_RECOMMENDATIONS[category] ?? "Upload category-specific control evidence."
+      recommendation:
+        MISSING_EVIDENCE_RECOMMENDATIONS[category] ??
+        "Upload documents that explicitly answer these questions."
     }))
     .sort((left, right) => {
       if (left.count !== right.count) {

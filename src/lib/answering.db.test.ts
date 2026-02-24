@@ -1,14 +1,16 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "./prisma";
 
-const { createEmbeddingMock, generateGroundedAnswerMock } = vi.hoisted(() => ({
+const { createEmbeddingMock, generateGroundedAnswerMock, generateEvidenceSufficiencyMock } = vi.hoisted(() => ({
   createEmbeddingMock: vi.fn(),
-  generateGroundedAnswerMock: vi.fn()
+  generateGroundedAnswerMock: vi.fn(),
+  generateEvidenceSufficiencyMock: vi.fn()
 }));
 
 vi.mock("./openai", () => ({
   createEmbedding: createEmbeddingMock,
-  generateGroundedAnswer: generateGroundedAnswerMock
+  generateGroundedAnswer: generateGroundedAnswerMock,
+  generateEvidenceSufficiency: generateEvidenceSufficiencyMock
 }));
 
 import { answerQuestionWithEvidence } from "./answering";
@@ -87,6 +89,7 @@ describe.sequential("answering DB-backed evidence behavior", () => {
   beforeEach(async () => {
     createEmbeddingMock.mockReset();
     generateGroundedAnswerMock.mockReset();
+    generateEvidenceSufficiencyMock.mockReset();
     await cleanupTestOrganizations();
   });
 
@@ -113,9 +116,19 @@ describe.sequential("answering DB-backed evidence behavior", () => {
     );
 
     createEmbeddingMock.mockResolvedValue(new Array(1536).fill(0.01));
+    generateEvidenceSufficiencyMock.mockResolvedValue({
+      sufficient: true,
+      bestChunkIds: [chunk.id],
+      missingPoints: []
+    });
     generateGroundedAnswerMock.mockResolvedValue({
       answer: "Incident response uses documented severity levels and escalation timelines.",
-      citationChunkIds: [chunk.id],
+      citations: [
+        {
+          chunkId: chunk.id,
+          quotedSnippet: "incident response process is documented"
+        }
+      ],
       confidence: "high",
       needsReview: false
     });

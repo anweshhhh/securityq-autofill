@@ -4,16 +4,16 @@ const {
   getOrCreateDefaultOrganizationMock,
   createEmbeddingMock,
   generateGroundedAnswerMock,
+  generateEvidenceSufficiencyMock,
   countEmbeddedChunksForOrganizationMock,
-  retrieveTopChunksMock,
-  searchChunksByKeywordTermsMock
+  retrieveTopChunksMock
 } = vi.hoisted(() => ({
   getOrCreateDefaultOrganizationMock: vi.fn(),
   createEmbeddingMock: vi.fn(),
   generateGroundedAnswerMock: vi.fn(),
+  generateEvidenceSufficiencyMock: vi.fn(),
   countEmbeddedChunksForOrganizationMock: vi.fn(),
-  retrieveTopChunksMock: vi.fn(),
-  searchChunksByKeywordTermsMock: vi.fn()
+  retrieveTopChunksMock: vi.fn()
 }));
 
 vi.mock("@/lib/defaultOrg", () => ({
@@ -22,13 +22,13 @@ vi.mock("@/lib/defaultOrg", () => ({
 
 vi.mock("@/lib/openai", () => ({
   createEmbedding: createEmbeddingMock,
-  generateGroundedAnswer: generateGroundedAnswerMock
+  generateGroundedAnswer: generateGroundedAnswerMock,
+  generateEvidenceSufficiency: generateEvidenceSufficiencyMock
 }));
 
 vi.mock("@/lib/retrieval", () => ({
   countEmbeddedChunksForOrganization: countEmbeddedChunksForOrganizationMock,
-  retrieveTopChunks: retrieveTopChunksMock,
-  searchChunksByKeywordTerms: searchChunksByKeywordTermsMock
+  retrieveTopChunks: retrieveTopChunksMock
 }));
 
 import { POST } from "./route";
@@ -38,17 +38,21 @@ describe("/api/questions/answer safety hardening", () => {
     getOrCreateDefaultOrganizationMock.mockReset();
     createEmbeddingMock.mockReset();
     generateGroundedAnswerMock.mockReset();
+    generateEvidenceSufficiencyMock.mockReset();
     countEmbeddedChunksForOrganizationMock.mockReset();
     retrieveTopChunksMock.mockReset();
-    searchChunksByKeywordTermsMock.mockReset();
-    searchChunksByKeywordTermsMock.mockResolvedValue([]);
-  });
 
-  it("downgrades unsupported claims after claim check", async () => {
     getOrCreateDefaultOrganizationMock.mockResolvedValue({ id: "org-default" });
     countEmbeddedChunksForOrganizationMock.mockResolvedValue(3);
     createEmbeddingMock.mockResolvedValue(new Array(1536).fill(0.01));
+    generateEvidenceSufficiencyMock.mockResolvedValue({
+      sufficient: true,
+      bestChunkIds: ["chunk-1"],
+      missingPoints: []
+    });
+  });
 
+  it("downgrades unsupported claims after claim check", async () => {
     retrieveTopChunksMock.mockResolvedValue([
       {
         chunkId: "chunk-1",
@@ -61,7 +65,7 @@ describe("/api/questions/answer safety hardening", () => {
 
     generateGroundedAnswerMock.mockResolvedValue({
       answer: "Customer data is encrypted at rest using AWS KMS.",
-      citationChunkIds: ["chunk-1"],
+      citations: [{ chunkId: "chunk-1", quotedSnippet: "Customer data is encrypted at rest." }],
       confidence: "high",
       needsReview: false
     });
@@ -78,33 +82,28 @@ describe("/api/questions/answer safety hardening", () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(payload.answer.toLowerCase()).not.toContain("aws");
-    expect(payload.answer.toLowerCase()).not.toContain("kms");
+    expect(payload.answer).toBe("Not specified in provided documents.");
     expect(payload.confidence).toBe("low");
     expect(payload.needsReview).toBe(true);
     expect(payload.citations.length).toBeGreaterThan(0);
   });
 
-  it("returns cited response for IR question when IR evidence exists", async () => {
-    getOrCreateDefaultOrganizationMock.mockResolvedValue({ id: "org-default" });
-    countEmbeddedChunksForOrganizationMock.mockResolvedValue(2);
-    createEmbeddingMock.mockResolvedValue(new Array(1536).fill(0.01));
-
+  it("returns cited response when sufficiency is true", async () => {
     retrieveTopChunksMock.mockResolvedValue([
       {
-        chunkId: "chunk-ir",
+        chunkId: "chunk-1",
         docName: "Runbooks",
-        quotedSnippet: "## Incident Response\nIncidents are triaged by severity levels SEV-1 through SEV-4.",
+        quotedSnippet: "Incidents are triaged by severity and routed to on-call owners.",
         fullContent:
-          "## Incident Response\nIncidents are triaged by severity levels SEV-1 through SEV-4 and mitigation playbooks.",
+          "Incidents are triaged by severity and routed to on-call owners with defined escalation timelines.",
         similarity: 0.9
       }
     ]);
 
     generateGroundedAnswerMock.mockResolvedValue({
-      answer: "Incident response process includes severity levels and triage.",
-      citationChunkIds: ["chunk-ir"],
-      confidence: "high",
+      answer: "Incidents are triaged by severity with on-call ownership.",
+      citations: [{ chunkId: "chunk-1", quotedSnippet: "triaged by severity" }],
+      confidence: "med",
       needsReview: false
     });
 
@@ -113,7 +112,7 @@ describe("/api/questions/answer safety hardening", () => {
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ question: "Describe your IR process and severity levels." })
+      body: JSON.stringify({ question: "How are incidents triaged?" })
     });
 
     const response = await POST(request);
@@ -122,38 +121,24 @@ describe("/api/questions/answer safety hardening", () => {
     expect(response.status).toBe(200);
     expect(payload.answer).not.toBe("Not found in provided documents.");
     expect(payload.citations.length).toBeGreaterThan(0);
-    expect(payload.citations.some((citation: { chunkId: string }) => citation.chunkId === "chunk-ir")).toBe(true);
+    expect(payload.citations[0].chunkId).toBe("chunk-1");
   });
 
-  it("prefers backup evidence over IR evidence for backup questions", async () => {
-    getOrCreateDefaultOrganizationMock.mockResolvedValue({ id: "org-default" });
-    countEmbeddedChunksForOrganizationMock.mockResolvedValue(4);
-    createEmbeddingMock.mockResolvedValue(new Array(1536).fill(0.01));
-
+  it("returns NOT_FOUND when sufficiency is false", async () => {
     retrieveTopChunksMock.mockResolvedValue([
       {
-        chunkId: "chunk-ir",
-        docName: "Incident Response",
-        quotedSnippet: "Incident response plan includes triage and severity levels.",
-        fullContent: "Incident response plan includes triage and severity levels.",
-        similarity: 0.97
-      },
-      {
-        chunkId: "chunk-backup",
-        docName: "Backup and DR",
-        quotedSnippet:
-          "Backup & Disaster Recovery: Backups are performed daily. RPO is 24 hours and RTO is 24 hours.",
-        fullContent:
-          "Backup & Disaster Recovery: Backups are performed daily. Disaster recovery tests are annual. RPO is 24 hours and RTO is 24 hours.",
+        chunkId: "chunk-1",
+        docName: "Policy",
+        quotedSnippet: "The platform stores user account records.",
+        fullContent: "The platform stores user account records.",
         similarity: 0.82
       }
     ]);
 
-    generateGroundedAnswerMock.mockResolvedValue({
-      answer: "Backups are performed daily and RTO/RPO are 24 hours.",
-      citationChunkIds: ["chunk-backup"],
-      confidence: "high",
-      needsReview: false
+    generateEvidenceSufficiencyMock.mockResolvedValue({
+      sufficient: false,
+      bestChunkIds: [],
+      missingPoints: ["Missing retention duration"]
     });
 
     const request = new Request("http://localhost/api/questions/answer", {
@@ -161,17 +146,16 @@ describe("/api/questions/answer safety hardening", () => {
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ question: "What is your backup frequency and RTO/RPO?" })
+      body: JSON.stringify({ question: "How long are user account records retained?" })
     });
 
     const response = await POST(request);
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(payload.answer).not.toBe("Not found in provided documents.");
-    expect(payload.citations.some((citation: { chunkId: string }) => citation.chunkId === "chunk-backup")).toBe(
-      true
-    );
-    expect(payload.citations.some((citation: { chunkId: string }) => citation.chunkId === "chunk-ir")).toBe(false);
+    expect(payload.answer).toBe("Not found in provided documents.");
+    expect(payload.citations).toEqual([]);
+    expect(payload.notFoundReason).toBe("NO_RELEVANT_EVIDENCE");
+    expect(generateGroundedAnswerMock).not.toHaveBeenCalled();
   });
 });

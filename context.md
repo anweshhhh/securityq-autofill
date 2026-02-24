@@ -32,45 +32,33 @@ Core promise: generate answers grounded in uploaded evidence, with explicit cita
   - outcome taxonomy is deterministic:
     - FOUND => cited answer with non-empty citations
     - NOT_FOUND => exact `Not found in provided documents.` and empty citations
-    - PARTIAL_SPEC => two-part answer:
-      - `Confirmed from provided documents:` facts list
-      - `Not specified in provided documents:` missing details list
-      and keeps citations to partial evidence
-  - if snippets are insufficient for requested details, partial answers list missing details explicitly instead of collapsing the full response
-  - deterministic claim-check downgrades unsupported claims to low confidence + needsReview
-  - vendors/tools/algorithms are blocked unless terms appear in cited snippets
-  - deterministic relevance gate filters retrieved chunks by keyword overlap before answer generation
-  - deterministic question category routing (`BACKUP_DR`, `SDLC`, `INCIDENT_RESPONSE`, `POLICIES`, `SOC2`, `ACCESS_AUTH`, `RBAC_LEAST_PRIV`, `HOSTING`, `LOG_RETENTION`, `SUBPROCESSORS_VENDOR`, `SECRETS`, `TENANT_ISOLATION`, `PHYSICAL_SECURITY`, `SECURITY_CONTACT`, `ENCRYPTION`, `VENDOR`, `LOGGING`, `RETENTION_DELETION`, `PEN_TEST`, `OTHER`)
-  - matching now uses normalized text (case/punctuation/unicode-dash resilient + malformed-character cleanup) for question, chunk text, and category keywords
-  - category-specific must-match retrieval filters run before reranking; if no category-relevant chunks remain, result is `Not found in provided documents.`
-  - low-similarity keyword fallback search is enabled for `ACCESS_AUTH`, `RBAC_LEAST_PRIV`, `HOSTING`, `LOG_RETENTION`, and `SUBPROCESSORS_VENDOR` to recover true positives when embedding similarity under-ranks evidence
-  - must-match supports phrase and grouped logic (for example incident response phrase or severity+triage/mitigation combinations)
-  - retrieval snippets now support section-based extraction: for headed sections (for example backup/DR or incident response), snippets start at heading and include subsequent lines so critical values like RTO/RPO are retained
-  - SDLC evidence matching is broadened to include partial AppSec controls (`dependency scanning`, `SAST`, `DAST`, `static analysis`, `lint`, `security testing`) so partial SDLC answers are returned instead of false NOT_FOUND
-  - reranking is deterministic: overlap desc, similarity desc, chunkId asc; top 3 chunks are used for answering
-  - if relevance-filtered citations are empty, retrieval retries once with a larger pool and different chunks before returning NOT_FOUND
-  - citation selection is category-aware (e.g., backup/DR and incident-response snippets are preferred when available)
-  - invalid model output format (markdown headings/raw evidence dumps) is rejected; one strict regeneration is attempted, then it falls back to NOT_FOUND
+    - PARTIAL => `Not specified in provided documents.` when evidence is incomplete/unsupported (with citations retained when evidence exists)
+  - domain-agnostic retrieval and reranking:
+    - retrieve vector top-k chunks (`topK=12`)
+    - compute generic lexical overlap between question and chunk text
+    - combined score is deterministic (`0.7 * vector + 0.3 * lexical`)
+    - answer context uses reranked top-n chunks (`topN=5`)
+  - domain-agnostic evidence sufficiency gate:
+    - LLM returns `{ sufficient, bestChunkIds, missingPoints }`
+    - if `sufficient=false`, result is strict NOT_FOUND
+  - generic answer generation:
+    - LLM answers only from selected snippets and returns citations by `chunkId`
+    - cited chunk IDs are validated against selected retrieval set
+  - deterministic safety checks:
+    - if citations are empty, force NOT_FOUND
+    - claim-check rewrites unsupported specifics to `Not specified in provided documents.`
+    - invalid output formats (headings/raw snippet dumps/fenced blocks) are rejected with one strict retry
   - debug mode is available for `/api/questions/answer` and questionnaire autofill (`debug=true`) with retrieval-stage visibility:
-    - category, threshold, retrievedTopK, afterMustMatch, droppedByMustMatch, finalCitations
+    - threshold, retrievedTopK (vector), rerankedTopN (combined), chosenChunks, sufficiency result, finalCitations
   - questionnaire debug persistence is gated by `DEBUG_EVIDENCE=true` to avoid JSON bloat by default
-  - citation relevance filter keeps only snippets with question-term overlap and retries retrieval once with larger top-k if needed
-  - category-specific fact extraction prevents irrelevant `Confirmed...` bullets (for example secrets/tenant-isolation/security-contact now require category-relevant evidence terms)
-  - strict categories (`SECRETS`, `TENANT_ISOLATION`, `PHYSICAL_SECURITY`, `SECURITY_CONTACT`, etc.) return exact NOT_FOUND when must-match/fact extraction finds no qualifying evidence
   - deterministic `notFoundReason` labeling for NOT_FOUND:
-    - `NO_RELEVANT_EVIDENCE` (must-match/category evidence gap)
+    - `NO_RELEVANT_EVIDENCE` (insufficient explicit evidence for the question)
     - `RETRIEVAL_BELOW_THRESHOLD` (top similarity below threshold)
-    - `FILTERED_AS_IRRELEVANT` (relevance filtering drops candidates)
-  - policy and SOC2 questions are routed to `POLICIES`/`SOC2`; when must-match leaves zero evidence they are labeled `NO_RELEVANT_EVIDENCE`
+    - `FILTERED_AS_IRRELEVANT` (retrieved evidence exists but no valid cited answer survives safety checks)
   - deterministic `normalizeAnswerOutput` post-processor is the single source of truth for all answer guardrails
-  - coverage scoring marks missing requested details (SOC2/SIG/algorithm/scope/keys/rto/rpo/etc.) for review and caps confidence
-  - SDLC questions use default coverage asks (code review, branch protection, CI/CD, change management, dependency/AppSec testing) so responses are partial unless full evidence is present
-  - MFA `required` is only allowed when evidence contains `required` or `must`/`enforced` near MFA; otherwise answer is rewritten to requirement-not-specified
-  - confidence/needsReview are deterministic by outcome:
+  - confidence/needsReview are deterministic:
     - NOT_FOUND => low confidence, needsReview true
-    - PARTIAL => low/med confidence, needsReview true
-    - FULL => med/high confidence only when all required details are covered
-  - confidence is never `high` when `needsReview=true`, when answer includes `Not specified...`, or when question category is `OTHER`
+    - unsupported claims or format-retry paths force needsReview and cap confidence
 - `/ask` UI for one-question evidence-grounded responses, with a `Show debug` toggle that sends `debug: true` and renders retrieval diagnostics
 - Questionnaire CSV import + question-column selection + batch autofill + CSV export
 - `/questionnaires` UI for import, preview, autofill/resume, rerun-missing, archive, and export actions

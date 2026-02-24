@@ -890,3 +890,55 @@ A strong evidence product depends first on:
    - logging answers do not include subprocessors/encryption lines
    - tenant isolation remains NOT_FOUND until tenant evidence exists
    - vendor assessment cites onboarding/review/monitor evidence when present
+
+## Refactor: generic doc QA (removed security-specific routing)
+
+### What changed
+
+- Replaced security-domain category routing/must-match logic with domain-agnostic retrieval and ranking in shared answering.
+- Removed category-specific fact extraction and keyword-fallback paths from answer generation.
+- Implemented generic reranking:
+  - vector retrieval top-k (`k=12`)
+  - lexical overlap scoring (stopword filtered, minimum token length)
+  - deterministic combined score (`0.7 * vector + 0.3 * lexical`)
+  - reranked top-n (`n=5`) for downstream steps
+- Added generic LLM evidence sufficiency stage before answer generation:
+  - input: question + reranked snippets
+  - output: `{ sufficient, bestChunkIds, missingPoints }`
+  - `sufficient=false` returns strict `Not found in provided documents.`
+- Updated answer generation prompt to generic document QA and structured citation objects by `chunkId`.
+- Kept deterministic safety:
+  - citations must map to selected chunks, otherwise NOT_FOUND
+  - claim-check rewrites unsupported specifics to `Not specified in provided documents.`
+  - invalid formats (headings/raw snippet dumps/fenced blocks) are rejected with one strict retry
+- Updated debug payload to generic fields:
+  - `retrievedTopK`, `rerankedTopN`, `chosenChunks`, `sufficiency`, `finalCitations`
+- Updated questionnaire missing-evidence recommendations to a generic guidance path (`GENERAL`) instead of security-specific categories.
+
+### Tests added/updated
+
+- `src/lib/answering.quality.test.ts`
+  - generic category behavior (`GENERAL`)
+  - retrieval-below-threshold not found path
+  - sufficiency-false not found path
+  - combined rerank ordering
+  - empty-citation safety not found path
+  - unsupported claim rewrite to `Not specified...`
+  - format-enforcement fallback behavior
+  - generic debug payload assertions
+- `src/app/api/questions/answer/route.safety.test.ts`
+  - updated to mock sufficiency + generic citation output shape
+- `src/lib/answering.db.test.ts`
+  - updated openai mocks for sufficiency + citation objects
+
+### Verify locally
+
+1. `docker compose up -d`
+2. `npx prisma migrate deploy`
+3. `npm test`
+4. `npm run lint`
+5. `npm run build`
+6. In `/ask`, ask non-security domain questions against arbitrary uploaded docs and verify:
+   - answers only appear when citations are present
+   - insufficient evidence returns exact `Not found in provided documents.`
+   - debug output shows generic retrieval/rerank/sufficiency stages
