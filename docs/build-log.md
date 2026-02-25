@@ -155,6 +155,26 @@ Current log of implemented MVP work (concise, execution-focused).
 - Added lightweight loading skeletons for rail/main/evidence sections during initial questionnaire fetch.
 - Added focus target and ARIA labeling for evidence panel and high-frequency actions.
 
+## 2026-02-25 - ui-next-03-evidence-panel-polish
+
+- Evidence panel citation chips now show:
+  - `DocName`
+  - short chunk suffix (`...<last 6 chars>`)
+  - per-chip actions: `Copy ID`, `Open Doc`
+- Snippet viewer improvements:
+  - question-term highlight (lightweight client-side matching; no extra library)
+  - `Copy Snippet` button
+  - `Copy All Citations` button (IDs)
+- Rendering stability/readability:
+  - long snippets remain in bounded scroll containers
+  - line breaks preserved in snippet/document viewers
+  - monospace retained for IDs only (`mono-id`), not snippet body text
+- Added document-open fallback via read-only modal (no document detail page exists today):
+  - loaded through `GET /api/documents/:id`
+  - displays reconstructed full document text from stored chunks
+  - includes `Copy Document Text`
+- Kept ingestion logic unchanged.
+
 ## Latest validation
 
 - `npm test` => PASS

@@ -104,6 +104,11 @@ Normalization invariants (claim-check clobber fix):
       - bulk action rule: `Approve Visible` is scoped to current filter/search and only approves rows with non-NOT_FOUND answers, non-empty citations, and non-approved status
       - keyboard shortcuts with help modal (`?`, `J/K`, `A`, `R`, `U`, `C`, `E`) disabled while typing in form fields
       - loading skeletons shown for rail/main/evidence while questionnaire details are fetching
+    - evidence panel conventions:
+      - citation chips show `DocName + ...<chunkId last6>` with per-chip `Copy ID` and `Open Doc` actions
+      - snippet viewer highlights key question terms client-side and supports `Copy Snippet` + `Copy All Citations`
+      - evidence text remains on light surfaces in bounded scroll containers with preserved line breaks
+      - no document detail page currently; `Open Doc` uses a read-only modal backed by `GET /api/documents/:id` full-text reconstruction from chunks
     - question rail and evidence panel on `/questionnaires/[id]` use sticky panels for faster review loops
     - long question/answer/snippet text stays on light surfaces with bounded scroll containers
 

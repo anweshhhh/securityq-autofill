@@ -61,6 +61,26 @@ type AutofillPayload = {
   error?: unknown;
 };
 
+type DocumentLookupPayload = {
+  documents?: Array<{
+    id: string;
+    name?: string;
+    displayName?: string;
+    originalName?: string;
+  }>;
+  error?: unknown;
+};
+
+type DocumentDetailsPayload = {
+  document?: {
+    id: string;
+    name: string;
+    originalName: string;
+    fullText: string;
+  };
+  error?: unknown;
+};
+
 const NOT_FOUND_ANSWER = "Not found in provided documents.";
 const FILTER_OPTIONS: Array<{ key: QuestionFilter; label: string }> = [
   { key: "ALL", label: "All" },
@@ -69,6 +89,50 @@ const FILTER_OPTIONS: Array<{ key: QuestionFilter; label: string }> = [
   { key: "NEEDS_REVIEW", label: "Needs review" },
   { key: "NOT_FOUND", label: "Not found" }
 ];
+
+const QUESTION_TERM_STOPWORDS = new Set([
+  "about",
+  "after",
+  "again",
+  "against",
+  "being",
+  "below",
+  "between",
+  "could",
+  "during",
+  "having",
+  "other",
+  "their",
+  "there",
+  "these",
+  "those",
+  "where",
+  "which",
+  "while",
+  "would",
+  "your",
+  "what",
+  "when",
+  "from",
+  "that",
+  "this",
+  "with",
+  "have",
+  "does",
+  "they",
+  "them",
+  "into",
+  "also",
+  "than",
+  "then",
+  "such",
+  "should",
+  "must",
+  "need",
+  "been",
+  "were",
+  "will"
+]);
 
 function normalizeCitations(value: unknown): Citation[] {
   if (!Array.isArray(value)) {
@@ -223,6 +287,24 @@ function extractCitationChunkIds(question: QuestionRow): string[] {
   );
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getQuestionKeyTerms(questionText: string): string[] {
+  return Array.from(
+    new Set(
+      questionText
+        .toLowerCase()
+        .split(/[^a-z0-9]+/g)
+        .map((term) => term.trim())
+        .filter((term) => term.length >= 4 && !QUESTION_TERM_STOPWORDS.has(term))
+    )
+  )
+    .sort((left, right) => right.length - left.length)
+    .slice(0, 10);
+}
+
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
     return false;
@@ -258,6 +340,12 @@ export default function QuestionnaireDetailsPage() {
   const [isBulkConfirmOpen, setIsBulkConfirmOpen] = useState(false);
   const [isBulkApproving, setIsBulkApproving] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [documentIdByName, setDocumentIdByName] = useState<Record<string, string>>({});
+  const [isDocumentModalOpen, setIsDocumentModalOpen] = useState(false);
+  const [isDocumentLoading, setIsDocumentLoading] = useState(false);
+  const [documentModalTitle, setDocumentModalTitle] = useState("");
+  const [documentModalText, setDocumentModalText] = useState("");
+  const [documentModalError, setDocumentModalError] = useState("");
   const evidencePanelRef = useRef<HTMLDivElement | null>(null);
 
   const loadDetails = useCallback(async () => {
@@ -458,6 +546,43 @@ export default function QuestionnaireDetailsPage() {
       setShowGeneratedDraft(false);
     }
   }, [selectedQuestion?.approvedAnswer, selectedQuestion?.id]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadDocumentLookup() {
+      try {
+        const response = await fetch("/api/documents", { cache: "no-store" });
+        const payload = (await response.json()) as DocumentLookupPayload;
+        if (!response.ok) {
+          return;
+        }
+
+        const nextLookup: Record<string, string> = {};
+        for (const document of payload.documents ?? []) {
+          const possibleNames = [document.displayName, document.name, document.originalName];
+          for (const value of possibleNames) {
+            const key = (value ?? "").trim().toLowerCase();
+            if (key && !nextLookup[key]) {
+              nextLookup[key] = document.id;
+            }
+          }
+        }
+
+        if (active) {
+          setDocumentIdByName(nextLookup);
+        }
+      } catch {
+        // Keep evidence view functional even if document lookup fails.
+      }
+    }
+
+    void loadDocumentLookup();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const getApprovalCandidate = useCallback((question: QuestionRow): {
     mode: "create" | "update";
@@ -758,6 +883,47 @@ export default function QuestionnaireDetailsPage() {
     }
   }, []);
 
+  const openDocumentModal = useCallback(
+    async (docName: string) => {
+      const lookupKey = docName.trim().toLowerCase();
+      const documentId = documentIdByName[lookupKey];
+
+      if (!documentId) {
+        setMessage(`Document preview unavailable for "${docName}".`);
+        return;
+      }
+
+      setIsDocumentModalOpen(true);
+      setIsDocumentLoading(true);
+      setDocumentModalError("");
+      setDocumentModalText("");
+      setDocumentModalTitle(docName);
+
+      try {
+        const response = await fetch(`/api/documents/${documentId}`, { cache: "no-store" });
+        const payload = (await response.json()) as DocumentDetailsPayload;
+        if (!response.ok || !payload.document) {
+          throw new Error(getApiErrorMessage(payload, "Failed to load document text."));
+        }
+
+        setDocumentModalTitle(payload.document.name || payload.document.originalName || docName);
+        setDocumentModalText(payload.document.fullText || "");
+      } catch (error) {
+        setDocumentModalError(error instanceof Error ? error.message : "Failed to load document text.");
+      } finally {
+        setIsDocumentLoading(false);
+      }
+    },
+    [documentIdByName]
+  );
+
+  const closeDocumentModal = useCallback(() => {
+    setIsDocumentModalOpen(false);
+    setIsDocumentLoading(false);
+    setDocumentModalError("");
+    setDocumentModalText("");
+  }, []);
+
   const activeEvidence = evidenceItems.find((item) => item.chunkId === activeEvidenceChunkId) ?? null;
   const generatedAnswer = (selectedQuestion?.answer ?? "").trim() || "Not answered yet.";
   const approvedAnswer = selectedQuestion?.approvedAnswer?.answerText ?? "";
@@ -765,6 +931,30 @@ export default function QuestionnaireDetailsPage() {
   const effectiveAnswer = showingGeneratedComparison ? generatedAnswer : approvedAnswer || generatedAnswer;
   const effectiveCitationIds = evidenceItems.map((item) => item.chunkId);
   const selectedQuestionApprovalCandidate = selectedQuestion ? getApprovalCandidate(selectedQuestion) : null;
+  const questionKeyTerms = useMemo(
+    () => getQuestionKeyTerms(selectedQuestion?.text ?? ""),
+    [selectedQuestion?.text]
+  );
+  const highlightedSnippetParts = useMemo(() => {
+    const snippet = activeEvidence?.snippet ?? "";
+    if (!snippet || questionKeyTerms.length === 0) {
+      return [snippet];
+    }
+
+    const pattern = new RegExp(`(${questionKeyTerms.map(escapeRegExp).join("|")})`, "gi");
+    const segments = snippet.split(pattern);
+    return segments.map((segment, index) => {
+      if (segment && questionKeyTerms.some((term) => term === segment.toLowerCase())) {
+        return (
+          <mark key={`segment-${index}`} className="snippet-highlight">
+            {segment}
+          </mark>
+        );
+      }
+
+      return <span key={`segment-${index}`}>{segment}</span>;
+    });
+  }, [activeEvidence?.snippet, questionKeyTerms]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -783,9 +973,13 @@ export default function QuestionnaireDetailsPage() {
           event.preventDefault();
           setIsShortcutsOpen(false);
         }
+        if (isDocumentModalOpen) {
+          event.preventDefault();
+          closeDocumentModal();
+        }
       }
 
-      if (isBulkConfirmOpen || isShortcutsOpen) {
+      if (isBulkConfirmOpen || isShortcutsOpen || isDocumentModalOpen) {
         return;
       }
 
@@ -876,9 +1070,11 @@ export default function QuestionnaireDetailsPage() {
     filteredQuestionIds,
     isBulkConfirmOpen,
     isBulkApproving,
+    isDocumentModalOpen,
     isShortcutsOpen,
     selectedQuestion,
     selectedQuestionApprovalCandidate,
+    closeDocumentModal,
     unapprove,
     updateReviewStatus
   ]);
@@ -1248,11 +1444,20 @@ export default function QuestionnaireDetailsPage() {
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => void copyText(effectiveCitationIds.join(", "), "Citation IDs copied.")}
+                onClick={() => void copyText(effectiveCitationIds.join(", "), "All citation IDs copied.")}
                 disabled={effectiveCitationIds.length === 0}
-                title="Copy citation chunk IDs"
+                title="Copy all citation chunk IDs"
               >
-                Copy IDs
+                Copy All Citations
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => void copyText(activeEvidence?.snippet ?? "", "Snippet copied.")}
+                disabled={!activeEvidence?.snippet}
+                title="Copy selected snippet text"
+              >
+                Copy Snippet
               </Button>
             </div>
           </div>
@@ -1261,21 +1466,41 @@ export default function QuestionnaireDetailsPage() {
             <div className="muted small">No citations available for the current question.</div>
           ) : (
             <>
-              <div className="toolbar-row">
+              <div className="evidence-chip-list">
                 {evidenceItems.map((item) => (
-                  <button
-                    key={item.chunkId}
-                    type="button"
-                    className={cx("chip", item.chunkId === activeEvidenceChunkId && "active")}
-                    onClick={() => setActiveEvidenceChunkId(item.chunkId)}
-                    title={`${item.docName}#${item.chunkId}`}
-                  >
-                    {item.docName}#{item.chunkId.slice(0, 8)}
-                  </button>
+                  <div key={item.chunkId} className={cx("evidence-chip-item", item.chunkId === activeEvidenceChunkId && "active")}>
+                    <button
+                      type="button"
+                      className={cx("chip", item.chunkId === activeEvidenceChunkId && "active")}
+                      onClick={() => setActiveEvidenceChunkId(item.chunkId)}
+                      title={`${item.docName}#${item.chunkId}`}
+                    >
+                      <span>{item.docName}</span>
+                      <span className="mono-id">...{item.chunkId.slice(-6)}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="mini-chip-action"
+                      onClick={() => void copyText(item.chunkId, "Chunk ID copied.")}
+                      title={`Copy chunk id ${item.chunkId}`}
+                      aria-label={`Copy chunk id ${item.chunkId}`}
+                    >
+                      Copy ID
+                    </button>
+                    <button
+                      type="button"
+                      className="mini-chip-action"
+                      onClick={() => void openDocumentModal(item.docName)}
+                      title={`Open source document ${item.docName}`}
+                      aria-label={`Open source document ${item.docName}`}
+                    >
+                      Open Doc
+                    </button>
+                  </div>
                 ))}
               </div>
               <div className="snippet-scroll" style={{ marginTop: 10 }}>
-                {activeEvidence ? activeEvidence.snippet : "Select a citation chip to view snippet text."}
+                {activeEvidence ? highlightedSnippetParts : "Select a citation chip to view snippet text."}
               </div>
             </>
           )}
@@ -1323,6 +1548,35 @@ export default function QuestionnaireDetailsPage() {
             <p className="small muted">Shortcuts are ignored while typing in inputs/text areas.</p>
             <div className="toolbar-row">
               <Button type="button" variant="primary" onClick={() => setIsShortcutsOpen(false)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isDocumentModalOpen ? (
+        <div className="overlay-modal" role="dialog" aria-modal="true" aria-label="Document preview">
+          <div className="overlay-modal-card document-modal-card">
+            <h3 style={{ marginTop: 0, marginBottom: 6 }}>{documentModalTitle || "Document preview"}</h3>
+            <p className="small muted" style={{ marginTop: 0 }}>
+              Read-only source text from uploaded evidence.
+            </p>
+            {isDocumentLoading ? <div className="skeleton-block document-skeleton" /> : null}
+            {documentModalError ? <div className="message-banner error">{documentModalError}</div> : null}
+            {!isDocumentLoading && !documentModalError ? (
+              <div className="document-text-scroll">{documentModalText || "No document text available."}</div>
+            ) : null}
+            <div className="toolbar-row" style={{ marginTop: 10 }}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void copyText(documentModalText, "Document text copied.")}
+                disabled={isDocumentLoading || !documentModalText}
+              >
+                Copy Document Text
+              </Button>
+              <Button type="button" variant="primary" onClick={closeDocumentModal}>
                 Close
               </Button>
             </div>
