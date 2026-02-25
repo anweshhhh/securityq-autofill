@@ -31,7 +31,9 @@ export type AutofillResult = {
 export type QuestionnaireListItem = {
   id: string;
   name: string;
+  sourceFileName: string | null;
   createdAt: Date;
+  updatedAt: Date;
   questionCount: number;
   answeredCount: number;
   notFoundCount: number;
@@ -147,7 +149,9 @@ export async function listQuestionnairesForOrganization(
     return {
       id: questionnaire.id,
       name: questionnaire.name,
+      sourceFileName: questionnaire.sourceFileName,
       createdAt: questionnaire.createdAt,
+      updatedAt: questionnaire.updatedAt,
       questionCount: questionnaire.questions.length,
       answeredCount: summary.answeredCount,
       notFoundCount: summary.notFoundCount

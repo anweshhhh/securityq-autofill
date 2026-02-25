@@ -2,13 +2,16 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Badge, Button, Card, TextInput, cx } from "@/components/ui";
 
 type PreviewRow = Record<string, string>;
 
 type QuestionnaireRow = {
   id: string;
   name: string;
+  sourceFileName: string | null;
   createdAt: string;
+  updatedAt: string;
   questionCount: number;
   answeredCount: number;
   notFoundCount: number;
@@ -22,6 +25,19 @@ type AutofillResult = {
   notFoundCount: number;
   error?: string;
 };
+
+function getMessageTone(message: string): "approved" | "review" | "notfound" {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("failed") || normalized.includes("error")) {
+    return "notfound";
+  }
+
+  if (normalized.includes("imported") || normalized.includes("complete") || normalized.includes("deleted")) {
+    return "approved";
+  }
+
+  return "review";
+}
 
 export default function QuestionnairesPage() {
   const [questionnaires, setQuestionnaires] = useState<QuestionnaireRow[]>([]);
@@ -114,12 +130,12 @@ export default function QuestionnairesPage() {
     event.preventDefault();
 
     if (!selectedFile) {
-      setMessage("Select a CSV file first");
+      setMessage("Select a CSV file first.");
       return;
     }
 
     if (!questionColumn) {
-      setMessage("Select the question column");
+      setMessage("Select the question column.");
       return;
     }
 
@@ -147,7 +163,7 @@ export default function QuestionnairesPage() {
       }
 
       setMessage(
-        `Imported ${payload.questionnaire?.name ?? "questionnaire"} (${payload.questionnaire?.questionCount ?? 0} questions)`
+        `Imported ${payload.questionnaire?.name ?? "questionnaire"} (${payload.questionnaire?.questionCount ?? 0} questions).`
       );
       setSelectedFile(null);
       setHeaders([]);
@@ -217,135 +233,203 @@ export default function QuestionnairesPage() {
   }
 
   return (
-    <main>
-      <p>
-        <Link href="/">Back to Home</Link>
-      </p>
-
-      <h1>Questionnaires</h1>
-
-      <form onSubmit={handleImport}>
-        <input
-          type="file"
-          accept=".csv,text/csv"
-          onChange={(event) => {
-            const file = event.target.files?.[0] ?? null;
-            void handleFileSelect(file);
-          }}
-        />
-
-        <div>
-          <label>
-            Question column
-            <select
-              value={questionColumn}
-              onChange={(event) => setQuestionColumn(event.target.value)}
-              disabled={headers.length === 0}
-            >
-              <option value="">Select column</option>
-              {headers.map((header) => (
-                <option key={header} value={header}>
-                  {header}
-                </option>
-              ))}
-            </select>
-          </label>
+    <div className="page-stack">
+      <Card id="import">
+        <div className="card-title-row">
+          <div>
+            <h2 style={{ marginBottom: 4 }}>Import Questionnaire</h2>
+            <p className="muted" style={{ margin: 0 }}>
+              Upload CSV, pick the question column, and create a new review run.
+            </p>
+          </div>
+          <Badge tone="draft" title="CSV only">
+            CSV workflow
+          </Badge>
         </div>
 
-        <div>
-          <label>
-            Questionnaire name (optional)
-            <input value={name} onChange={(event) => setName(event.target.value)} />
-          </label>
-        </div>
+        <form onSubmit={handleImport} className="page-stack">
+          <div className="two-col">
+            <div className="card card-muted">
+              <label className="small muted" htmlFor="questionnaire-file">
+                CSV file
+              </label>
+              <input
+                id="questionnaire-file"
+                className="input"
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  void handleFileSelect(file);
+                }}
+              />
+              <p className="muted small" style={{ marginBottom: 0 }}>
+                We auto-suggest a question column after parsing.
+              </p>
+            </div>
 
-        <button type="submit" disabled={isParsing || isImporting || !selectedFile}>
-          {isImporting ? "Importing..." : "Create Questionnaire"}
-        </button>
-      </form>
-
-      {message ? <p>{message}</p> : null}
-
-      {previewRows.length > 0 ? (
-        <section>
-          <h2>Preview (first {previewRows.length} rows)</h2>
-          <table>
-            <thead>
-              <tr>
-                {previewHeaders.map((header) => (
-                  <th key={header}>{header}</th>
+            <div className="card card-muted">
+              <label className="small muted" htmlFor="question-column">
+                Question column
+              </label>
+              <select
+                id="question-column"
+                className="select"
+                value={questionColumn}
+                onChange={(event) => setQuestionColumn(event.target.value)}
+                disabled={headers.length === 0}
+              >
+                <option value="">Select column</option>
+                {headers.map((header) => (
+                  <option key={header} value={header}>
+                    {header}
+                  </option>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {previewRows.map((row, rowIndex) => (
-                <tr key={`preview-${rowIndex}`}>
-                  {previewHeaders.map((header) => (
-                    <td key={`${rowIndex}-${header}`}>{row[header]}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+              </select>
+              <label className="small muted" htmlFor="questionnaire-name" style={{ marginTop: 10, display: "block" }}>
+                Questionnaire name (optional)
+              </label>
+              <TextInput
+                id="questionnaire-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Quarterly vendor review"
+              />
+            </div>
+          </div>
+
+          <div className="toolbar-row">
+            <Button type="submit" variant="primary" disabled={isParsing || isImporting || !selectedFile}>
+              {isImporting ? "Importing..." : "Create Questionnaire"}
+            </Button>
+            <Button type="button" variant="secondary" disabled={isLoadingList} onClick={() => void fetchQuestionnaires()}>
+              Refresh list
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      {message ? (
+        <Card className="card-muted">
+          <Badge tone={getMessageTone(message)}>{message}</Badge>
+        </Card>
       ) : null}
 
-      <h2>Saved Questionnaires</h2>
-      {isLoadingList ? <p>Loading...</p> : null}
+      {previewRows.length > 0 ? (
+        <Card>
+          <div className="card-title-row">
+            <h3 style={{ margin: 0 }}>Preview ({previewRows.length} rows)</h3>
+          </div>
+          <div className="data-table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  {previewHeaders.map((header) => (
+                    <th key={header}>{header}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {previewRows.map((row, rowIndex) => (
+                  <tr key={`preview-${rowIndex}`}>
+                    {previewHeaders.map((header) => (
+                      <td key={`${rowIndex}-${header}`}>{row[header]}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : null}
 
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Questions</th>
-            <th>Answered</th>
-            <th>Not Found</th>
-            <th>Created</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {questionnaires.length === 0 ? (
-            <tr>
-              <td colSpan={6}>No questionnaires yet.</td>
-            </tr>
-          ) : (
-            questionnaires.map((questionnaire) => (
-              <tr key={questionnaire.id}>
-                <td>{questionnaire.name}</td>
-                <td>{questionnaire.questionCount}</td>
-                <td>{questionnaire.answeredCount}</td>
-                <td>{questionnaire.notFoundCount}</td>
-                <td>{new Date(questionnaire.createdAt).toLocaleString()}</td>
-                <td>
-                  <Link href={`/questionnaires/${questionnaire.id}`}>View</Link>{" "}
-                  <button
-                    type="button"
-                    onClick={() => void runAutofill(questionnaire.id)}
-                    disabled={activeAutofillId === questionnaire.id || activeDeleteId === questionnaire.id}
-                  >
-                    {activeAutofillId === questionnaire.id ? "Running..." : "Run Autofill"}
-                  </button>{" "}
-                  <a href={`/api/questionnaires/${questionnaire.id}/export`}>Download CSV</a>{" "}
-                  <a href={`/api/questionnaires/${questionnaire.id}/export?mode=approvedOnly`}>
-                    Approved Only
-                  </a>{" "}
-                  <a href={`/api/questionnaires/${questionnaire.id}/export?mode=generated`}>
-                    Generated Only
-                  </a>{" "}
-                  <button
-                    type="button"
-                    onClick={() => void deleteQuestionnaire(questionnaire.id)}
-                    disabled={activeAutofillId === questionnaire.id || activeDeleteId === questionnaire.id}
-                  >
-                    {activeDeleteId === questionnaire.id ? "Deleting..." : "Delete"}
-                  </button>
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </main>
+      <Card>
+        <div className="card-title-row">
+          <div>
+            <h2 style={{ marginBottom: 4 }}>Saved Questionnaires</h2>
+            <p className="muted" style={{ margin: 0 }}>
+              Open for review, rerun autofill, and export.
+            </p>
+          </div>
+          {isLoadingList ? <Badge tone="review">Loading...</Badge> : null}
+        </div>
+
+        {questionnaires.length === 0 ? (
+          <div className="empty-state">
+            <h3 style={{ marginTop: 0 }}>No questionnaires yet</h3>
+            <p>Import your first CSV questionnaire to start the autofill and review workflow.</p>
+            <Link href="#import" className="btn btn-primary">
+              Import Questionnaire
+            </Link>
+          </div>
+        ) : (
+          <div className="data-table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Questionnaire</th>
+                  <th>Source</th>
+                  <th>Questions</th>
+                  <th>Answered</th>
+                  <th>Not found</th>
+                  <th>Last updated</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {questionnaires.map((questionnaire) => (
+                  <tr key={questionnaire.id}>
+                    <td>
+                      <strong>{questionnaire.name}</strong>
+                    </td>
+                    <td className="muted">{questionnaire.sourceFileName ?? "n/a"}</td>
+                    <td>{questionnaire.questionCount}</td>
+                    <td>{questionnaire.answeredCount}</td>
+                    <td>
+                      <span className={cx("badge", questionnaire.notFoundCount > 0 ? "status-notfound" : "status-approved")}>
+                        {questionnaire.notFoundCount}
+                      </span>
+                    </td>
+                    <td className="muted">{new Date(questionnaire.updatedAt || questionnaire.createdAt).toLocaleString()}</td>
+                    <td>
+                      <div className="toolbar-row">
+                        <Link href={`/questionnaires/${questionnaire.id}`} className="btn btn-primary">
+                          Open
+                        </Link>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => void runAutofill(questionnaire.id)}
+                          disabled={activeAutofillId === questionnaire.id || activeDeleteId === questionnaire.id}
+                        >
+                          {activeAutofillId === questionnaire.id ? "Running..." : "Run Autofill"}
+                        </Button>
+                        <a className="btn btn-ghost" href={`/api/questionnaires/${questionnaire.id}/export`}>
+                          Export
+                        </a>
+                        <a className="btn btn-ghost" href={`/api/questionnaires/${questionnaire.id}/export?mode=approvedOnly`}>
+                          Approved only
+                        </a>
+                        <a className="btn btn-ghost" href={`/api/questionnaires/${questionnaire.id}/export?mode=generated`}>
+                          Generated only
+                        </a>
+                        <Button
+                          type="button"
+                          variant="danger"
+                          onClick={() => void deleteQuestionnaire(questionnaire.id)}
+                          disabled={activeAutofillId === questionnaire.id || activeDeleteId === questionnaire.id}
+                        >
+                          {activeDeleteId === questionnaire.id ? "Deleting..." : "Delete"}
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }
