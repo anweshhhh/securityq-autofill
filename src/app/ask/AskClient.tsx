@@ -86,7 +86,7 @@ export function AskClient({ devMode }: AskClientProps) {
             <br />
           </>
         ) : null}
-        <button type="submit" disabled={isLoading}>
+        <button type="submit" disabled={isLoading} aria-label="Submit question">
           {isLoading ? "Answering..." : "Submit"}
         </button>
       </form>

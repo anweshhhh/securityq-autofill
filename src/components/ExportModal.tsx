@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 import { Button, cx } from "@/components/ui";
 
 export type ExportMode = "preferApproved" | "approvedOnly" | "generated";
@@ -82,6 +83,7 @@ export function ExportModal({
   const [mode, setMode] = useState<ExportMode>("preferApproved");
   const [isExporting, setIsExporting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const modalRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
@@ -97,6 +99,16 @@ export function ExportModal({
     () => buildDownloadFileName(questionnaireName || "questionnaire"),
     [questionnaireName]
   );
+
+  useFocusTrap({
+    active: isOpen && Boolean(questionnaireId),
+    containerRef: modalRef,
+    onEscape: () => {
+      if (!isExporting) {
+        onClose();
+      }
+    }
+  });
 
   async function handleExport() {
     if (!questionnaireId) {
@@ -146,7 +158,7 @@ export function ExportModal({
 
   return (
     <div className="overlay-modal" role="dialog" aria-modal="true" aria-label="Export questionnaire">
-      <div className="overlay-modal-card export-modal-card">
+      <div className="overlay-modal-card export-modal-card" ref={modalRef} tabIndex={-1}>
         <h3 style={{ marginTop: 0, marginBottom: 4 }}>Export Questionnaire</h3>
         <p className="small muted" style={{ marginTop: 0 }}>
           Choose export mode and download a CSV snapshot.
@@ -162,6 +174,7 @@ export function ExportModal({
                 checked={mode === option.value}
                 onChange={() => setMode(option.value)}
                 disabled={isExporting}
+                aria-label={`Export mode ${option.label}`}
               />
               <span>
                 <span className="export-mode-title">{option.label}</span>
@@ -185,7 +198,7 @@ export function ExportModal({
               "Download CSV"
             )}
           </Button>
-          <Button type="button" variant="ghost" onClick={onClose} disabled={isExporting}>
+          <Button type="button" variant="ghost" onClick={onClose} disabled={isExporting} aria-label="Cancel export">
             Cancel
           </Button>
         </div>

@@ -192,6 +192,26 @@ Current log of implemented MVP work (concise, execution-focused).
   - `<questionnaire-name>-<YYYY-MM-DD>-export.csv` (sanitized base name)
 - Reused existing backend export modes; no server behavior changes required.
 
+## 2026-02-25 - ui-next-05-accessibility-perf-audit
+
+- Accessibility hardening:
+  - strengthened dark-shell state contrast for sidebar links and shell buttons while preserving palette
+  - added focus-visible outlines for row actions, questionnaire rail items, and search clear controls
+  - added/normalized `aria-label` coverage for native buttons and icon controls
+- Focus + modal behavior:
+  - introduced `useFocusTrap` hook (`src/lib/useFocusTrap.ts`)
+  - applied focus trapping + `Esc` close to:
+    - mobile sidebar drawer
+    - export modal
+    - questionnaire details modals (bulk approve, shortcuts, document preview)
+- Performance hardening on `/questionnaires/[id]`:
+  - added deferred search input (`useDeferredValue`) for large lists
+  - memoized question rail row component and rail item projection
+  - rail continues rendering preview-only question text (no full answer/snippet rendering per row)
+- Cross-page consistency:
+  - aligned `/documents` empty inventory state to gradient chrome empty-state pattern used in questionnaire surfaces
+  - retained shared card + table primitives across `/documents` and `/questionnaires` list views
+
 ## Latest validation
 
 - `npm test` => PASS

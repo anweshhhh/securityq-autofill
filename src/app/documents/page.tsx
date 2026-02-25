@@ -342,105 +342,112 @@ export default function DocumentsPage() {
           </div>
         </div>
 
-        <div className="data-table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>
-                  <input
-                    type="checkbox"
-                    aria-label="Select all visible documents"
-                    checked={allVisibleSelected}
-                    onChange={(event) => {
-                      if (event.target.checked) {
-                        setSelectedDocumentIds((current) => {
-                          const combined = new Set([...current, ...filteredDocuments.map((document) => document.id)]);
-                          return Array.from(combined);
-                        });
-                        return;
-                      }
-
-                      setSelectedDocumentIds((current) =>
-                        current.filter(
-                          (selectedId) => !filteredDocuments.some((document) => document.id === selectedId)
-                        )
-                      );
-                    }}
-                  />
-                </th>
-                <th>Name</th>
-                <th>Original</th>
-                <th>Status</th>
-                <th>Chunk count</th>
-                <th>Updated</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading && filteredDocuments.length === 0 ? (
+        {!isLoading && documents.length === 0 && searchText.trim().length === 0 ? (
+          <div className="empty-state">
+            <h3 style={{ marginTop: 0 }}>No evidence documents yet</h3>
+            <p>Upload `.txt` or `.md` files to start the evidence pipeline.</p>
+            <a href="#upload" className="btn btn-primary" aria-label="Jump to upload evidence section">
+              Upload Evidence
+            </a>
+          </div>
+        ) : (
+          <div className="data-table-wrap">
+            <table className="data-table">
+              <thead>
                 <tr>
-                  <td colSpan={7}>Loading documents...</td>
-                </tr>
-              ) : null}
-
-              {!isLoading && filteredDocuments.length === 0 ? (
-                <tr>
-                  <td colSpan={7}>
-                    {searchText.trim().length > 0
-                      ? "No documents match the current search."
-                      : "No documents uploaded yet."}
-                  </td>
-                </tr>
-              ) : null}
-
-              {filteredDocuments.map((document) => (
-                <tr key={document.id}>
-                  <td>
+                  <th>
                     <input
                       type="checkbox"
-                      aria-label={`Select ${document.originalName}`}
-                      checked={selectedDocumentIds.includes(document.id)}
+                      aria-label="Select all visible documents"
+                      checked={allVisibleSelected}
                       onChange={(event) => {
                         if (event.target.checked) {
-                          setSelectedDocumentIds((current) => [...current, document.id]);
+                          setSelectedDocumentIds((current) => {
+                            const combined = new Set([...current, ...filteredDocuments.map((document) => document.id)]);
+                            return Array.from(combined);
+                          });
                           return;
                         }
 
                         setSelectedDocumentIds((current) =>
-                          current.filter((selectedId) => selectedId !== document.id)
+                          current.filter(
+                            (selectedId) => !filteredDocuments.some((document) => document.id === selectedId)
+                          )
                         );
                       }}
                     />
-                  </td>
-                  <td>
-                    <strong>{document.displayName}</strong>
-                  </td>
-                  <td className="muted">{document.originalName}</td>
-                  <td>
-                    <span className={cx("badge", `status-${statusBadge(document.status)}`)}>{document.status}</span>
-                    {document.status === "ERROR" && document.errorMessage ? (
-                      <div className="small status-notfound" style={{ marginTop: 6 }}>
-                        {document.errorMessage}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td>{document.chunkCount}</td>
-                  <td className="muted">{new Date(document.updatedAt).toLocaleString()}</td>
-                  <td>
-                    <Button
-                      type="button"
-                      variant="danger"
-                      onClick={() => void deleteDocuments([document.id])}
-                      disabled={isDeleting}
-                    >
-                      Delete
-                    </Button>
-                  </td>
+                  </th>
+                  <th>Name</th>
+                  <th>Original</th>
+                  <th>Status</th>
+                  <th>Chunk count</th>
+                  <th>Updated</th>
+                  <th>Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {isLoading && filteredDocuments.length === 0 ? (
+                  <tr>
+                    <td colSpan={7}>Loading documents...</td>
+                  </tr>
+                ) : null}
+
+                {!isLoading && filteredDocuments.length === 0 ? (
+                  <tr>
+                    <td colSpan={7}>No documents match the current search.</td>
+                  </tr>
+                ) : null}
+
+                {filteredDocuments.map((document) => (
+                  <tr key={document.id}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${document.originalName}`}
+                        checked={selectedDocumentIds.includes(document.id)}
+                        onChange={(event) => {
+                          if (event.target.checked) {
+                            setSelectedDocumentIds((current) => [...current, document.id]);
+                            return;
+                          }
+
+                          setSelectedDocumentIds((current) =>
+                            current.filter((selectedId) => selectedId !== document.id)
+                          );
+                        }}
+                      />
+                    </td>
+                    <td>
+                      <strong>{document.displayName}</strong>
+                    </td>
+                    <td className="muted">{document.originalName}</td>
+                    <td>
+                      <span className={cx("badge", `status-${statusBadge(document.status)}`)}>{document.status}</span>
+                      {document.status === "ERROR" && document.errorMessage ? (
+                        <div className="small status-notfound" style={{ marginTop: 6 }}>
+                          {document.errorMessage}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td>{document.chunkCount}</td>
+                    <td className="muted">{new Date(document.updatedAt).toLocaleString()}</td>
+                    <td>
+                      <Button
+                        type="button"
+                        variant="danger"
+                        onClick={() => void deleteDocuments([document.id])}
+                        disabled={isDeleting}
+                        aria-label={`Delete document ${document.displayName}`}
+                      >
+                        Delete
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
     </div>
   );

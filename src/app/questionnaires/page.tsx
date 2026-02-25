@@ -519,6 +519,7 @@ export default function QuestionnairesPage() {
                               className="row-actions-item"
                               onClick={() => setExportTarget({ id: questionnaire.id, name: questionnaire.name })}
                               disabled={activeAutofillId === questionnaire.id || activeDeleteId === questionnaire.id}
+                              aria-label={`Export questionnaire ${questionnaire.name}`}
                             >
                               Export...
                             </button>
@@ -527,6 +528,7 @@ export default function QuestionnairesPage() {
                               className="row-actions-item danger"
                               onClick={() => void deleteQuestionnaire(questionnaire.id)}
                               disabled={activeAutofillId === questionnaire.id || activeDeleteId === questionnaire.id}
+                              aria-label={`Delete questionnaire ${questionnaire.name}`}
                             >
                               {activeDeleteId === questionnaire.id ? "Deleting..." : "Delete questionnaire"}
                             </button>

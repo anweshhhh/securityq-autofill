@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Button, TextInput, cx } from "@/components/ui";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 
 type AppShellProps = {
   devMode: boolean;
@@ -108,6 +109,7 @@ export function AppShell({ devMode, children }: AppShellProps) {
   const pathname = usePathname();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const mobileSidebarRef = useRef<HTMLElement | null>(null);
 
   const navItems: NavItem[] = useMemo(() => {
     const items: NavItem[] = [
@@ -126,6 +128,12 @@ export function AppShell({ devMode, children }: AppShellProps) {
   const pageHeader = getPageHeader(pathname);
   const primaryAction = getPrimaryAction(pathname);
 
+  useFocusTrap({
+    active: isMobileSidebarOpen,
+    containerRef: mobileSidebarRef,
+    onEscape: () => setIsMobileSidebarOpen(false)
+  });
+
   function renderNavLinks(onNavigate?: () => void) {
     return navItems.map((item) => {
       const active = isActiveRoute(pathname, item.href);
@@ -135,6 +143,7 @@ export function AppShell({ devMode, children }: AppShellProps) {
           href={item.href}
           className={cx("sidebar-link", active && "active")}
           onClick={onNavigate}
+          aria-label={item.label}
         >
           <span aria-hidden>{item.short}</span>
           <span className="sidebar-link-label">{item.label}</span>
@@ -157,6 +166,7 @@ export function AppShell({ devMode, children }: AppShellProps) {
             className="icon-btn"
             onClick={() => setIsSidebarCollapsed((value) => !value)}
             title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {isSidebarCollapsed ? ">" : "<"}
           </Button>
@@ -172,7 +182,7 @@ export function AppShell({ devMode, children }: AppShellProps) {
             onClick={() => setIsMobileSidebarOpen(false)}
             aria-label="Close navigation drawer"
           />
-          <aside className="shell-sidebar mobile-sidebar mobile-only">
+          <aside className="shell-sidebar mobile-sidebar mobile-only" ref={mobileSidebarRef} tabIndex={-1}>
             <div className="sidebar-title-row">
               <span className="sidebar-product">
                 <span className="sidebar-product-dot" />
@@ -184,6 +194,7 @@ export function AppShell({ devMode, children }: AppShellProps) {
                 className="icon-btn"
                 onClick={() => setIsMobileSidebarOpen(false)}
                 title="Close navigation"
+                aria-label="Close navigation"
               >
                 X
               </Button>
@@ -201,6 +212,7 @@ export function AppShell({ devMode, children }: AppShellProps) {
             className="icon-btn mobile-only"
             onClick={() => setIsMobileSidebarOpen(true)}
             title="Open navigation"
+            aria-label="Open navigation"
           >
             =
           </Button>
@@ -216,7 +228,7 @@ export function AppShell({ devMode, children }: AppShellProps) {
               placeholder="Search questionnaires, evidence, citations (coming soon)"
             />
           </div>
-          <Link href={primaryAction.href} className="btn btn-primary">
+          <Link href={primaryAction.href} className="btn btn-primary" aria-label={primaryAction.label}>
             {primaryAction.label}
           </Link>
         </div>

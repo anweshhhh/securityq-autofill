@@ -111,7 +111,7 @@ textarea {
   width: 100%;
   border-radius: 10px;
   border: 1px solid transparent;
-  color: var(--shell-text);
+  color: #eef3ff;
   text-decoration: none;
   padding: 10px 12px;
   font-size: 14px;
@@ -120,14 +120,15 @@ textarea {
 }
 
 .sidebar-link:hover {
-  background: rgba(164, 179, 219, 0.14);
-  border-color: rgba(164, 179, 219, 0.2);
+  background: rgba(164, 179, 219, 0.18);
+  border-color: rgba(164, 179, 219, 0.28);
 }
 
 .sidebar-link.active {
-  background: rgba(91, 95, 217, 0.28);
-  border-color: rgba(197, 204, 255, 0.4);
-  color: #f8f9ff;
+  background: rgba(91, 95, 217, 0.36);
+  border-color: rgba(208, 214, 255, 0.56);
+  color: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(223, 228, 255, 0.18);
 }
 
 .sidebar-link-label {
@@ -374,9 +375,9 @@ textarea {
 }
 
 .btn-shell {
-  background: rgba(255, 255, 255, 0.09);
-  color: #eef2ff;
-  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.12);
+  color: #f8fbff;
+  border-color: rgba(255, 255, 255, 0.34);
 }
 
 .icon-btn {
@@ -473,6 +474,13 @@ textarea {
 .input:focus-visible,
 .select:focus-visible,
 .textarea:focus-visible {
+  outline: 2px solid rgba(91, 95, 217, 0.44);
+  outline-offset: 2px;
+}
+
+.row-actions-item:focus-visible,
+.question-list-item:focus-visible,
+.search-field-clear:focus-visible {
   outline: 2px solid rgba(91, 95, 217, 0.44);
   outline-offset: 2px;
 }
@@ -761,6 +769,13 @@ textarea {
 .answer-preview {
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.question-preview-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }

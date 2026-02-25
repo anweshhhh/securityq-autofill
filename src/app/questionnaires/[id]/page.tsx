@@ -1,9 +1,10 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { ExportModal } from "@/components/ExportModal";
 import { Badge, Button, Card, TextArea, TextInput, cx } from "@/components/ui";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 
 type Citation = {
   docName: string;
@@ -53,6 +54,14 @@ type EvidenceItem = {
   chunkId: string;
   docName: string;
   snippet: string;
+};
+
+type QuestionRailItem = {
+  id: string;
+  rowIndex: number;
+  textPreview: string;
+  reviewStatus: QuestionRow["reviewStatus"];
+  notFound: boolean;
 };
 
 type AutofillPayload = {
@@ -321,6 +330,46 @@ function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
+function toQuestionPreview(questionText: string): string {
+  const normalized = questionText.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "No question text";
+  }
+
+  return normalized;
+}
+
+const QuestionRailItemButton = memo(function QuestionRailItemButton({
+  item,
+  active,
+  onSelect
+}: {
+  item: QuestionRailItem;
+  active: boolean;
+  onSelect: (questionId: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={cx("question-list-item", active && "active")}
+      onClick={() => onSelect(item.id)}
+      title={`Row ${item.rowIndex + 1}`}
+      aria-label={`Select question row ${item.rowIndex + 1}`}
+    >
+      <div className="card-title-row" style={{ marginBottom: 8 }}>
+        <span className="small muted">Row {item.rowIndex + 1}</span>
+        <div className="toolbar-row compact">
+          <Badge tone={statusTone(item.reviewStatus)} title={statusLabel(item.reviewStatus)}>
+            {statusLabel(item.reviewStatus)}
+          </Badge>
+          {item.notFound ? <Badge tone="notfound">Not found</Badge> : null}
+        </div>
+      </div>
+      <div className="question-preview-text">{item.textPreview}</div>
+    </button>
+  );
+});
+
 export default function QuestionnaireDetailsPage() {
   const params = useParams<{ id: string }>();
   const questionnaireId = params.id;
@@ -349,6 +398,10 @@ export default function QuestionnaireDetailsPage() {
   const [documentModalText, setDocumentModalText] = useState("");
   const [documentModalError, setDocumentModalError] = useState("");
   const evidencePanelRef = useRef<HTMLDivElement | null>(null);
+  const bulkModalRef = useRef<HTMLDivElement | null>(null);
+  const shortcutsModalRef = useRef<HTMLDivElement | null>(null);
+  const documentModalRef = useRef<HTMLDivElement | null>(null);
+  const deferredSearchText = useDeferredValue(searchText);
 
   const loadDetails = useCallback(async () => {
     setIsLoading(true);
@@ -415,7 +468,7 @@ export default function QuestionnaireDetailsPage() {
       return [];
     }
 
-    const loweredSearch = searchText.trim().toLowerCase();
+    const loweredSearch = deferredSearchText.trim().toLowerCase();
     return questionOrder.filter((questionId) => {
       const question = questionsById[questionId];
       if (!question) {
@@ -440,7 +493,7 @@ export default function QuestionnaireDetailsPage() {
         (question.approvedAnswer?.answerText ?? "").toLowerCase().includes(loweredSearch)
       );
     });
-  }, [data, filter, questionOrder, questionsById, searchText]);
+  }, [data, deferredSearchText, filter, questionOrder, questionsById]);
 
   const statusCounts = useMemo<StatusCounts>(() => {
     const counts: StatusCounts = {
@@ -486,6 +539,29 @@ export default function QuestionnaireDetailsPage() {
     () => (selectedQuestionId ? questionsById[selectedQuestionId] ?? null : null),
     [questionsById, selectedQuestionId]
   );
+
+  const handleSelectQuestion = useCallback((questionId: string) => {
+    setSelectedQuestionId(questionId);
+  }, []);
+
+  const railItems = useMemo<QuestionRailItem[]>(() => {
+    return filteredQuestionIds
+      .map((questionId) => {
+        const question = questionsById[questionId];
+        if (!question) {
+          return null;
+        }
+
+        return {
+          id: question.id,
+          rowIndex: question.rowIndex,
+          textPreview: toQuestionPreview(question.text),
+          reviewStatus: question.reviewStatus,
+          notFound: isNotFoundAnswer(question.answer)
+        };
+      })
+      .filter((item): item is QuestionRailItem => Boolean(item));
+  }, [filteredQuestionIds, questionsById]);
 
   const visibleQuestions = useMemo(() => {
     return filteredQuestionIds
@@ -926,6 +1002,24 @@ export default function QuestionnaireDetailsPage() {
     setDocumentModalText("");
   }, []);
 
+  useFocusTrap({
+    active: isBulkConfirmOpen,
+    containerRef: bulkModalRef,
+    onEscape: () => setIsBulkConfirmOpen(false)
+  });
+
+  useFocusTrap({
+    active: isShortcutsOpen,
+    containerRef: shortcutsModalRef,
+    onEscape: () => setIsShortcutsOpen(false)
+  });
+
+  useFocusTrap({
+    active: isDocumentModalOpen,
+    containerRef: documentModalRef,
+    onEscape: closeDocumentModal
+  });
+
   const activeEvidence = evidenceItems.find((item) => item.chunkId === activeEvidenceChunkId) ?? null;
   const generatedAnswer = (selectedQuestion?.answer ?? "").trim() || "Not answered yet.";
   const approvedAnswer = selectedQuestion?.approvedAnswer?.answerText ?? "";
@@ -1234,6 +1328,7 @@ export default function QuestionnaireDetailsPage() {
                 className={cx("chip", filter === key && "active")}
                 onClick={() => setFilter(key)}
                 title={`Filter by ${label.toLowerCase()}`}
+                aria-label={`Filter questions by ${label.toLowerCase()}`}
               >
                 {label} ({statusCounts[key]})
               </button>
@@ -1241,36 +1336,17 @@ export default function QuestionnaireDetailsPage() {
           </div>
 
           <div className="question-list" style={{ marginTop: 12 }}>
-            {filteredQuestionIds.length === 0 ? (
+            {railItems.length === 0 ? (
               <div className="muted small">No questions match the current filters.</div>
             ) : (
-              filteredQuestionIds.map((questionId) => {
-                const question = questionsById[questionId];
-                if (!question) {
-                  return null;
-                }
-
-                return (
-                  <button
-                    key={question.id}
-                    type="button"
-                    className={cx("question-list-item", selectedQuestionId === question.id && "active")}
-                    onClick={() => setSelectedQuestionId(question.id)}
-                    title={`Row ${question.rowIndex}`}
-                  >
-                    <div className="card-title-row" style={{ marginBottom: 8 }}>
-                      <span className="small muted">Row {question.rowIndex + 1}</span>
-                      <div className="toolbar-row compact">
-                        <Badge tone={statusTone(question.reviewStatus)} title={statusLabel(question.reviewStatus)}>
-                          {statusLabel(question.reviewStatus)}
-                        </Badge>
-                        {isNotFoundAnswer(question.answer) ? <Badge tone="notfound">Not found</Badge> : null}
-                      </div>
-                    </div>
-                    <div className="answer-preview">{question.text || "No question text"}</div>
-                  </button>
-                );
-              })
+              railItems.map((item) => (
+                <QuestionRailItemButton
+                  key={item.id}
+                  item={item}
+                  active={selectedQuestionId === item.id}
+                  onSelect={handleSelectQuestion}
+                />
+              ))
             )}
           </div>
         </Card>
@@ -1477,6 +1553,7 @@ export default function QuestionnaireDetailsPage() {
                       className={cx("chip", item.chunkId === activeEvidenceChunkId && "active")}
                       onClick={() => setActiveEvidenceChunkId(item.chunkId)}
                       title={`${item.docName}#${item.chunkId}`}
+                      aria-label={`Select evidence from ${item.docName} chunk ${item.chunkId}`}
                     >
                       <span>{item.docName}</span>
                       <span className="mono-id">...{item.chunkId.slice(-6)}</span>
@@ -1514,7 +1591,7 @@ export default function QuestionnaireDetailsPage() {
 
       {isBulkConfirmOpen ? (
         <div className="overlay-modal" role="dialog" aria-modal="true" aria-label="Confirm bulk approval">
-          <div className="overlay-modal-card">
+          <div className="overlay-modal-card" ref={bulkModalRef} tabIndex={-1}>
             <h3 style={{ marginTop: 0 }}>Approve Visible Questions</h3>
             <p style={{ margin: "8px 0" }}>
               You are about to approve <strong>{bulkEligibleQuestions.length}</strong> visible questions.
@@ -1536,7 +1613,7 @@ export default function QuestionnaireDetailsPage() {
 
       {isShortcutsOpen ? (
         <div className="overlay-modal" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
-          <div className="overlay-modal-card">
+          <div className="overlay-modal-card" ref={shortcutsModalRef} tabIndex={-1}>
             <h3 style={{ marginTop: 0 }}>Keyboard Shortcuts</h3>
             <div className="shortcut-grid">
               <div><kbd>J</kbd> Next question</div>
@@ -1560,7 +1637,7 @@ export default function QuestionnaireDetailsPage() {
 
       {isDocumentModalOpen ? (
         <div className="overlay-modal" role="dialog" aria-modal="true" aria-label="Document preview">
-          <div className="overlay-modal-card document-modal-card">
+          <div className="overlay-modal-card document-modal-card" ref={documentModalRef} tabIndex={-1}>
             <h3 style={{ marginTop: 0, marginBottom: 6 }}>{documentModalTitle || "Document preview"}</h3>
             <p className="small muted" style={{ marginTop: 0 }}>
               Read-only source text from uploaded evidence.

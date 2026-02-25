@@ -14,8 +14,32 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "ghost" | "danger" | "shell";
 };
 
-export function Button({ className, variant = "secondary", ...props }: ButtonProps) {
-  return <button className={cx("btn", `btn-${variant}`, className)} {...props} />;
+function deriveAriaLabel(children: ButtonProps["children"]): string | undefined {
+  if (typeof children === "string") {
+    const trimmed = children.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  if (Array.isArray(children)) {
+    const text = children
+      .map((child) => (typeof child === "string" ? child.trim() : ""))
+      .filter((part) => part.length > 0)
+      .join(" ")
+      .trim();
+
+    return text.length > 0 ? text : undefined;
+  }
+
+  return undefined;
+}
+
+export function Button({ className, variant = "secondary", children, ...props }: ButtonProps) {
+  const ariaLabel = props["aria-label"] ?? deriveAriaLabel(children);
+  return (
+    <button className={cx("btn", `btn-${variant}`, className)} {...props} aria-label={ariaLabel}>
+      {children}
+    </button>
+  );
 }
 
 type InputProps = InputHTMLAttributes<HTMLInputElement>;

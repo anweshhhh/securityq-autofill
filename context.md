@@ -83,6 +83,15 @@ Normalization invariants (claim-check clobber fix):
   - desktop sidebar width ~260px, collapsible to ~56px
   - mobile sidebar is a drawer overlay
   - gradients are restricted to chrome/empty-state surfaces (not long-text tables/snippets)
+- Accessibility rules:
+  - dark-shell navigation text and active states are tuned for WCAG AA contrast
+  - status color semantics remain fixed:
+    - approved = green
+    - needs review = amber
+    - draft = neutral
+    - not found = red
+  - interactive controls require visible focus styles and accessible labels
+  - modal/drawer surfaces trap keyboard focus while open and support `Esc` close
 - Component conventions:
   - primitives in `src/components/ui.tsx` (`Button`, `Badge`, `Card`, `TextInput`, `TextArea`)
   - questionnaire details page is a review workbench:
@@ -114,6 +123,9 @@ Normalization invariants (claim-check clobber fix):
       - mode selector options: `Prefer approved` (default), `Approved only`, `Generated only`
       - export requests show in-flight spinner and success/error message banners
       - downloaded filename format: `<questionnaire-name>-<YYYY-MM-DD>-export.csv` (sanitized)
+    - performance guardrails:
+      - question rail uses deferred search + memoized preview rows for larger questionnaires
+      - rail renders preview text only; full answer/evidence rendering stays scoped to selected question panel
     - question rail and evidence panel on `/questionnaires/[id]` use sticky panels for faster review loops
     - long question/answer/snippet text stays on light surfaces with bounded scroll containers
 
