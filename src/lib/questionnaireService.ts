@@ -55,6 +55,15 @@ export type QuestionnaireDetails = {
     text: string;
     answer: string | null;
     citations: unknown;
+    reviewStatus: "DRAFT" | "NEEDS_REVIEW" | "APPROVED";
+    approvedAnswer: {
+      id: string;
+      answerText: string;
+      citationChunkIds: string[];
+      source: "GENERATED" | "MANUAL_EDIT";
+      note: string | null;
+      updatedAt: Date;
+    } | null;
   }>;
 };
 
@@ -163,7 +172,18 @@ export async function getQuestionnaireDetails(
           rowIndex: true,
           text: true,
           answer: true,
-          citations: true
+          citations: true,
+          reviewStatus: true,
+          approvedAnswer: {
+            select: {
+              id: true,
+              answerText: true,
+              citationChunkIds: true,
+              source: true,
+              note: true,
+              updatedAt: true
+            }
+          }
         }
       }
     }
