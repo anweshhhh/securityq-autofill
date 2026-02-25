@@ -66,6 +66,8 @@ const LEXICAL_WEIGHT = 0.3;
 const MIN_TOP_SIMILARITY = 0.2;
 const MIN_TOKEN_LENGTH = 4;
 const NOT_FOUND_TEXT = "Not found in provided documents.";
+const NORMALIZED_NOT_FOUND_TEXT = normalizeTemplateText(NOT_FOUND_TEXT);
+const NORMALIZED_NOT_SPECIFIED_TEXT = normalizeTemplateText(NOT_SPECIFIED_RESPONSE_TEXT);
 
 const QUESTION_STOPWORDS = new Set([
   "about",
@@ -144,6 +146,23 @@ export function normalizeForMatch(value: string): string {
 
 function normalizeWhitespace(value: string): string {
   return sanitizeExtractedText(value).replace(/\s+/g, " ").trim();
+}
+
+function normalizeTemplateText(value: string): string {
+  return sanitizeExtractedText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function isNotFoundTemplateLike(value: string): boolean {
+  const normalized = normalizeTemplateText(value);
+  return normalized.includes(NORMALIZED_NOT_FOUND_TEXT);
+}
+
+function isNotSpecifiedTemplateLike(value: string): boolean {
+  const normalized = normalizeTemplateText(value);
+  return normalized.includes(NORMALIZED_NOT_SPECIFIED_TEXT);
 }
 
 function tokenizeForLexical(value: string): string[] {
@@ -323,6 +342,8 @@ export function normalizeAnswerOutput(params: {
   modelNeedsReview: boolean;
   modelHadFormatViolation: boolean;
   citations: Citation[];
+  sufficiencySufficient: boolean;
+  missingPoints: string[];
 }): EvidenceAnswer {
   const citations = dedupeCitations(params.citations);
   if (citations.length === 0) {
@@ -330,7 +351,7 @@ export function normalizeAnswerOutput(params: {
   }
 
   const rawAnswer = sanitizeExtractedText(params.modelAnswer).trim();
-  if (!rawAnswer || rawAnswer === NOT_FOUND_TEXT) {
+  if (!rawAnswer || isNotFoundTemplateLike(rawAnswer)) {
     return NOT_FOUND_RESPONSE;
   }
 
@@ -345,8 +366,24 @@ export function normalizeAnswerOutput(params: {
     needsReview: params.modelNeedsReview || params.modelHadFormatViolation
   });
 
-  const answer = sanitizeExtractedText(claimCheck.answer).trim();
-  if (!answer || answer === NOT_FOUND_TEXT) {
+  let answer = sanitizeExtractedText(claimCheck.answer).trim();
+  const groundedDraftIsAffirmative =
+    !isNotFoundTemplateLike(rawAnswer) && !isNotSpecifiedTemplateLike(rawAnswer);
+  const claimCheckRewroteToTemplate =
+    isNotFoundTemplateLike(answer) || isNotSpecifiedTemplateLike(answer);
+
+  const preserveGroundedDraftFromClobber =
+    params.sufficiencySufficient &&
+    params.missingPoints.length === 0 &&
+    groundedDraftIsAffirmative &&
+    claimCheckRewroteToTemplate &&
+    citations.length > 0;
+
+  if (preserveGroundedDraftFromClobber) {
+    answer = rawAnswer;
+  }
+
+  if (!answer || isNotFoundTemplateLike(answer)) {
     return NOT_FOUND_RESPONSE;
   }
 
@@ -355,12 +392,15 @@ export function normalizeAnswerOutput(params: {
   }
 
   const needsReview =
+    preserveGroundedDraftFromClobber ||
     claimCheck.needsReview ||
     params.modelHadFormatViolation ||
-    answer.includes(NOT_SPECIFIED_RESPONSE_TEXT);
+    isNotSpecifiedTemplateLike(answer);
 
   let confidence = claimCheck.confidence;
-  if (answer.includes(NOT_SPECIFIED_RESPONSE_TEXT)) {
+  if (preserveGroundedDraftFromClobber) {
+    confidence = "low";
+  } else if (isNotSpecifiedTemplateLike(answer)) {
     confidence = "low";
   }
 
@@ -557,7 +597,9 @@ export async function answerQuestion(params: AnswerQuestionParams): Promise<Evid
     modelConfidence: generation.output.confidence,
     modelNeedsReview: generation.output.needsReview,
     modelHadFormatViolation: generation.hadFormatViolation,
-    citations
+    citations,
+    sufficiencySufficient: sufficiency.sufficient,
+    missingPoints: sufficiency.missingPoints
   });
 
   if (normalized.answer === NOT_FOUND_TEXT) {

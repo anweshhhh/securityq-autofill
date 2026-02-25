@@ -160,4 +160,58 @@ describe("MVP answer engine contract", () => {
     expect(result.answer).toBe("Not specified in provided documents.");
     expect(result.citations.length).toBeGreaterThan(0);
   });
+
+  it("does not clobber an affirmative grounded answer when sufficiency is true and citations are valid", async () => {
+    retrieveTopChunksMock.mockResolvedValue([
+      {
+        chunkId: "chunk-1",
+        docName: "Evidence A",
+        quotedSnippet: "Q: Do you encrypt data in transit? A: Yes. External interfaces require TLS 1.2+.",
+        fullContent: "Q: Do you encrypt data in transit? A: Yes. External interfaces require TLS 1.2+.",
+        similarity: 0.91
+      },
+      {
+        chunkId: "chunk-2",
+        docName: "Evidence B",
+        quotedSnippet: "Public APIs terminate SSL/TLS at the edge (minimum TLS 1.2).",
+        fullContent: "Public APIs terminate SSL/TLS at the edge (minimum TLS 1.2).",
+        similarity: 0.88
+      }
+    ]);
+
+    generateEvidenceSufficiencyMock.mockResolvedValue({
+      sufficient: true,
+      bestChunkIds: ["chunk-1", "chunk-2"],
+      missingPoints: []
+    });
+
+    generateGroundedAnswerMock.mockResolvedValue({
+      answer: "Yes, data is encrypted in transit. The minimum TLS version enforced is TLS 1.2.",
+      citations: [
+        {
+          chunkId: "chunk-1",
+          quotedSnippet: "Q: Do you encrypt data in transit? A: Yes. External interfaces require TLS 1.2+."
+        },
+        {
+          chunkId: "chunk-2",
+          quotedSnippet: "Public APIs terminate SSL/TLS at the edge (minimum TLS 1.2)."
+        }
+      ],
+      confidence: "high",
+      needsReview: false
+    });
+
+    const result = await answerQuestion({
+      orgId: "org-1",
+      questionText: "Do you encrypt data in transit and enforce minimum TLS 1.2?"
+    });
+
+    expect(result.answer).not.toBe("Not specified in provided documents.");
+    expect(result.answer).toContain("encrypted in transit");
+    expect(result.answer).toContain("TLS 1.2");
+    expect(result.citations.map((citation) => citation.chunkId)).toEqual(
+      expect.arrayContaining(["chunk-1", "chunk-2"])
+    );
+    expect(result.citations.length).toBeGreaterThan(0);
+  });
 });

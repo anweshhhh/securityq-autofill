@@ -34,6 +34,35 @@ Core promise: answers are generated only from uploaded evidence and always inclu
   - selected context topN=5
 - One strict output-format retry for LLM answer generation
 
+### Answer engine pipeline
+
+Runtime flow in `src/server/answerEngine.ts`:
+1) retrieve candidates:
+   - `countEmbeddedChunksForOrganization` + `createEmbedding` + `retrieveTopChunks`
+2) deterministic rerank:
+   - lexical overlap + combined score (`0.7 vector + 0.3 lexical`)
+3) sufficiency gate:
+   - `generateEvidenceSufficiency` returns `{ sufficient, bestChunkIds, missingPoints }`
+4) grounded generation:
+   - `generateWithFormatEnforcement` wraps `generateGroundedAnswer`
+5) normalization + claim-check:
+   - `normalizeAnswerOutput` (input: model answer/confidence/review flags + validated citations + sufficiency result)
+   - calls `applyClaimCheckGuardrails` in `src/lib/claimCheck.ts`
+   - output: final `{ answer, citations, confidence, needsReview }`
+
+Normalization invariants (claim-check clobber fix):
+- Strict fallbacks remain:
+  - empty citations => `Not found in provided documents.`
+  - invalid format => `Not found in provided documents.`
+  - sufficiency false => `Not found in provided documents.` (handled before normalization)
+- Clobber prevention:
+  - if sufficiency is true with no missing points, citations are non-empty/validated, raw grounded draft is affirmative (not PARTIAL/NOT_FOUND template), and claim-check rewrites to PARTIAL/NOT_FOUND template,
+  - normalization preserves the grounded draft answer, keeps citations, and sets low confidence + needsReview.
+- Regression coverage:
+  - `src/server/normalizeAnswerOutput.bug.test.ts` (direct normalization repro)
+  - `src/server/answerEngine.test.ts` positive-control engine path repro
+  - both now pass with the invariant in place.
+
 ## 5) API Surface
 
 Pages:
@@ -105,6 +134,9 @@ Use `.env.example` as source of truth.
 - Answer engine: FOUND / NOT_FOUND / PARTIAL behavior and citation guardrails
 - Questionnaire workflow: import -> autofill -> export -> delete
 - All OpenAI calls mocked; tests are network-independent
+- Active bug regression tests:
+  - `src/server/normalizeAnswerOutput.bug.test.ts`
+  - `src/server/answerEngine.test.ts` (`does not clobber an affirmative grounded answer...`)
 
 ## 10) Next Focus
 
