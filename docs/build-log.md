@@ -112,6 +112,25 @@ Current log of implemented MVP work (concise, execution-focused).
   - overflow `More` menu for export/delete actions
   - no hidden horizontal-scroll action discovery
 
+## 2026-02-25 - ui-next-01-wire-approval-state
+
+- `/questionnaires/[id]` is now fully wired to persisted approval state from `GET /api/questionnaires/:id`:
+  - uses `reviewStatus` + `approvedAnswer` from payload
+  - normalized client state (`questionsById` + ordered IDs) for stable selection/filter behavior
+- Added review status counts including `Not found`, and a new `Not found` filter chip in the left rail.
+- Actions now execute persisted API flows and reconcile from server response:
+  - Approve -> `POST /api/approved-answers` (or `PATCH /api/approved-answers/:id` when already approved)
+  - Needs Review/Draft -> `POST /api/questions/:id/review`
+  - Unapprove -> `DELETE /api/approved-answers/:id`
+  - Edit approved answer -> `PATCH /api/approved-answers/:id` with citations preserved and validated non-empty
+- Added approved-vs-generated comparison behavior:
+  - approved answer shown as primary when available
+  - `Show Generated`/`Show Approved` toggle for read-only comparison
+  - evidence panel follows the currently displayed answer mode
+- Strengthened error UX:
+  - actionable message banners on failures
+  - action buttons disabled while requests are in flight to prevent double submit
+
 ## Latest validation
 
 - `npm test` => PASS

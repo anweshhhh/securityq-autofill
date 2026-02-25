@@ -45,7 +45,8 @@ type QuestionnaireDetailsPayload = {
   error?: string;
 };
 
-type QuestionFilter = "ALL" | "DRAFT" | "APPROVED" | "NEEDS_REVIEW";
+type QuestionFilter = "ALL" | "DRAFT" | "APPROVED" | "NEEDS_REVIEW" | "NOT_FOUND";
+type StatusCounts = Record<QuestionFilter, number>;
 
 type EvidenceItem = {
   chunkId: string;
@@ -54,6 +55,13 @@ type EvidenceItem = {
 };
 
 const NOT_FOUND_ANSWER = "Not found in provided documents.";
+const FILTER_OPTIONS: Array<{ key: QuestionFilter; label: string }> = [
+  { key: "ALL", label: "All" },
+  { key: "DRAFT", label: "Draft" },
+  { key: "APPROVED", label: "Approved" },
+  { key: "NEEDS_REVIEW", label: "Needs review" },
+  { key: "NOT_FOUND", label: "Not found" }
+];
 
 function normalizeCitations(value: unknown): Citation[] {
   if (!Array.isArray(value)) {
@@ -132,15 +140,8 @@ function getApiErrorMessage(payload: unknown, fallback: string): string {
   return fallback;
 }
 
-function parseCitationChunkIdsInput(value: string): string[] {
-  return Array.from(
-    new Set(
-      value
-        .split(/[\n,]+/g)
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0)
-    )
-  );
+function isNotFoundAnswer(answer: string | null | undefined): boolean {
+  return (answer ?? "").trim() === NOT_FOUND_ANSWER;
 }
 
 function statusTone(status: QuestionRow["reviewStatus"]): "approved" | "review" | "draft" {
@@ -165,8 +166,20 @@ function statusLabel(status: QuestionRow["reviewStatus"]) {
   return "Draft";
 }
 
-function buildEvidenceItems(question: QuestionRow): EvidenceItem[] {
-  if (!question.approvedAnswer) {
+function getGeneratedEvidenceItems(question: QuestionRow): EvidenceItem[] {
+  return question.citations.map((citation) => ({
+    chunkId: citation.chunkId,
+    docName: citation.docName,
+    snippet: citation.quotedSnippet
+  }));
+}
+
+function buildEvidenceItems(question: QuestionRow, preferApprovedAnswer = true): EvidenceItem[] {
+  if (!question.approvedAnswer || !preferApprovedAnswer) {
+    return getGeneratedEvidenceItems(question);
+  }
+
+  if (question.approvedAnswer.citationChunkIds.length === 0) {
     return question.citations.map((citation) => ({
       chunkId: citation.chunkId,
       docName: citation.docName,
@@ -193,6 +206,16 @@ function buildEvidenceItems(question: QuestionRow): EvidenceItem[] {
   });
 }
 
+function extractCitationChunkIds(question: QuestionRow): string[] {
+  return Array.from(
+    new Set(
+      question.citations
+        .map((citation) => citation.chunkId.trim())
+        .filter((chunkId) => chunkId.length > 0)
+    )
+  );
+}
+
 export default function QuestionnaireDetailsPage() {
   const params = useParams<{ id: string }>();
   const questionnaireId = params.id;
@@ -206,9 +229,9 @@ export default function QuestionnaireDetailsPage() {
   const [activeQuestionActionId, setActiveQuestionActionId] = useState<string | null>(null);
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
   const [editAnswerText, setEditAnswerText] = useState("");
-  const [editCitationChunkIdsInput, setEditCitationChunkIdsInput] = useState("");
   const [activeEvidenceChunkId, setActiveEvidenceChunkId] = useState<string | null>(null);
   const [isAnswerExpanded, setIsAnswerExpanded] = useState(false);
+  const [showGeneratedDraft, setShowGeneratedDraft] = useState(false);
 
   const loadDetails = useCallback(async () => {
     setIsLoading(true);
@@ -255,14 +278,38 @@ export default function QuestionnaireDetailsPage() {
     }
   }, [questionnaireId, loadDetails]);
 
-  const filteredQuestions = useMemo(() => {
+  const questionsById = useMemo(() => {
+    if (!data) {
+      return {} as Record<string, QuestionRow>;
+    }
+
+    return data.questions.reduce<Record<string, QuestionRow>>((accumulator, question) => {
+      accumulator[question.id] = question;
+      return accumulator;
+    }, {});
+  }, [data]);
+
+  const questionOrder = useMemo(() => {
+    return data?.questions.map((question) => question.id) ?? [];
+  }, [data]);
+
+  const filteredQuestionIds = useMemo(() => {
     if (!data) {
       return [];
     }
 
     const loweredSearch = searchText.trim().toLowerCase();
-    return data.questions.filter((question) => {
-      if (filter !== "ALL" && question.reviewStatus !== filter) {
+    return questionOrder.filter((questionId) => {
+      const question = questionsById[questionId];
+      if (!question) {
+        return false;
+      }
+
+      if (filter === "NOT_FOUND" && !isNotFoundAnswer(question.answer)) {
+        return false;
+      }
+
+      if (filter !== "ALL" && filter !== "NOT_FOUND" && question.reviewStatus !== filter) {
         return false;
       }
 
@@ -276,51 +323,51 @@ export default function QuestionnaireDetailsPage() {
         (question.approvedAnswer?.answerText ?? "").toLowerCase().includes(loweredSearch)
       );
     });
-  }, [data, filter, searchText]);
+  }, [data, filter, questionOrder, questionsById, searchText]);
 
-  const statusCounts = useMemo(() => {
-    if (!data) {
-      return {
-        ALL: 0,
-        DRAFT: 0,
-        APPROVED: 0,
-        NEEDS_REVIEW: 0
-      };
+  const statusCounts = useMemo<StatusCounts>(() => {
+    const counts: StatusCounts = {
+      ALL: 0,
+      DRAFT: 0,
+      APPROVED: 0,
+      NEEDS_REVIEW: 0,
+      NOT_FOUND: 0
+    };
+
+    for (const questionId of questionOrder) {
+      const question = questionsById[questionId];
+      if (!question) {
+        continue;
+      }
+
+      counts.ALL += 1;
+      counts[question.reviewStatus] += 1;
+      if (isNotFoundAnswer(question.answer)) {
+        counts.NOT_FOUND += 1;
+      }
     }
 
-    return data.questions.reduce(
-      (counts, question) => {
-        counts.ALL += 1;
-        counts[question.reviewStatus] += 1;
-        return counts;
-      },
-      {
-        ALL: 0,
-        DRAFT: 0,
-        APPROVED: 0,
-        NEEDS_REVIEW: 0
-      }
-    );
-  }, [data]);
+    return counts;
+  }, [questionOrder, questionsById]);
 
   useEffect(() => {
-    if (filteredQuestions.length === 0) {
+    if (filteredQuestionIds.length === 0) {
       setSelectedQuestionId(null);
       return;
     }
 
     setSelectedQuestionId((current) => {
-      if (current && filteredQuestions.some((question) => question.id === current)) {
+      if (current && filteredQuestionIds.includes(current)) {
         return current;
       }
 
-      return filteredQuestions[0].id;
+      return filteredQuestionIds[0];
     });
-  }, [filteredQuestions]);
+  }, [filteredQuestionIds]);
 
   const selectedQuestion = useMemo(
-    () => filteredQuestions.find((question) => question.id === selectedQuestionId) ?? null,
-    [filteredQuestions, selectedQuestionId]
+    () => (selectedQuestionId ? questionsById[selectedQuestionId] ?? null : null),
+    [questionsById, selectedQuestionId]
   );
 
   const evidenceItems = useMemo(() => {
@@ -328,8 +375,8 @@ export default function QuestionnaireDetailsPage() {
       return [];
     }
 
-    return buildEvidenceItems(selectedQuestion);
-  }, [selectedQuestion]);
+    return buildEvidenceItems(selectedQuestion, !showGeneratedDraft);
+  }, [selectedQuestion, showGeneratedDraft]);
 
   useEffect(() => {
     if (evidenceItems.length === 0) {
@@ -348,33 +395,81 @@ export default function QuestionnaireDetailsPage() {
 
   useEffect(() => {
     setIsAnswerExpanded(false);
+    setShowGeneratedDraft(false);
     setEditingQuestionId(null);
     setEditAnswerText("");
-    setEditCitationChunkIdsInput("");
   }, [selectedQuestionId]);
 
-  async function approveQuestion(questionId: string) {
+  useEffect(() => {
+    if (!selectedQuestion?.approvedAnswer) {
+      setShowGeneratedDraft(false);
+    }
+  }, [selectedQuestion?.approvedAnswer, selectedQuestion?.id]);
+
+  async function approveQuestion(question: QuestionRow) {
     setMessage("");
-    setActiveQuestionActionId(questionId);
+    setActiveQuestionActionId(question.id);
 
     try {
-      const response = await fetch("/api/approved-answers", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ questionId })
-      });
+      const generatedCitationChunkIds = extractCitationChunkIds(question);
+      const hasApprovedAnswer = Boolean(question.approvedAnswer);
+      const approvedAnswerId = question.approvedAnswer?.id ?? "";
+      const answerText =
+        hasApprovedAnswer
+          ? question.approvedAnswer?.answerText.trim() ?? ""
+          : (question.answer ?? "").trim();
+      const citationChunkIds = hasApprovedAnswer
+        ? question.approvedAnswer?.citationChunkIds.filter((chunkId) => chunkId.trim().length > 0) ?? []
+        : generatedCitationChunkIds;
+
+      if (hasApprovedAnswer && !approvedAnswerId) {
+        setMessage("Approve failed: approved answer record is missing an id.");
+        return;
+      }
+
+      if (!answerText || isNotFoundAnswer(answerText)) {
+        setMessage("Approve failed: generated answer is empty or not found.");
+        return;
+      }
+
+      if (citationChunkIds.length === 0) {
+        setMessage("Approve failed: at least one citation is required.");
+        return;
+      }
+
+      const response = hasApprovedAnswer
+        ? await fetch(`/api/approved-answers/${approvedAnswerId}`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              answerText,
+              citationChunkIds
+            })
+          })
+        : await fetch("/api/approved-answers", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              questionId: question.id,
+              answerText,
+              citationChunkIds,
+              source: "GENERATED"
+            })
+          });
       const payload = (await response.json()) as unknown;
 
       if (!response.ok) {
         throw new Error(getApiErrorMessage(payload, "Failed to approve answer"));
       }
 
-      setMessage("Answer approved.");
+      setMessage(hasApprovedAnswer ? "Approval refreshed from saved values." : "Answer approved.");
       await loadDetails();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to approve answer");
+      setMessage(`Approve failed: ${error instanceof Error ? error.message : "Unknown error."}`);
     } finally {
       setActiveQuestionActionId(null);
     }
@@ -403,7 +498,7 @@ export default function QuestionnaireDetailsPage() {
       setMessage(reviewStatus === "NEEDS_REVIEW" ? "Marked as needs review." : "Marked as draft.");
       await loadDetails();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to update review status");
+      setMessage(`Unable to update review status: ${error instanceof Error ? error.message : "Unknown error."}`);
     } finally {
       setActiveQuestionActionId(null);
     }
@@ -426,7 +521,7 @@ export default function QuestionnaireDetailsPage() {
       setMessage("Approval removed.");
       await loadDetails();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to remove approval");
+      setMessage(`Unable to remove approval: ${error instanceof Error ? error.message : "Unknown error."}`);
     } finally {
       setActiveQuestionActionId(null);
     }
@@ -439,13 +534,11 @@ export default function QuestionnaireDetailsPage() {
 
     setEditingQuestionId(question.id);
     setEditAnswerText(question.approvedAnswer.answerText);
-    setEditCitationChunkIdsInput(question.approvedAnswer.citationChunkIds.join("\n"));
   }
 
   function cancelEdit() {
     setEditingQuestionId(null);
     setEditAnswerText("");
-    setEditCitationChunkIdsInput("");
   }
 
   async function saveEditedApproval(question: QuestionRow) {
@@ -453,7 +546,9 @@ export default function QuestionnaireDetailsPage() {
       return;
     }
 
-    const citationChunkIds = parseCitationChunkIdsInput(editCitationChunkIdsInput);
+    const citationChunkIds = question.approvedAnswer.citationChunkIds.filter(
+      (chunkId) => chunkId.trim().length > 0
+    );
     if (!editAnswerText.trim()) {
       setMessage("Approved answer text cannot be empty.");
       return;
@@ -488,7 +583,7 @@ export default function QuestionnaireDetailsPage() {
       cancelEdit();
       await loadDetails();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to save approved answer");
+      setMessage(`Unable to save approved answer: ${error instanceof Error ? error.message : "Unknown error."}`);
     } finally {
       setActiveQuestionActionId(null);
     }
@@ -504,7 +599,10 @@ export default function QuestionnaireDetailsPage() {
   }
 
   const activeEvidence = evidenceItems.find((item) => item.chunkId === activeEvidenceChunkId) ?? null;
-  const effectiveAnswer = selectedQuestion?.approvedAnswer?.answerText ?? selectedQuestion?.answer ?? "Not answered yet.";
+  const generatedAnswer = (selectedQuestion?.answer ?? "").trim() || "Not answered yet.";
+  const approvedAnswer = selectedQuestion?.approvedAnswer?.answerText ?? "";
+  const showingGeneratedComparison = Boolean(selectedQuestion?.approvedAnswer) && showGeneratedDraft;
+  const effectiveAnswer = showingGeneratedComparison ? generatedAnswer : approvedAnswer || generatedAnswer;
   const effectiveCitationIds = evidenceItems.map((item) => item.chunkId);
 
   return (
@@ -534,9 +632,14 @@ export default function QuestionnaireDetailsPage() {
           <div
             className={cx(
               "message-banner",
-              message.toLowerCase().includes("fail") || message.toLowerCase().includes("error")
+              message.toLowerCase().includes("fail") ||
+                message.toLowerCase().includes("error") ||
+                message.toLowerCase().includes("unable")
                 ? "error"
-                : message.toLowerCase().includes("approved") || message.toLowerCase().includes("updated")
+                : message.toLowerCase().includes("approved") ||
+                    message.toLowerCase().includes("updated") ||
+                    message.toLowerCase().includes("marked") ||
+                    message.toLowerCase().includes("removed")
                   ? "success"
                   : ""
             )}
@@ -550,7 +653,7 @@ export default function QuestionnaireDetailsPage() {
         <Card className="sticky-panel">
           <div className="card-title-row">
             <h3 style={{ margin: 0 }}>Questions</h3>
-            <Badge tone="draft">{filteredQuestions.length} visible</Badge>
+            <Badge tone="draft">{filteredQuestionIds.length} visible</Badge>
           </div>
 
           <TextInput
@@ -560,40 +663,50 @@ export default function QuestionnaireDetailsPage() {
           />
 
           <div className="toolbar-row" style={{ marginTop: 10 }}>
-            {(["ALL", "DRAFT", "APPROVED", "NEEDS_REVIEW"] as QuestionFilter[]).map((status) => (
+            {FILTER_OPTIONS.map(({ key, label }) => (
               <button
-                key={status}
+                key={key}
                 type="button"
-                className={cx("chip", filter === status && "active")}
-                onClick={() => setFilter(status)}
-                title={`Filter by ${status.replace("_", " ").toLowerCase()}`}
+                className={cx("chip", filter === key && "active")}
+                onClick={() => setFilter(key)}
+                title={`Filter by ${label.toLowerCase()}`}
               >
-                {status === "ALL" ? "All" : status.replace("_", " ")} ({statusCounts[status]})
+                {label} ({statusCounts[key]})
               </button>
             ))}
           </div>
 
           <div className="question-list" style={{ marginTop: 12 }}>
-            {filteredQuestions.length === 0 ? (
+            {filteredQuestionIds.length === 0 ? (
               <div className="muted small">No questions match the current filters.</div>
             ) : (
-              filteredQuestions.map((question) => (
-                <button
-                  key={question.id}
-                  type="button"
-                  className={cx("question-list-item", selectedQuestionId === question.id && "active")}
-                  onClick={() => setSelectedQuestionId(question.id)}
-                  title={`Row ${question.rowIndex}`}
-                >
-                  <div className="card-title-row" style={{ marginBottom: 8 }}>
-                    <span className="small muted">Row {question.rowIndex + 1}</span>
-                    <Badge tone={statusTone(question.reviewStatus)} title={statusLabel(question.reviewStatus)}>
-                      {statusLabel(question.reviewStatus)}
-                    </Badge>
-                  </div>
-                  <div className="answer-preview">{question.text || "No question text"}</div>
-                </button>
-              ))
+              filteredQuestionIds.map((questionId) => {
+                const question = questionsById[questionId];
+                if (!question) {
+                  return null;
+                }
+
+                return (
+                  <button
+                    key={question.id}
+                    type="button"
+                    className={cx("question-list-item", selectedQuestionId === question.id && "active")}
+                    onClick={() => setSelectedQuestionId(question.id)}
+                    title={`Row ${question.rowIndex}`}
+                  >
+                    <div className="card-title-row" style={{ marginBottom: 8 }}>
+                      <span className="small muted">Row {question.rowIndex + 1}</span>
+                      <div className="toolbar-row compact">
+                        <Badge tone={statusTone(question.reviewStatus)} title={statusLabel(question.reviewStatus)}>
+                          {statusLabel(question.reviewStatus)}
+                        </Badge>
+                        {isNotFoundAnswer(question.answer) ? <Badge tone="notfound">Not found</Badge> : null}
+                      </div>
+                    </div>
+                    <div className="answer-preview">{question.text || "No question text"}</div>
+                  </button>
+                );
+              })
             )}
           </div>
         </Card>
@@ -619,8 +732,20 @@ export default function QuestionnaireDetailsPage() {
 
               <Card style={{ marginTop: 12 }}>
                 <div className="card-title-row">
-                  <h3 style={{ margin: 0 }}>Answer</h3>
+                  <h3 style={{ margin: 0 }}>
+                    {selectedQuestion.approvedAnswer && !showingGeneratedComparison ? "Approved Answer" : "Generated Draft"}
+                  </h3>
                   <div className="toolbar-row">
+                    {selectedQuestion.approvedAnswer ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setShowGeneratedDraft((value) => !value)}
+                        title={showingGeneratedComparison ? "Show approved answer" : "Show generated draft"}
+                      >
+                        {showingGeneratedComparison ? "Show Approved" : "Show Generated"}
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       variant="ghost"
@@ -643,6 +768,7 @@ export default function QuestionnaireDetailsPage() {
                 <div className={isAnswerExpanded ? "answer-scroll" : "answer-preview"}>{effectiveAnswer}</div>
                 {selectedQuestion.approvedAnswer ? (
                   <p className="small muted" style={{ marginTop: 10 }}>
+                    {showingGeneratedComparison ? "Comparing with generated draft. " : "Showing approved answer. "}
                     Approved override ({selectedQuestion.approvedAnswer.source.toLowerCase()}) updated{" "}
                     {new Date(selectedQuestion.approvedAnswer.updatedAt).toLocaleString()}.
                   </p>
@@ -657,12 +783,13 @@ export default function QuestionnaireDetailsPage() {
                   <Button
                     type="button"
                     variant="primary"
-                    onClick={() => void approveQuestion(selectedQuestion.id)}
+                    onClick={() => void approveQuestion(selectedQuestion)}
                     disabled={
                       activeQuestionActionId === selectedQuestion.id ||
-                      !selectedQuestion.answer ||
-                      selectedQuestion.answer === NOT_FOUND_ANSWER ||
-                      selectedQuestion.citations.length === 0
+                      (!selectedQuestion.approvedAnswer &&
+                        (!(selectedQuestion.answer ?? "").trim() ||
+                          isNotFoundAnswer(selectedQuestion.answer) ||
+                          extractCitationChunkIds(selectedQuestion).length === 0))
                     }
                   >
                     {activeQuestionActionId === selectedQuestion.id ? "Working..." : "Approve"}
@@ -710,13 +837,8 @@ export default function QuestionnaireDetailsPage() {
                           onChange={(event) => setEditAnswerText(event.target.value)}
                         />
                         <p className="small muted" style={{ margin: "10px 0 6px" }}>
-                          Citation chunk IDs (comma or newline separated)
+                          Citations are preserved from the current approved answer.
                         </p>
-                        <TextArea
-                          rows={3}
-                          value={editCitationChunkIdsInput}
-                          onChange={(event) => setEditCitationChunkIdsInput(event.target.value)}
-                        />
                         <div className="toolbar-row" style={{ marginTop: 10 }}>
                           <Button
                             type="button"

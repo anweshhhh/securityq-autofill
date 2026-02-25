@@ -96,6 +96,9 @@ Normalization invariants (claim-check clobber fix):
     - row action hierarchy on `/questionnaires`: keep only core actions inline (`Open`, `Run Autofill`), move export + delete into a compact overflow menu (`More`)
     - Saved Questionnaires search uses a styled control with persistent label and explicit clear action
     - Saved Questionnaires actions are now explicitly visible without requiring horizontal scroll discovery (`Open` + `Run Autofill` on first line, `More` directly below)
+    - `/questionnaires/[id]` uses normalized question state (`questionsById` + ordered IDs) and supports `Not found` filter/count alongside review statuses
+    - approval actions are server-persisted and reconciled after each mutation (`approve`, `needs review/draft`, `unapprove`, `edit approved`)
+    - approved answer is primary when present, with a read-only generated-vs-approved comparison toggle
     - question rail and evidence panel on `/questionnaires/[id]` use sticky panels for faster review loops
     - long question/answer/snippet text stays on light surfaces with bounded scroll containers
 
