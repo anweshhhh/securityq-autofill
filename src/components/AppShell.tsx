@@ -145,7 +145,7 @@ export function AppShell({ devMode, children }: AppShellProps) {
 
   return (
     <div className="app-shell">
-      <aside className={cx("shell-sidebar desktop-only", isSidebarCollapsed && "collapsed")}>
+      <aside className={cx("shell-sidebar", isSidebarCollapsed && "collapsed")}>
         <div className="sidebar-title-row">
           <span className="sidebar-product">
             <span className="sidebar-product-dot" />
