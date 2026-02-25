@@ -99,6 +99,11 @@ Normalization invariants (claim-check clobber fix):
     - `/questionnaires/[id]` uses normalized question state (`questionsById` + ordered IDs) and supports `Not found` filter/count alongside review statuses
     - approval actions are server-persisted and reconciled after each mutation (`approve`, `needs review/draft`, `unapprove`, `edit approved`)
     - approved answer is primary when present, with a read-only generated-vs-approved comparison toggle
+    - review-velocity layer on `/questionnaires/[id]`:
+      - sticky Trust Bar with review status counts + approved progress
+      - bulk action rule: `Approve Visible` is scoped to current filter/search and only approves rows with non-NOT_FOUND answers, non-empty citations, and non-approved status
+      - keyboard shortcuts with help modal (`?`, `J/K`, `A`, `R`, `U`, `C`, `E`) disabled while typing in form fields
+      - loading skeletons shown for rail/main/evidence while questionnaire details are fetching
     - question rail and evidence panel on `/questionnaires/[id]` use sticky panels for faster review loops
     - long question/answer/snippet text stays on light surfaces with bounded scroll containers
 

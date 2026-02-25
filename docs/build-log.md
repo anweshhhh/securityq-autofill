@@ -131,6 +131,30 @@ Current log of implemented MVP work (concise, execution-focused).
   - actionable message banners on failures
   - action buttons disabled while requests are in flight to prevent double submit
 
+## 2026-02-25 - ui-next-02-review-velocity
+
+- Added a sticky Trust Bar on `/questionnaires/[id]` with:
+  - counts (`Approved`, `Needs review`, `Draft`, `Not found`)
+  - approved-progress percentage bar
+  - primary actions: `Export`, `Run Autofill`, `Approve Visible`
+- Added bulk approve flow scoped to current filter/search:
+  - `Approve Visible` only includes questions that are:
+    - not already approved
+    - not strict NOT_FOUND
+    - backed by non-empty citations
+  - confirmation modal shows eligible count and citation warning before execution
+  - bulk approvals persist through existing approval APIs and refresh from server state
+- Added keyboard shortcuts with discoverable `?` help modal:
+  - `J/K` next/previous question
+  - `A` approve selected (eligible only)
+  - `R` mark needs review
+  - `U` unapprove
+  - `C` copy answer
+  - `E` focus evidence panel
+  - shortcuts are ignored while typing in inputs/textarea/select
+- Added lightweight loading skeletons for rail/main/evidence sections during initial questionnaire fetch.
+- Added focus target and ARIA labeling for evidence panel and high-frequency actions.
+
 ## Latest validation
 
 - `npm test` => PASS

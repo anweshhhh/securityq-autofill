@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Card, TextArea, TextInput, cx } from "@/components/ui";
 
 type Citation = {
@@ -52,6 +52,13 @@ type EvidenceItem = {
   chunkId: string;
   docName: string;
   snippet: string;
+};
+
+type AutofillPayload = {
+  totalCount?: number;
+  answeredCount?: number;
+  notFoundCount?: number;
+  error?: unknown;
 };
 
 const NOT_FOUND_ANSWER = "Not found in provided documents.";
@@ -216,6 +223,21 @@ function extractCitationChunkIds(question: QuestionRow): string[] {
   );
 }
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  const tagName = target.tagName.toUpperCase();
+  return (
+    target.isContentEditable ||
+    tagName === "INPUT" ||
+    tagName === "TEXTAREA" ||
+    tagName === "SELECT" ||
+    target.closest("[contenteditable='true']") !== null
+  );
+}
+
 export default function QuestionnaireDetailsPage() {
   const params = useParams<{ id: string }>();
   const questionnaireId = params.id;
@@ -232,6 +254,11 @@ export default function QuestionnaireDetailsPage() {
   const [activeEvidenceChunkId, setActiveEvidenceChunkId] = useState<string | null>(null);
   const [isAnswerExpanded, setIsAnswerExpanded] = useState(false);
   const [showGeneratedDraft, setShowGeneratedDraft] = useState(false);
+  const [isRunningAutofill, setIsRunningAutofill] = useState(false);
+  const [isBulkConfirmOpen, setIsBulkConfirmOpen] = useState(false);
+  const [isBulkApproving, setIsBulkApproving] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const evidencePanelRef = useRef<HTMLDivElement | null>(null);
 
   const loadDetails = useCallback(async () => {
     setIsLoading(true);
@@ -370,6 +397,32 @@ export default function QuestionnaireDetailsPage() {
     [questionsById, selectedQuestionId]
   );
 
+  const visibleQuestions = useMemo(() => {
+    return filteredQuestionIds
+      .map((questionId) => questionsById[questionId])
+      .filter((question): question is QuestionRow => Boolean(question));
+  }, [filteredQuestionIds, questionsById]);
+
+  const bulkEligibleQuestions = useMemo(() => {
+    return visibleQuestions.filter((question) => {
+      if (question.reviewStatus === "APPROVED" || question.approvedAnswer) {
+        return false;
+      }
+
+      return !isNotFoundAnswer(question.answer) && extractCitationChunkIds(question).length > 0;
+    });
+  }, [visibleQuestions]);
+
+  const approvedProgress = useMemo(() => {
+    if (statusCounts.ALL === 0) {
+      return 0;
+    }
+
+    return Math.round((statusCounts.APPROVED / statusCounts.ALL) * 100);
+  }, [statusCounts]);
+
+  const showLoadingSkeletons = isLoading && !data;
+
   const evidenceItems = useMemo(() => {
     if (!selectedQuestion) {
       return [];
@@ -406,76 +459,183 @@ export default function QuestionnaireDetailsPage() {
     }
   }, [selectedQuestion?.approvedAnswer, selectedQuestion?.id]);
 
-  async function approveQuestion(question: QuestionRow) {
+  const getApprovalCandidate = useCallback((question: QuestionRow): {
+    mode: "create" | "update";
+    approvedAnswerId: string | null;
+    answerText: string;
+    citationChunkIds: string[];
+  } | null => {
+    const hasApprovedAnswer = Boolean(question.approvedAnswer);
+    const approvedAnswerId = question.approvedAnswer?.id ?? null;
+    const answerText = hasApprovedAnswer
+      ? question.approvedAnswer?.answerText.trim() ?? ""
+      : (question.answer ?? "").trim();
+    const citationChunkIds = hasApprovedAnswer
+      ? question.approvedAnswer?.citationChunkIds.filter((chunkId) => chunkId.trim().length > 0) ?? []
+      : extractCitationChunkIds(question);
+
+    if (hasApprovedAnswer && !approvedAnswerId) {
+      return null;
+    }
+
+    if (!answerText || isNotFoundAnswer(answerText) || citationChunkIds.length === 0) {
+      return null;
+    }
+
+    return {
+      mode: hasApprovedAnswer ? "update" : "create",
+      approvedAnswerId,
+      answerText,
+      citationChunkIds
+    };
+  }, []);
+
+  const persistApproval = useCallback(
+    async (question: QuestionRow): Promise<{ ok: true } | { ok: false; message: string }> => {
+      const candidate = getApprovalCandidate(question);
+      if (!candidate) {
+        return {
+          ok: false,
+          message: "Approval requires a non-not-found answer with at least one citation."
+        };
+      }
+
+      const response =
+        candidate.mode === "update" && candidate.approvedAnswerId
+          ? await fetch(`/api/approved-answers/${candidate.approvedAnswerId}`, {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                answerText: candidate.answerText,
+                citationChunkIds: candidate.citationChunkIds
+              })
+            })
+          : await fetch("/api/approved-answers", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                questionId: question.id,
+                answerText: candidate.answerText,
+                citationChunkIds: candidate.citationChunkIds,
+                source: "GENERATED"
+              })
+            });
+
+      const payload = (await response.json()) as unknown;
+      if (!response.ok) {
+        return {
+          ok: false,
+          message: getApiErrorMessage(payload, "Failed to persist approval.")
+        };
+      }
+
+      return { ok: true };
+    },
+    [getApprovalCandidate]
+  );
+
+  async function runAutofill() {
+    setMessage("");
+    setIsRunningAutofill(true);
+
+    try {
+      const response = await fetch(`/api/questionnaires/${questionnaireId}/autofill`, {
+        method: "POST"
+      });
+      const payload = (await response.json()) as AutofillPayload;
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(payload, "Autofill failed."));
+      }
+
+      setMessage(
+        `Autofill complete: ${payload.answeredCount ?? 0}/${payload.totalCount ?? 0} answered, ${payload.notFoundCount ?? 0} not found.`
+      );
+      await loadDetails();
+    } catch (error) {
+      setMessage(`Autofill failed: ${error instanceof Error ? error.message : "Unknown error."}`);
+    } finally {
+      setIsRunningAutofill(false);
+    }
+  }
+
+  async function approveVisibleQuestions() {
+    if (bulkEligibleQuestions.length === 0) {
+      setMessage("No visible questions are eligible for approval.");
+      setIsBulkConfirmOpen(false);
+      return;
+    }
+
+    setMessage("");
+    setIsBulkApproving(true);
+    setIsBulkConfirmOpen(false);
+
+    let succeeded = 0;
+    let failed = 0;
+    let firstFailureMessage = "";
+    let cursor = 0;
+    const concurrency = Math.min(6, bulkEligibleQuestions.length);
+
+    await Promise.all(
+      Array.from({ length: concurrency }).map(async () => {
+        while (true) {
+          const index = cursor;
+          cursor += 1;
+          if (index >= bulkEligibleQuestions.length) {
+            return;
+          }
+
+          const question = bulkEligibleQuestions[index];
+          const result = await persistApproval(question);
+          if (result.ok) {
+            succeeded += 1;
+          } else {
+            failed += 1;
+            if (!firstFailureMessage) {
+              firstFailureMessage = result.message;
+            }
+          }
+        }
+      })
+    );
+
+    setIsBulkApproving(false);
+
+    if (failed > 0) {
+      setMessage(
+        `Bulk approval complete: ${succeeded} approved, ${failed} failed. ${firstFailureMessage ? `First error: ${firstFailureMessage}` : ""}`
+      );
+    } else {
+      setMessage(`Bulk approval complete: ${succeeded} questions approved.`);
+    }
+
+    await loadDetails();
+  }
+
+  const approveQuestion = useCallback(async (question: QuestionRow) => {
     setMessage("");
     setActiveQuestionActionId(question.id);
 
     try {
-      const generatedCitationChunkIds = extractCitationChunkIds(question);
-      const hasApprovedAnswer = Boolean(question.approvedAnswer);
-      const approvedAnswerId = question.approvedAnswer?.id ?? "";
-      const answerText =
-        hasApprovedAnswer
-          ? question.approvedAnswer?.answerText.trim() ?? ""
-          : (question.answer ?? "").trim();
-      const citationChunkIds = hasApprovedAnswer
-        ? question.approvedAnswer?.citationChunkIds.filter((chunkId) => chunkId.trim().length > 0) ?? []
-        : generatedCitationChunkIds;
-
-      if (hasApprovedAnswer && !approvedAnswerId) {
-        setMessage("Approve failed: approved answer record is missing an id.");
+      const result = await persistApproval(question);
+      if (!result.ok) {
+        setMessage(`Approve failed: ${result.message}`);
         return;
       }
 
-      if (!answerText || isNotFoundAnswer(answerText)) {
-        setMessage("Approve failed: generated answer is empty or not found.");
-        return;
-      }
-
-      if (citationChunkIds.length === 0) {
-        setMessage("Approve failed: at least one citation is required.");
-        return;
-      }
-
-      const response = hasApprovedAnswer
-        ? await fetch(`/api/approved-answers/${approvedAnswerId}`, {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              answerText,
-              citationChunkIds
-            })
-          })
-        : await fetch("/api/approved-answers", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              questionId: question.id,
-              answerText,
-              citationChunkIds,
-              source: "GENERATED"
-            })
-          });
-      const payload = (await response.json()) as unknown;
-
-      if (!response.ok) {
-        throw new Error(getApiErrorMessage(payload, "Failed to approve answer"));
-      }
-
-      setMessage(hasApprovedAnswer ? "Approval refreshed from saved values." : "Answer approved.");
+      setMessage(question.approvedAnswer ? "Approval refreshed from saved values." : "Answer approved.");
       await loadDetails();
     } catch (error) {
       setMessage(`Approve failed: ${error instanceof Error ? error.message : "Unknown error."}`);
     } finally {
       setActiveQuestionActionId(null);
     }
-  }
+  }, [loadDetails, persistApproval]);
 
-  async function updateReviewStatus(questionId: string, reviewStatus: "NEEDS_REVIEW" | "DRAFT") {
+  const updateReviewStatus = useCallback(async (questionId: string, reviewStatus: "NEEDS_REVIEW" | "DRAFT") => {
     setMessage("");
     setActiveQuestionActionId(questionId);
 
@@ -502,9 +662,9 @@ export default function QuestionnaireDetailsPage() {
     } finally {
       setActiveQuestionActionId(null);
     }
-  }
+  }, [loadDetails]);
 
-  async function unapprove(approvedAnswerId: string, questionId: string) {
+  const unapprove = useCallback(async (approvedAnswerId: string, questionId: string) => {
     setMessage("");
     setActiveQuestionActionId(questionId);
 
@@ -525,7 +685,7 @@ export default function QuestionnaireDetailsPage() {
     } finally {
       setActiveQuestionActionId(null);
     }
-  }
+  }, [loadDetails]);
 
   function beginEdit(question: QuestionRow) {
     if (!question.approvedAnswer) {
@@ -589,14 +749,14 @@ export default function QuestionnaireDetailsPage() {
     }
   }
 
-  async function copyText(value: string, successMessage: string) {
+  const copyText = useCallback(async (value: string, successMessage: string) => {
     try {
       await navigator.clipboard.writeText(value);
       setMessage(successMessage);
     } catch {
       setMessage("Unable to copy to clipboard.");
     }
-  }
+  }, []);
 
   const activeEvidence = evidenceItems.find((item) => item.chunkId === activeEvidenceChunkId) ?? null;
   const generatedAnswer = (selectedQuestion?.answer ?? "").trim() || "Not answered yet.";
@@ -604,6 +764,124 @@ export default function QuestionnaireDetailsPage() {
   const showingGeneratedComparison = Boolean(selectedQuestion?.approvedAnswer) && showGeneratedDraft;
   const effectiveAnswer = showingGeneratedComparison ? generatedAnswer : approvedAnswer || generatedAnswer;
   const effectiveCitationIds = evidenceItems.map((item) => item.chunkId);
+  const selectedQuestionApprovalCandidate = selectedQuestion ? getApprovalCandidate(selectedQuestion) : null;
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.metaKey || event.ctrlKey || event.altKey || isEditableTarget(event.target)) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+
+      if (key === "escape") {
+        if (isBulkConfirmOpen) {
+          event.preventDefault();
+          setIsBulkConfirmOpen(false);
+        }
+        if (isShortcutsOpen) {
+          event.preventDefault();
+          setIsShortcutsOpen(false);
+        }
+      }
+
+      if (isBulkConfirmOpen || isShortcutsOpen) {
+        return;
+      }
+
+      if (event.key === "?") {
+        event.preventDefault();
+        setIsShortcutsOpen(true);
+        return;
+      }
+
+      if (key === "j") {
+        event.preventDefault();
+        if (filteredQuestionIds.length === 0) {
+          return;
+        }
+
+        setSelectedQuestionId((current) => {
+          if (!current) {
+            return filteredQuestionIds[0];
+          }
+
+          const currentIndex = filteredQuestionIds.indexOf(current);
+          if (currentIndex < 0) {
+            return filteredQuestionIds[0];
+          }
+
+          return filteredQuestionIds[Math.min(currentIndex + 1, filteredQuestionIds.length - 1)];
+        });
+        return;
+      }
+
+      if (key === "k") {
+        event.preventDefault();
+        if (filteredQuestionIds.length === 0) {
+          return;
+        }
+
+        setSelectedQuestionId((current) => {
+          if (!current) {
+            return filteredQuestionIds[0];
+          }
+
+          const currentIndex = filteredQuestionIds.indexOf(current);
+          if (currentIndex < 0) {
+            return filteredQuestionIds[0];
+          }
+
+          return filteredQuestionIds[Math.max(currentIndex - 1, 0)];
+        });
+        return;
+      }
+
+      if (key === "a" && selectedQuestion && selectedQuestionApprovalCandidate && !isBulkApproving) {
+        event.preventDefault();
+        void approveQuestion(selectedQuestion);
+        return;
+      }
+
+      if (key === "r" && selectedQuestion && !isBulkApproving && selectedQuestion.reviewStatus !== "NEEDS_REVIEW") {
+        event.preventDefault();
+        void updateReviewStatus(selectedQuestion.id, "NEEDS_REVIEW");
+        return;
+      }
+
+      if (key === "u" && selectedQuestion?.approvedAnswer && !isBulkApproving) {
+        event.preventDefault();
+        void unapprove(selectedQuestion.approvedAnswer.id, selectedQuestion.id);
+        return;
+      }
+
+      if (key === "c") {
+        event.preventDefault();
+        void copyText(effectiveAnswer, "Answer copied.");
+        return;
+      }
+
+      if (key === "e") {
+        event.preventDefault();
+        evidencePanelRef.current?.focus();
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    approveQuestion,
+    copyText,
+    effectiveAnswer,
+    filteredQuestionIds,
+    isBulkConfirmOpen,
+    isBulkApproving,
+    isShortcutsOpen,
+    selectedQuestion,
+    selectedQuestionApprovalCandidate,
+    unapprove,
+    updateReviewStatus
+  ]);
 
   return (
     <div className="page-stack">
@@ -617,39 +895,126 @@ export default function QuestionnaireDetailsPage() {
             </p>
           </div>
           <div className="toolbar-row">
-            <a className="btn btn-secondary" href={`/api/questionnaires/${questionnaireId}/export`}>
-              Export (preferred)
-            </a>
-            <a className="btn btn-ghost" href={`/api/questionnaires/${questionnaireId}/export?mode=approvedOnly`}>
-              Export approved only
-            </a>
             <Button type="button" variant="ghost" onClick={() => void loadDetails()} disabled={isLoading}>
               {isLoading ? "Refreshing..." : "Refresh"}
             </Button>
           </div>
         </div>
-        {message ? (
-          <div
-            className={cx(
-              "message-banner",
-              message.toLowerCase().includes("fail") ||
-                message.toLowerCase().includes("error") ||
-                message.toLowerCase().includes("unable")
-                ? "error"
-                : message.toLowerCase().includes("approved") ||
-                    message.toLowerCase().includes("updated") ||
-                    message.toLowerCase().includes("marked") ||
-                    message.toLowerCase().includes("removed")
-                  ? "success"
-                  : ""
-            )}
-          >
-            {message}
-          </div>
-        ) : null}
       </Card>
 
-      <div className="workbench-grid">
+      <Card className="trust-bar">
+        <div className="trust-bar-header">
+          <div>
+            <h3 style={{ margin: 0 }}>Trust Bar</h3>
+            <p className="small muted" style={{ margin: "4px 0 0" }}>
+              Review velocity controls and approval coverage snapshot.
+            </p>
+          </div>
+          <div className="toolbar-row">
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => setIsBulkConfirmOpen(true)}
+              disabled={isLoading || isBulkApproving || bulkEligibleQuestions.length === 0}
+              title="Approve all currently visible eligible questions"
+              aria-label="Approve visible eligible questions"
+            >
+              {isBulkApproving ? "Approving..." : `Approve Visible (${bulkEligibleQuestions.length})`}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void runAutofill()}
+              disabled={isRunningAutofill || isBulkApproving}
+              title="Run autofill for this questionnaire"
+              aria-label="Run autofill for questionnaire"
+            >
+              {isRunningAutofill ? "Running..." : "Run Autofill"}
+            </Button>
+            <a
+              className="btn btn-ghost"
+              href={`/api/questionnaires/${questionnaireId}/export`}
+              aria-label="Export questionnaire CSV"
+              title="Export preferred answers to CSV"
+            >
+              Export
+            </a>
+            <Button
+              type="button"
+              variant="ghost"
+              className="icon-btn"
+              onClick={() => setIsShortcutsOpen(true)}
+              aria-label="Show keyboard shortcuts"
+              title="Keyboard shortcuts (?)"
+            >
+              ?
+            </Button>
+          </div>
+        </div>
+        <div className="trust-bar-metrics">
+          <Badge tone="approved">Approved {statusCounts.APPROVED}</Badge>
+          <Badge tone="review">Needs review {statusCounts.NEEDS_REVIEW}</Badge>
+          <Badge tone="draft">Draft {statusCounts.DRAFT}</Badge>
+          <Badge tone="notfound">Not found {statusCounts.NOT_FOUND}</Badge>
+          <div className="trust-progress">
+            <div className="small muted">Approved progress</div>
+            <div className="trust-progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={approvedProgress}>
+              <div className="trust-progress-fill" style={{ width: `${approvedProgress}%` }} />
+            </div>
+            <div className="small">{approvedProgress}% approved</div>
+          </div>
+        </div>
+      </Card>
+
+      {message ? (
+        <div
+          className={cx(
+            "message-banner",
+            message.toLowerCase().includes("fail") ||
+              message.toLowerCase().includes("error") ||
+              message.toLowerCase().includes("unable")
+              ? "error"
+              : message.toLowerCase().includes("approved") ||
+                  message.toLowerCase().includes("updated") ||
+                  message.toLowerCase().includes("marked") ||
+                  message.toLowerCase().includes("removed") ||
+                  message.toLowerCase().includes("complete")
+                ? "success"
+                : ""
+          )}
+          role="status"
+          aria-live="polite"
+        >
+          {message}
+        </div>
+      ) : null}
+
+      {showLoadingSkeletons ? (
+        <div className="workbench-grid">
+          <Card className="sticky-panel">
+            <div className="skeleton-line skeleton-title" />
+            <div className="skeleton-line" />
+            <div className="skeleton-list">
+              {Array.from({ length: 8 }).map((_, index) => (
+                <div key={`rail-skeleton-${index}`} className="skeleton-block" />
+              ))}
+            </div>
+          </Card>
+          <Card>
+            <div className="skeleton-line skeleton-title" />
+            <div className="skeleton-line" />
+            <div className="skeleton-line" />
+            <div className="skeleton-block skeleton-answer" />
+            <div className="skeleton-block skeleton-answer" />
+          </Card>
+          <Card className="sticky-panel">
+            <div className="skeleton-line skeleton-title" />
+            <div className="skeleton-block skeleton-answer" />
+            <div className="skeleton-block skeleton-answer" />
+          </Card>
+        </div>
+      ) : (
+        <div className="workbench-grid">
         <Card className="sticky-panel">
           <div className="card-title-row">
             <h3 style={{ margin: 0 }}>Questions</h3>
@@ -785,12 +1150,9 @@ export default function QuestionnaireDetailsPage() {
                     variant="primary"
                     onClick={() => void approveQuestion(selectedQuestion)}
                     disabled={
-                      activeQuestionActionId === selectedQuestion.id ||
-                      (!selectedQuestion.approvedAnswer &&
-                        (!(selectedQuestion.answer ?? "").trim() ||
-                          isNotFoundAnswer(selectedQuestion.answer) ||
-                          extractCitationChunkIds(selectedQuestion).length === 0))
+                      activeQuestionActionId === selectedQuestion.id || isBulkApproving || !selectedQuestionApprovalCandidate
                     }
+                    aria-label="Approve selected answer"
                   >
                     {activeQuestionActionId === selectedQuestion.id ? "Working..." : "Approve"}
                   </Button>
@@ -800,8 +1162,10 @@ export default function QuestionnaireDetailsPage() {
                     onClick={() => void updateReviewStatus(selectedQuestion.id, "NEEDS_REVIEW")}
                     disabled={
                       activeQuestionActionId === selectedQuestion.id ||
+                      isBulkApproving ||
                       selectedQuestion.reviewStatus === "NEEDS_REVIEW"
                     }
+                    aria-label="Mark selected question as needs review"
                   >
                     Mark Needs Review
                   </Button>
@@ -809,7 +1173,12 @@ export default function QuestionnaireDetailsPage() {
                     type="button"
                     variant="ghost"
                     onClick={() => void updateReviewStatus(selectedQuestion.id, "DRAFT")}
-                    disabled={activeQuestionActionId === selectedQuestion.id || selectedQuestion.reviewStatus === "DRAFT"}
+                    disabled={
+                      activeQuestionActionId === selectedQuestion.id ||
+                      isBulkApproving ||
+                      selectedQuestion.reviewStatus === "DRAFT"
+                    }
+                    aria-label="Mark selected question as draft"
                   >
                     Mark Draft
                   </Button>
@@ -821,7 +1190,8 @@ export default function QuestionnaireDetailsPage() {
                         void unapprove(selectedQuestion.approvedAnswer.id, selectedQuestion.id);
                       }
                     }}
-                    disabled={activeQuestionActionId === selectedQuestion.id || !selectedQuestion.approvedAnswer}
+                    disabled={activeQuestionActionId === selectedQuestion.id || isBulkApproving || !selectedQuestion.approvedAnswer}
+                    aria-label="Remove selected approval"
                   >
                     Unapprove
                   </Button>
@@ -844,11 +1214,11 @@ export default function QuestionnaireDetailsPage() {
                             type="button"
                             variant="primary"
                             onClick={() => void saveEditedApproval(selectedQuestion)}
-                            disabled={activeQuestionActionId === selectedQuestion.id}
+                            disabled={activeQuestionActionId === selectedQuestion.id || isBulkApproving}
                           >
                             Save approved edit
                           </Button>
-                          <Button type="button" variant="ghost" onClick={cancelEdit}>
+                          <Button type="button" variant="ghost" onClick={cancelEdit} disabled={isBulkApproving}>
                             Cancel
                           </Button>
                         </div>
@@ -868,6 +1238,7 @@ export default function QuestionnaireDetailsPage() {
         </Card>
 
         <Card className="workbench-evidence sticky-panel">
+          <div ref={evidencePanelRef} tabIndex={0} className="focus-target" role="region" aria-label="Evidence panel">
           <div className="card-title-row">
             <h3 style={{ margin: 0 }}>Evidence</h3>
             <div className="toolbar-row">
@@ -908,8 +1279,56 @@ export default function QuestionnaireDetailsPage() {
               </div>
             </>
           )}
+          </div>
         </Card>
-      </div>
+        </div>
+      )}
+
+      {isBulkConfirmOpen ? (
+        <div className="overlay-modal" role="dialog" aria-modal="true" aria-label="Confirm bulk approval">
+          <div className="overlay-modal-card">
+            <h3 style={{ marginTop: 0 }}>Approve Visible Questions</h3>
+            <p style={{ margin: "8px 0" }}>
+              You are about to approve <strong>{bulkEligibleQuestions.length}</strong> visible questions.
+            </p>
+            <p className="small muted" style={{ marginTop: 0 }}>
+              Only questions with non-NOT_FOUND answers and non-empty citations are eligible.
+            </p>
+            <div className="toolbar-row">
+              <Button type="button" variant="primary" onClick={() => void approveVisibleQuestions()} disabled={isBulkApproving}>
+                Confirm Approve Visible
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => setIsBulkConfirmOpen(false)} disabled={isBulkApproving}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isShortcutsOpen ? (
+        <div className="overlay-modal" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+          <div className="overlay-modal-card">
+            <h3 style={{ marginTop: 0 }}>Keyboard Shortcuts</h3>
+            <div className="shortcut-grid">
+              <div><kbd>J</kbd> Next question</div>
+              <div><kbd>K</kbd> Previous question</div>
+              <div><kbd>A</kbd> Approve selected</div>
+              <div><kbd>R</kbd> Mark needs review</div>
+              <div><kbd>U</kbd> Unapprove selected</div>
+              <div><kbd>C</kbd> Copy answer</div>
+              <div><kbd>E</kbd> Focus evidence panel</div>
+              <div><kbd>?</kbd> Open shortcuts</div>
+            </div>
+            <p className="small muted">Shortcuts are ignored while typing in inputs/text areas.</p>
+            <div className="toolbar-row">
+              <Button type="button" variant="primary" onClick={() => setIsShortcutsOpen(false)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
