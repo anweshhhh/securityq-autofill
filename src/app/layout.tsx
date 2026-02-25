@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AppShell } from "@/components/AppShell";
 
 export const metadata: Metadata = {
   title: "SecurityQ Autofill",
@@ -11,9 +12,13 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const devMode = process.env.DEV_MODE === "true";
+
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AppShell devMode={devMode}>{children}</AppShell>
+      </body>
     </html>
   );
 }
