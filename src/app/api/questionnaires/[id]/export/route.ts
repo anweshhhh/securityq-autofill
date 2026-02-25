@@ -4,6 +4,8 @@ import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
 import { buildQuestionnaireExportCsv } from "@/lib/export";
 import { prisma } from "@/lib/prisma";
 
+type ExportMode = "preferApproved" | "approvedOnly" | "generated";
+
 function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -58,10 +60,20 @@ function sanitizeFileName(value: string): string {
   return value.replace(/[^a-zA-Z0-9-_]/g, "_");
 }
 
+function parseExportMode(value: string | null): ExportMode {
+  if (value === "approvedOnly" || value === "generated") {
+    return value;
+  }
+
+  return "preferApproved";
+}
+
 export async function GET(_request: Request, context: { params: { id: string } }) {
   try {
     const organization = await getOrCreateDefaultOrganization();
     const questionnaireId = context.params.id;
+    const url = new URL(_request.url);
+    const mode = parseExportMode(url.searchParams.get("mode"));
 
     const questionnaire = await prisma.questionnaire.findFirst({
       where: {
@@ -72,6 +84,15 @@ export async function GET(_request: Request, context: { params: { id: string } }
         questions: {
           orderBy: {
             rowIndex: "asc"
+          },
+          include: {
+            approvedAnswer: {
+              select: {
+                id: true,
+                answerText: true,
+                citationChunkIds: true
+              }
+            }
           }
         }
       }
@@ -84,13 +105,69 @@ export async function GET(_request: Request, context: { params: { id: string } }
     const headers = toStringArray(questionnaire.sourceHeaders);
     const fallbackHeaders = Object.keys(toStringRecord(questionnaire.questions[0]?.sourceRow));
     const exportHeaders = headers.length > 0 ? headers : fallbackHeaders;
+    const allApprovedCitationChunkIds = Array.from(
+      new Set(
+        questionnaire.questions.flatMap((question) => question.approvedAnswer?.citationChunkIds ?? [])
+      )
+    );
+
+    const approvedCitationChunks = allApprovedCitationChunkIds.length
+      ? await prisma.documentChunk.findMany({
+          where: {
+            id: {
+              in: allApprovedCitationChunkIds
+            },
+            document: {
+              organizationId: organization.id
+            }
+          },
+          select: {
+            id: true,
+            content: true,
+            document: {
+              select: {
+                name: true
+              }
+            }
+          }
+        })
+      : [];
+
+    const approvedChunkById = new Map(
+      approvedCitationChunks.map((chunk) => [
+        chunk.id,
+        {
+          docName: chunk.document.name,
+          chunkId: chunk.id,
+          quotedSnippet: chunk.content
+        }
+      ])
+    );
+
+    function citationsFromApprovedChunkIds(chunkIds: string[]): Citation[] {
+      return chunkIds
+        .map((chunkId) => approvedChunkById.get(chunkId))
+        .filter((citation): citation is Citation => Boolean(citation));
+    }
 
     const csv = buildQuestionnaireExportCsv(
       exportHeaders,
       questionnaire.questions.map((question) => ({
         sourceRow: toStringRecord(question.sourceRow),
-        answer: question.answer ?? "",
-        citations: toCitations(question.citations)
+        answer:
+          mode === "generated"
+            ? question.answer ?? ""
+            : mode === "approvedOnly"
+              ? (question.approvedAnswer?.answerText ?? "")
+              : (question.approvedAnswer?.answerText ?? question.answer ?? ""),
+        citations:
+          mode === "generated"
+            ? toCitations(question.citations)
+            : mode === "approvedOnly"
+              ? citationsFromApprovedChunkIds(question.approvedAnswer?.citationChunkIds ?? [])
+              : question.approvedAnswer
+                ? citationsFromApprovedChunkIds(question.approvedAnswer.citationChunkIds)
+                : toCitations(question.citations)
       }))
     );
 

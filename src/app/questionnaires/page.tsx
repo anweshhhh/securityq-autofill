@@ -327,6 +327,12 @@ export default function QuestionnairesPage() {
                     {activeAutofillId === questionnaire.id ? "Running..." : "Run Autofill"}
                   </button>{" "}
                   <a href={`/api/questionnaires/${questionnaire.id}/export`}>Download CSV</a>{" "}
+                  <a href={`/api/questionnaires/${questionnaire.id}/export?mode=approvedOnly`}>
+                    Approved Only
+                  </a>{" "}
+                  <a href={`/api/questionnaires/${questionnaire.id}/export?mode=generated`}>
+                    Generated Only
+                  </a>{" "}
                   <button
                     type="button"
                     onClick={() => void deleteQuestionnaire(questionnaire.id)}
