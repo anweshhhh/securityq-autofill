@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Badge, Button, Card, TextInput, cx } from "@/components/ui";
 
 type DocumentRow = {
   id: string;
@@ -36,6 +36,31 @@ function isNewerDocument(next: DocumentRow, current: DocumentRow): boolean {
   return next.id > current.id;
 }
 
+function statusBadge(status: string) {
+  if (status === "ERROR") {
+    return "notfound";
+  }
+
+  if (status === "CHUNKED") {
+    return "approved";
+  }
+
+  return "review";
+}
+
+function messageTone(message: string): "approved" | "review" | "notfound" {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("failed") || normalized.includes("error")) {
+    return "notfound";
+  }
+
+  if (normalized.includes("uploaded") || normalized.includes("deleted")) {
+    return "approved";
+  }
+
+  return "review";
+}
+
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<DocumentRow[]>([]);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
@@ -64,6 +89,8 @@ export default function DocumentsPage() {
       (left, right) => toTimeValue(right.updatedAt) - toTimeValue(left.updatedAt)
     );
   }, [documents, showLatestOnly]);
+
+  const embeddedCount = visibleDocuments.filter((document) => document.status === "CHUNKED").length;
 
   async function fetchDocuments() {
     setIsLoading(true);
@@ -94,7 +121,7 @@ export default function DocumentsPage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedFile) {
-      setMessage("Select a .txt or .md file first");
+      setMessage("Select a .txt or .md file first.");
       return;
     }
 
@@ -121,7 +148,7 @@ export default function DocumentsPage() {
 
       setSelectedFile(null);
       setMessage(
-        `Uploaded ${payload.document?.originalName ?? "file"} (${payload.document?.chunkCount ?? 0} chunks)`
+        `Uploaded ${payload.document?.originalName ?? "file"} (${payload.document?.chunkCount ?? 0} chunks).`
       );
 
       await fetchDocuments();
@@ -134,7 +161,7 @@ export default function DocumentsPage() {
 
   async function deleteDocuments(ids: string[]) {
     if (ids.length === 0) {
-      setMessage("Select at least one document to delete");
+      setMessage("Select at least one document to delete.");
       return;
     }
 
@@ -186,142 +213,198 @@ export default function DocumentsPage() {
     visibleDocuments.every((document) => selectedDocumentIds.includes(document.id));
 
   return (
-    <main>
-      <p>
-        <Link href="/">Back to Home</Link>
-      </p>
-      <h1>Documents</h1>
+    <div className="page-stack">
+      <Card id="upload">
+        <div className="card-title-row">
+          <div>
+            <h2 style={{ marginBottom: 4 }}>Upload Evidence</h2>
+            <p className="muted" style={{ margin: 0 }}>
+              Add `.txt` and `.md` evidence files. Upload keeps chunk extraction deterministic.
+            </p>
+          </div>
+          <Badge tone="draft" title="Ingestion pipeline">
+            Ingestion
+          </Badge>
+        </div>
 
-      <form onSubmit={handleSubmit}>
-        <input
-          type="file"
-          accept=".txt,.md,text/plain,text/markdown"
-          onChange={(event) => {
-            const file = event.target.files?.[0] ?? null;
-            setSelectedFile(file);
-          }}
-        />
-        <button type="submit" disabled={isUploading}>
-          {isUploading ? "Uploading..." : "Upload"}
-        </button>
-        <button
-          type="button"
-          onClick={() => void fetchDocuments()}
-          disabled={isLoading || isUploading || isDeleting}
-        >
-          Refresh
-        </button>
-      </form>
+        <form onSubmit={handleSubmit} className="page-stack">
+          <div className="empty-state">
+            <h3 style={{ marginTop: 0 }}>Drop evidence files here</h3>
+            <p>Drag-and-drop styling is active. Upload still uses the file selector for deterministic behavior.</p>
+            <TextInput
+              type="file"
+              accept=".txt,.md,text/plain,text/markdown"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                setSelectedFile(file);
+              }}
+            />
+          </div>
 
-      <p>
-        <label>
-          <input
-            type="checkbox"
-            checked={showLatestOnly}
-            onChange={(event) => setShowLatestOnly(event.target.checked)}
-          />{" "}
-          Show only latest per original filename
-        </label>
-      </p>
-
-      <button
-        type="button"
-        onClick={() => void deleteDocuments(selectedDocumentIds)}
-        disabled={isDeleting || selectedDocumentIds.length === 0}
-      >
-        {isDeleting ? "Deleting..." : "Delete selected"}
-      </button>
-
-      {message ? <p>{message}</p> : null}
-
-      <h2>Uploaded Documents</h2>
-      {isLoading ? <p>Loading...</p> : null}
-
-      <table>
-        <thead>
-          <tr>
-            <th>
+          <div className="toolbar-row">
+            <Button type="submit" variant="primary" disabled={isUploading || !selectedFile}>
+              {isUploading ? "Uploading..." : "Upload Evidence"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void fetchDocuments()}
+              disabled={isLoading || isUploading || isDeleting}
+            >
+              Refresh
+            </Button>
+            <label className="toolbar-row small muted" htmlFor="latest-only">
               <input
+                id="latest-only"
                 type="checkbox"
-                aria-label="Select all visible documents"
-                checked={allVisibleSelected}
-                onChange={(event) => {
-                  if (event.target.checked) {
-                    setSelectedDocumentIds((current) => {
-                      const combined = new Set([...current, ...visibleDocuments.map((document) => document.id)]);
-                      return Array.from(combined);
-                    });
-                    return;
-                  }
-
-                  setSelectedDocumentIds((current) =>
-                    current.filter(
-                      (selectedId) => !visibleDocuments.some((document) => document.id === selectedId)
-                    )
-                  );
-                }}
+                checked={showLatestOnly}
+                onChange={(event) => setShowLatestOnly(event.target.checked)}
               />
-            </th>
-            <th>Name</th>
-            <th>Original Name</th>
-            <th>Status</th>
-            <th>Chunk Count</th>
-            <th>Updated</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {visibleDocuments.length === 0 ? (
-            <tr>
-              <td colSpan={7}>No documents yet.</td>
-            </tr>
-          ) : (
-            visibleDocuments.map((document) => (
-              <tr key={document.id}>
-                <td>
+              Show latest per original filename
+            </label>
+          </div>
+        </form>
+      </Card>
+
+      <div className="stats-grid">
+        <div className="stat-card">
+          <div className="label">Visible documents</div>
+          <div className="value">{visibleDocuments.length}</div>
+        </div>
+        <div className="stat-card">
+          <div className="label">Embedded (chunked)</div>
+          <div className="value">{embeddedCount}</div>
+        </div>
+        <div className="stat-card">
+          <div className="label">Selected</div>
+          <div className="value">{selectedDocumentIds.length}</div>
+        </div>
+        <div className="stat-card">
+          <div className="label">Filter mode</div>
+          <div className="value">{showLatestOnly ? "Latest" : "All"}</div>
+        </div>
+      </div>
+
+      {message ? (
+        <Card className="card-muted">
+          <Badge tone={messageTone(message)}>{message}</Badge>
+        </Card>
+      ) : null}
+
+      <Card>
+        <div className="card-title-row">
+          <div>
+            <h2 style={{ marginBottom: 4 }}>Document Inventory</h2>
+            <p className="muted" style={{ margin: 0 }}>
+              Track chunked status and remove stale files.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="danger"
+            onClick={() => void deleteDocuments(selectedDocumentIds)}
+            disabled={isDeleting || selectedDocumentIds.length === 0}
+          >
+            {isDeleting ? "Deleting..." : "Delete selected"}
+          </Button>
+        </div>
+
+        <div className="data-table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>
                   <input
                     type="checkbox"
-                    aria-label={`Select ${document.originalName}`}
-                    checked={selectedDocumentIds.includes(document.id)}
+                    aria-label="Select all visible documents"
+                    checked={allVisibleSelected}
                     onChange={(event) => {
                       if (event.target.checked) {
-                        setSelectedDocumentIds((current) => [...current, document.id]);
+                        setSelectedDocumentIds((current) => {
+                          const combined = new Set([...current, ...visibleDocuments.map((document) => document.id)]);
+                          return Array.from(combined);
+                        });
                         return;
                       }
 
                       setSelectedDocumentIds((current) =>
-                        current.filter((selectedId) => selectedId !== document.id)
+                        current.filter(
+                          (selectedId) => !visibleDocuments.some((document) => document.id === selectedId)
+                        )
                       );
                     }}
                   />
-                </td>
-                <td>{document.displayName}</td>
-                <td>{document.originalName}</td>
-                <td>
-                  {document.status}
-                  {document.status === "ERROR" && document.errorMessage ? (
-                    <>
-                      {" "}
-                      - {document.errorMessage}
-                    </>
-                  ) : null}
-                </td>
-                <td>{document.chunkCount}</td>
-                <td>{new Date(document.updatedAt).toLocaleString()}</td>
-                <td>
-                  <button
-                    type="button"
-                    onClick={() => void deleteDocuments([document.id])}
-                    disabled={isDeleting}
-                  >
-                    Delete
-                  </button>
-                </td>
+                </th>
+                <th>Name</th>
+                <th>Original</th>
+                <th>Status</th>
+                <th>Chunk count</th>
+                <th>Updated</th>
+                <th>Action</th>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </main>
+            </thead>
+            <tbody>
+              {isLoading && visibleDocuments.length === 0 ? (
+                <tr>
+                  <td colSpan={7}>Loading documents...</td>
+                </tr>
+              ) : null}
+
+              {!isLoading && visibleDocuments.length === 0 ? (
+                <tr>
+                  <td colSpan={7}>No documents uploaded yet.</td>
+                </tr>
+              ) : null}
+
+              {visibleDocuments.map((document) => (
+                <tr key={document.id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${document.originalName}`}
+                      checked={selectedDocumentIds.includes(document.id)}
+                      onChange={(event) => {
+                        if (event.target.checked) {
+                          setSelectedDocumentIds((current) => [...current, document.id]);
+                          return;
+                        }
+
+                        setSelectedDocumentIds((current) =>
+                          current.filter((selectedId) => selectedId !== document.id)
+                        );
+                      }}
+                    />
+                  </td>
+                  <td>
+                    <strong>{document.displayName}</strong>
+                  </td>
+                  <td className="muted">{document.originalName}</td>
+                  <td>
+                    <span className={cx("badge", `status-${statusBadge(document.status)}`)}>{document.status}</span>
+                    {document.status === "ERROR" && document.errorMessage ? (
+                      <div className="small status-notfound" style={{ marginTop: 6 }}>
+                        {document.errorMessage}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td>{document.chunkCount}</td>
+                  <td className="muted">{new Date(document.updatedAt).toLocaleString()}</td>
+                  <td>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      onClick={() => void deleteDocuments([document.id])}
+                      disabled={isDeleting}
+                    >
+                      Delete
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
   );
 }
