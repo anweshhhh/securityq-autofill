@@ -51,6 +51,7 @@ Runtime flow in `src/server/answerEngine.ts`:
    - output: final `{ answer, citations, confidence, needsReview }`
 
 Normalization invariants (claim-check clobber fix):
+- Normalization invariant: sufficient+cited drafts cannot be downgraded by claim-check.
 - Strict fallbacks remain:
   - empty citations => `Not found in provided documents.`
   - invalid format => `Not found in provided documents.`

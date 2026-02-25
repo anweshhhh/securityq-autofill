@@ -340,3 +340,20 @@ This log now tracks only the current MVP pivot and recent implementation work.
 
 - `npm test` => PASS
 - `npm run build` => PASS
+
+## 2026-02-25 - phase1-bugfix-03-validation-cleanup (autofill integration regression)
+
+### What changed
+
+- Extended questionnaire workflow integration tests in `src/app/api/questionnaires/workflow.test.ts` with one end-to-end regression through autofill:
+  - import CSV -> autofill -> assert persisted answers/citations.
+  - routes through real `answerQuestion` implementation (deterministic `openai`/`retrieval` mocks).
+- Added a numeric/version-detail case (`minimum TLS version`) to ensure a sufficient cited answer stays FOUND and is not clobbered to PARTIAL.
+- Kept NOT_FOUND/PARTIAL contracts validated in the same flow:
+  - NOT_FOUND row remains exact `Not found in provided documents.` with empty citations.
+  - PARTIAL row remains exact `Not specified in provided documents.` with non-empty citations when details are missing/model output is partial.
+
+### Validation
+
+- `npm test` => PASS
+- `npm run build` => PASS
