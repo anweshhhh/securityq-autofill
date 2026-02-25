@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { ExportModal } from "@/components/ExportModal";
 import { Badge, Button, Card, TextInput, cx } from "@/components/ui";
 
 type PreviewRow = Record<string, string>;
@@ -32,7 +33,12 @@ function getMessageTone(message: string): "approved" | "review" | "notfound" {
     return "notfound";
   }
 
-  if (normalized.includes("imported") || normalized.includes("complete") || normalized.includes("deleted")) {
+  if (
+    normalized.includes("imported") ||
+    normalized.includes("complete") ||
+    normalized.includes("deleted") ||
+    normalized.includes("export")
+  ) {
     return "approved";
   }
 
@@ -53,6 +59,7 @@ export default function QuestionnairesPage() {
   const [activeAutofillId, setActiveAutofillId] = useState<string | null>(null);
   const [activeDeleteId, setActiveDeleteId] = useState<string | null>(null);
   const [searchText, setSearchText] = useState("");
+  const [exportTarget, setExportTarget] = useState<{ id: string; name: string } | null>(null);
 
   const previewHeaders = useMemo(() => headers, [headers]);
 
@@ -507,18 +514,14 @@ export default function QuestionnairesPage() {
                             More
                           </summary>
                           <div className="row-actions-dropdown">
-                            <a className="row-actions-item" href={`/api/questionnaires/${questionnaire.id}/export`}>
-                              Export default
-                            </a>
-                            <a
+                            <button
+                              type="button"
                               className="row-actions-item"
-                              href={`/api/questionnaires/${questionnaire.id}/export?mode=approvedOnly`}
+                              onClick={() => setExportTarget({ id: questionnaire.id, name: questionnaire.name })}
+                              disabled={activeAutofillId === questionnaire.id || activeDeleteId === questionnaire.id}
                             >
-                              Export approved only
-                            </a>
-                            <a className="row-actions-item" href={`/api/questionnaires/${questionnaire.id}/export?mode=generated`}>
-                              Export generated only
-                            </a>
+                              Export...
+                            </button>
                             <button
                               type="button"
                               className="row-actions-item danger"
@@ -538,6 +541,15 @@ export default function QuestionnairesPage() {
           </div>
         )}
       </Card>
+
+      <ExportModal
+        isOpen={Boolean(exportTarget)}
+        questionnaireId={exportTarget?.id ?? null}
+        questionnaireName={exportTarget?.name ?? "questionnaire"}
+        onClose={() => setExportTarget(null)}
+        onSuccess={(nextMessage) => setMessage(nextMessage)}
+        onError={(nextMessage) => setMessage(nextMessage)}
+      />
     </div>
   );
 }

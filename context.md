@@ -109,6 +109,11 @@ Normalization invariants (claim-check clobber fix):
       - snippet viewer highlights key question terms client-side and supports `Copy Snippet` + `Copy All Citations`
       - evidence text remains on light surfaces in bounded scroll containers with preserved line breaks
       - no document detail page currently; `Open Doc` uses a read-only modal backed by `GET /api/documents/:id` full-text reconstruction from chunks
+    - export UX conventions:
+      - export is modal-driven on `/questionnaires` and `/questionnaires/[id]`
+      - mode selector options: `Prefer approved` (default), `Approved only`, `Generated only`
+      - export requests show in-flight spinner and success/error message banners
+      - downloaded filename format: `<questionnaire-name>-<YYYY-MM-DD>-export.csv` (sanitized)
     - question rail and evidence panel on `/questionnaires/[id]` use sticky panels for faster review loops
     - long question/answer/snippet text stays on light surfaces with bounded scroll containers
 
@@ -153,6 +158,12 @@ Export behavior (`GET /api/questionnaires/:id/export`):
 - default mode: `preferApproved` (approved override if present, else generated)
 - `mode=approvedOnly`: non-approved rows export blank answer/citations
 - `mode=generated`: ignores approved overrides
+
+Export UX (client):
+- `/questionnaires`: `More -> Export...` opens modal with mode selection
+- `/questionnaires/[id]`: `Export` button opens the same modal flow
+- Download requests are made against existing export endpoint with `mode` query param
+- Client enforces deterministic downloaded filename: `<questionnaire-name>-<YYYY-MM-DD>-export.csv`
 
 ## 6) Database schema state
 

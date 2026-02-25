@@ -910,6 +910,64 @@ textarea {
   box-shadow: 0 16px 36px rgba(15, 23, 42, 0.2);
 }
 
+.export-modal-card {
+  width: min(640px, 100%);
+}
+
+.export-mode-list {
+  display: grid;
+  gap: 8px;
+}
+
+.export-mode-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid #d2dcf0;
+  border-radius: 12px;
+  background: #fbfdff;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.export-mode-option:hover {
+  border-color: #b8c7e8;
+  background: #f7faff;
+}
+
+.export-mode-option.active {
+  border-color: #8f98e6;
+  background: #eef1ff;
+}
+
+.export-mode-option input {
+  margin-top: 2px;
+}
+
+.export-mode-title {
+  display: block;
+  font-weight: 700;
+  color: #1f2a3d;
+}
+
+.export-mode-description {
+  display: block;
+  margin-top: 2px;
+}
+
+.export-file-hint {
+  margin: 10px 0 0;
+}
+
+.button-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
 .document-modal-card {
   width: min(860px, 100%);
 }
@@ -991,6 +1049,15 @@ textarea {
   }
   100% {
     background-position: -100% 0;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
   }
 }
 

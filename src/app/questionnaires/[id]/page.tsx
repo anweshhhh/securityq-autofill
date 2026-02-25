@@ -2,6 +2,7 @@
 
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ExportModal } from "@/components/ExportModal";
 import { Badge, Button, Card, TextArea, TextInput, cx } from "@/components/ui";
 
 type Citation = {
@@ -337,6 +338,7 @@ export default function QuestionnaireDetailsPage() {
   const [isAnswerExpanded, setIsAnswerExpanded] = useState(false);
   const [showGeneratedDraft, setShowGeneratedDraft] = useState(false);
   const [isRunningAutofill, setIsRunningAutofill] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isBulkConfirmOpen, setIsBulkConfirmOpen] = useState(false);
   const [isBulkApproving, setIsBulkApproving] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
@@ -1127,14 +1129,15 @@ export default function QuestionnaireDetailsPage() {
             >
               {isRunningAutofill ? "Running..." : "Run Autofill"}
             </Button>
-            <a
-              className="btn btn-ghost"
-              href={`/api/questionnaires/${questionnaireId}/export`}
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setIsExportModalOpen(true)}
               aria-label="Export questionnaire CSV"
-              title="Export preferred answers to CSV"
+              title="Export questionnaire CSV"
             >
               Export
-            </a>
+            </Button>
             <Button
               type="button"
               variant="ghost"
@@ -1583,6 +1586,15 @@ export default function QuestionnaireDetailsPage() {
           </div>
         </div>
       ) : null}
+
+      <ExportModal
+        isOpen={isExportModalOpen}
+        questionnaireId={questionnaireId}
+        questionnaireName={data?.questionnaire.name ?? "questionnaire"}
+        onClose={() => setIsExportModalOpen(false)}
+        onSuccess={(nextMessage) => setMessage(nextMessage)}
+        onError={(nextMessage) => setMessage(nextMessage)}
+      />
     </div>
   );
 }

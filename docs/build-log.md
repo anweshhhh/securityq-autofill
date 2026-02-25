@@ -175,6 +175,23 @@ Current log of implemented MVP work (concise, execution-focused).
   - includes `Copy Document Text`
 - Kept ingestion logic unchanged.
 
+## 2026-02-25 - ui-next-04-export-ux
+
+- Added shared export modal UX (`src/components/ExportModal.tsx`) used by:
+  - `/questionnaires` via `More -> Export...`
+  - `/questionnaires/[id]` via `Export`
+- Added mode selector with one-line explanations:
+  - `Prefer approved` (default)
+  - `Approved only`
+  - `Generated only`
+- Export now downloads through client flow with:
+  - progress spinner while request is active
+  - success/error banner messaging from page state
+  - graceful API error handling from JSON/text responses
+- Download naming is now client-controlled and deterministic:
+  - `<questionnaire-name>-<YYYY-MM-DD>-export.csv` (sanitized base name)
+- Reused existing backend export modes; no server behavior changes required.
+
 ## Latest validation
 
 - `npm test` => PASS
