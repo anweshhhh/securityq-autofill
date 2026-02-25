@@ -52,8 +52,37 @@ export default function QuestionnairesPage() {
   const [isImporting, setIsImporting] = useState(false);
   const [activeAutofillId, setActiveAutofillId] = useState<string | null>(null);
   const [activeDeleteId, setActiveDeleteId] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState("");
 
   const previewHeaders = useMemo(() => headers, [headers]);
+
+  const filteredQuestionnaires = useMemo(() => {
+    const lowered = searchText.trim().toLowerCase();
+    if (!lowered) {
+      return questionnaires;
+    }
+
+    return questionnaires.filter((questionnaire) => {
+      return (
+        questionnaire.name.toLowerCase().includes(lowered) ||
+        (questionnaire.sourceFileName ?? "").toLowerCase().includes(lowered)
+      );
+    });
+  }, [questionnaires, searchText]);
+
+  const questionnaireSummary = useMemo(() => {
+    const totalQuestionnaires = questionnaires.length;
+    const totalQuestions = questionnaires.reduce((sum, row) => sum + row.questionCount, 0);
+    const totalAnswered = questionnaires.reduce((sum, row) => sum + row.answeredCount, 0);
+    const totalNotFound = questionnaires.reduce((sum, row) => sum + row.notFoundCount, 0);
+
+    return {
+      totalQuestionnaires,
+      totalQuestions,
+      totalAnswered,
+      totalNotFound
+    };
+  }, [questionnaires]);
 
   async function fetchQuestionnaires() {
     setIsLoadingList(true);
@@ -310,10 +339,38 @@ export default function QuestionnairesPage() {
       </Card>
 
       {message ? (
-        <Card className="card-muted">
-          <Badge tone={getMessageTone(message)}>{message}</Badge>
-        </Card>
+        <div
+          className={cx(
+            "message-banner",
+            getMessageTone(message) === "notfound"
+              ? "error"
+              : getMessageTone(message) === "approved"
+                ? "success"
+                : ""
+          )}
+        >
+          {message}
+        </div>
       ) : null}
+
+      <div className="kpi-grid">
+        <div className="kpi-card">
+          <div className="label">Questionnaires</div>
+          <div className="value">{questionnaireSummary.totalQuestionnaires}</div>
+        </div>
+        <div className="kpi-card">
+          <div className="label">Questions total</div>
+          <div className="value">{questionnaireSummary.totalQuestions}</div>
+        </div>
+        <div className="kpi-card">
+          <div className="label">Answered</div>
+          <div className="value">{questionnaireSummary.totalAnswered}</div>
+        </div>
+        <div className="kpi-card">
+          <div className="label">Not found</div>
+          <div className="value">{questionnaireSummary.totalNotFound}</div>
+        </div>
+      </div>
 
       {previewRows.length > 0 ? (
         <Card>
@@ -351,7 +408,32 @@ export default function QuestionnairesPage() {
               Open for review, rerun autofill, and export.
             </p>
           </div>
-          {isLoadingList ? <Badge tone="review">Loading...</Badge> : null}
+          <div className="toolbar-row compact">
+            <div className="search-field">
+              <label className="search-field-label" htmlFor="saved-questionnaire-search">
+                Search
+              </label>
+              <TextInput
+                id="saved-questionnaire-search"
+                className="search-field-input"
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+                placeholder="Name or source file"
+                title="Filter questionnaire list"
+              />
+              {searchText.trim().length > 0 ? (
+                <button
+                  type="button"
+                  className="search-field-clear"
+                  onClick={() => setSearchText("")}
+                  aria-label="Clear questionnaire search"
+                >
+                  Clear
+                </button>
+              ) : null}
+            </div>
+            {isLoadingList ? <Badge tone="review">Loading...</Badge> : null}
+          </div>
         </div>
 
         {questionnaires.length === 0 ? (
@@ -364,12 +446,13 @@ export default function QuestionnairesPage() {
           </div>
         ) : (
           <div className="data-table-wrap">
-            <table className="data-table">
+            <table className="data-table questionnaires-table">
               <thead>
                 <tr>
                   <th>Questionnaire</th>
                   <th>Source</th>
                   <th>Questions</th>
+                  <th>Completion</th>
                   <th>Answered</th>
                   <th>Not found</th>
                   <th>Last updated</th>
@@ -377,13 +460,26 @@ export default function QuestionnairesPage() {
                 </tr>
               </thead>
               <tbody>
-                {questionnaires.map((questionnaire) => (
+                {filteredQuestionnaires.length === 0 ? (
+                  <tr>
+                    <td colSpan={8}>No questionnaires match the current search.</td>
+                  </tr>
+                ) : null}
+
+                {filteredQuestionnaires.map((questionnaire) => (
                   <tr key={questionnaire.id}>
                     <td>
                       <strong>{questionnaire.name}</strong>
                     </td>
-                    <td className="muted">{questionnaire.sourceFileName ?? "n/a"}</td>
+                    <td className="muted questionnaire-source" title={questionnaire.sourceFileName ?? "n/a"}>
+                      {questionnaire.sourceFileName ?? "n/a"}
+                    </td>
                     <td>{questionnaire.questionCount}</td>
+                    <td>
+                      {questionnaire.questionCount > 0
+                        ? `${Math.round((questionnaire.answeredCount / questionnaire.questionCount) * 100)}%`
+                        : "0%"}
+                    </td>
                     <td>{questionnaire.answeredCount}</td>
                     <td>
                       <span className={cx("badge", questionnaire.notFoundCount > 0 ? "status-notfound" : "status-approved")}>
@@ -391,36 +487,48 @@ export default function QuestionnairesPage() {
                       </span>
                     </td>
                     <td className="muted">{new Date(questionnaire.updatedAt || questionnaire.createdAt).toLocaleString()}</td>
-                    <td>
-                      <div className="toolbar-row">
-                        <Link href={`/questionnaires/${questionnaire.id}`} className="btn btn-primary">
-                          Open
-                        </Link>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={() => void runAutofill(questionnaire.id)}
-                          disabled={activeAutofillId === questionnaire.id || activeDeleteId === questionnaire.id}
-                        >
-                          {activeAutofillId === questionnaire.id ? "Running..." : "Run Autofill"}
-                        </Button>
-                        <a className="btn btn-ghost" href={`/api/questionnaires/${questionnaire.id}/export`}>
-                          Export
-                        </a>
-                        <a className="btn btn-ghost" href={`/api/questionnaires/${questionnaire.id}/export?mode=approvedOnly`}>
-                          Approved only
-                        </a>
-                        <a className="btn btn-ghost" href={`/api/questionnaires/${questionnaire.id}/export?mode=generated`}>
-                          Generated only
-                        </a>
-                        <Button
-                          type="button"
-                          variant="danger"
-                          onClick={() => void deleteQuestionnaire(questionnaire.id)}
-                          disabled={activeAutofillId === questionnaire.id || activeDeleteId === questionnaire.id}
-                        >
-                          {activeDeleteId === questionnaire.id ? "Deleting..." : "Delete"}
-                        </Button>
+                    <td className="questionnaire-actions-cell">
+                      <div className="questionnaire-action-stack">
+                        <div className="table-actions">
+                          <Link href={`/questionnaires/${questionnaire.id}`} className="btn btn-primary">
+                            Open
+                          </Link>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => void runAutofill(questionnaire.id)}
+                            disabled={activeAutofillId === questionnaire.id || activeDeleteId === questionnaire.id}
+                          >
+                            {activeAutofillId === questionnaire.id ? "Running..." : "Run Autofill"}
+                          </Button>
+                        </div>
+                        <details className="row-actions-menu">
+                          <summary className="btn btn-ghost row-actions-trigger" aria-label="Open more actions menu">
+                            More
+                          </summary>
+                          <div className="row-actions-dropdown">
+                            <a className="row-actions-item" href={`/api/questionnaires/${questionnaire.id}/export`}>
+                              Export default
+                            </a>
+                            <a
+                              className="row-actions-item"
+                              href={`/api/questionnaires/${questionnaire.id}/export?mode=approvedOnly`}
+                            >
+                              Export approved only
+                            </a>
+                            <a className="row-actions-item" href={`/api/questionnaires/${questionnaire.id}/export?mode=generated`}>
+                              Export generated only
+                            </a>
+                            <button
+                              type="button"
+                              className="row-actions-item danger"
+                              onClick={() => void deleteQuestionnaire(questionnaire.id)}
+                              disabled={activeAutofillId === questionnaire.id || activeDeleteId === questionnaire.id}
+                            >
+                              {activeDeleteId === questionnaire.id ? "Deleting..." : "Delete questionnaire"}
+                            </button>
+                          </div>
+                        </details>
                       </div>
                     </td>
                   </tr>

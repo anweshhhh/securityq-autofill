@@ -70,6 +70,7 @@ export default function DocumentsPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [message, setMessage] = useState<string>("");
+  const [searchText, setSearchText] = useState("");
 
   const visibleDocuments = useMemo(() => {
     if (!showLatestOnly) {
@@ -91,6 +92,20 @@ export default function DocumentsPage() {
   }, [documents, showLatestOnly]);
 
   const embeddedCount = visibleDocuments.filter((document) => document.status === "CHUNKED").length;
+  const filteredDocuments = useMemo(() => {
+    const lowered = searchText.trim().toLowerCase();
+    if (!lowered) {
+      return visibleDocuments;
+    }
+
+    return visibleDocuments.filter((document) => {
+      return (
+        document.displayName.toLowerCase().includes(lowered) ||
+        document.originalName.toLowerCase().includes(lowered) ||
+        document.status.toLowerCase().includes(lowered)
+      );
+    });
+  }, [searchText, visibleDocuments]);
 
   async function fetchDocuments() {
     setIsLoading(true);
@@ -209,8 +224,8 @@ export default function DocumentsPage() {
   }
 
   const allVisibleSelected =
-    visibleDocuments.length > 0 &&
-    visibleDocuments.every((document) => selectedDocumentIds.includes(document.id));
+    filteredDocuments.length > 0 &&
+    filteredDocuments.every((document) => selectedDocumentIds.includes(document.id));
 
   return (
     <div className="page-stack">
@@ -266,29 +281,38 @@ export default function DocumentsPage() {
         </form>
       </Card>
 
-      <div className="stats-grid">
-        <div className="stat-card">
+      <div className="kpi-grid">
+        <div className="kpi-card">
           <div className="label">Visible documents</div>
-          <div className="value">{visibleDocuments.length}</div>
+          <div className="value">{filteredDocuments.length}</div>
         </div>
-        <div className="stat-card">
+        <div className="kpi-card">
           <div className="label">Embedded (chunked)</div>
           <div className="value">{embeddedCount}</div>
         </div>
-        <div className="stat-card">
+        <div className="kpi-card">
           <div className="label">Selected</div>
           <div className="value">{selectedDocumentIds.length}</div>
         </div>
-        <div className="stat-card">
+        <div className="kpi-card">
           <div className="label">Filter mode</div>
           <div className="value">{showLatestOnly ? "Latest" : "All"}</div>
         </div>
       </div>
 
       {message ? (
-        <Card className="card-muted">
-          <Badge tone={messageTone(message)}>{message}</Badge>
-        </Card>
+        <div
+          className={cx(
+            "message-banner",
+            messageTone(message) === "notfound"
+              ? "error"
+              : messageTone(message) === "approved"
+                ? "success"
+                : ""
+          )}
+        >
+          {message}
+        </div>
       ) : null}
 
       <Card>
@@ -299,14 +323,23 @@ export default function DocumentsPage() {
               Track chunked status and remove stale files.
             </p>
           </div>
-          <Button
-            type="button"
-            variant="danger"
-            onClick={() => void deleteDocuments(selectedDocumentIds)}
-            disabled={isDeleting || selectedDocumentIds.length === 0}
-          >
-            {isDeleting ? "Deleting..." : "Delete selected"}
-          </Button>
+          <div className="toolbar-row compact">
+            <TextInput
+              className="search-input-small"
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              placeholder="Search documents"
+              title="Filter document list"
+            />
+            <Button
+              type="button"
+              variant="danger"
+              onClick={() => void deleteDocuments(selectedDocumentIds)}
+              disabled={isDeleting || selectedDocumentIds.length === 0}
+            >
+              {isDeleting ? "Deleting..." : "Delete selected"}
+            </Button>
+          </div>
         </div>
 
         <div className="data-table-wrap">
@@ -321,7 +354,7 @@ export default function DocumentsPage() {
                     onChange={(event) => {
                       if (event.target.checked) {
                         setSelectedDocumentIds((current) => {
-                          const combined = new Set([...current, ...visibleDocuments.map((document) => document.id)]);
+                          const combined = new Set([...current, ...filteredDocuments.map((document) => document.id)]);
                           return Array.from(combined);
                         });
                         return;
@@ -329,7 +362,7 @@ export default function DocumentsPage() {
 
                       setSelectedDocumentIds((current) =>
                         current.filter(
-                          (selectedId) => !visibleDocuments.some((document) => document.id === selectedId)
+                          (selectedId) => !filteredDocuments.some((document) => document.id === selectedId)
                         )
                       );
                     }}
@@ -344,19 +377,23 @@ export default function DocumentsPage() {
               </tr>
             </thead>
             <tbody>
-              {isLoading && visibleDocuments.length === 0 ? (
+              {isLoading && filteredDocuments.length === 0 ? (
                 <tr>
                   <td colSpan={7}>Loading documents...</td>
                 </tr>
               ) : null}
 
-              {!isLoading && visibleDocuments.length === 0 ? (
+              {!isLoading && filteredDocuments.length === 0 ? (
                 <tr>
-                  <td colSpan={7}>No documents uploaded yet.</td>
+                  <td colSpan={7}>
+                    {searchText.trim().length > 0
+                      ? "No documents match the current search."
+                      : "No documents uploaded yet."}
+                  </td>
                 </tr>
               ) : null}
 
-              {visibleDocuments.map((document) => (
+              {filteredDocuments.map((document) => (
                 <tr key={document.id}>
                   <td>
                     <input

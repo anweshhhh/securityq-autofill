@@ -204,6 +204,11 @@ export function AppShell({ devMode, children }: AppShellProps) {
           >
             =
           </Button>
+          <div className="top-nav-brand">
+            <strong>SecurityQ</strong>
+            <span className="top-nav-sep">|</span>
+            <span>{pageHeader.title}</span>
+          </div>
           <div className="top-nav-search">
             <TextInput
               type="search"

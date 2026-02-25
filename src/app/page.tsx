@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { Badge, Card } from "@/components/ui";
+import { Badge, Card, cx } from "@/components/ui";
 
 export default function Home() {
   const isDevMode = process.env.DEV_MODE === "true";
 
   return (
     <div className="page-stack">
-      <Card className="card-muted">
+      <Card className="card-shell">
         <div className="card-title-row">
           <h2 style={{ margin: 0 }}>SecurityQ Autofill</h2>
           <Badge tone="approved" title="Evidence-first trust mode">
@@ -17,10 +17,10 @@ export default function Home() {
           Ground every answer in uploaded evidence with citations that stay reviewable.
         </p>
         <div className="toolbar-row">
-          <Link href="/documents" className="btn btn-secondary">
+          <Link href="/documents" className={cx("btn", "btn-secondary")} title="Upload and manage evidence files">
             Manage Documents
           </Link>
-          <Link href="/questionnaires" className="btn btn-primary">
+          <Link href="/questionnaires" className="btn btn-primary" title="Import and run questionnaire workflows">
             Open Questionnaires
           </Link>
           {isDevMode ? (

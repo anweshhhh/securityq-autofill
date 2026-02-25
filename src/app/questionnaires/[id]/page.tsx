@@ -531,12 +531,23 @@ export default function QuestionnaireDetailsPage() {
           </div>
         </div>
         {message ? (
-          <Badge tone={message.toLowerCase().includes("fail") ? "notfound" : "review"}>{message}</Badge>
+          <div
+            className={cx(
+              "message-banner",
+              message.toLowerCase().includes("fail") || message.toLowerCase().includes("error")
+                ? "error"
+                : message.toLowerCase().includes("approved") || message.toLowerCase().includes("updated")
+                  ? "success"
+                  : ""
+            )}
+          >
+            {message}
+          </div>
         ) : null}
       </Card>
 
       <div className="workbench-grid">
-        <Card>
+        <Card className="sticky-panel">
           <div className="card-title-row">
             <h3 style={{ margin: 0 }}>Questions</h3>
             <Badge tone="draft">{filteredQuestions.length} visible</Badge>
@@ -601,7 +612,9 @@ export default function QuestionnaireDetailsPage() {
               </div>
 
               <Card className="card-muted">
-                <p style={{ margin: 0 }}>{selectedQuestion.text || "No question text available."}</p>
+                <p className="workbench-question-text" style={{ margin: 0 }}>
+                  {selectedQuestion.text || "No question text available."}
+                </p>
               </Card>
 
               <Card style={{ marginTop: 12 }}>
@@ -732,7 +745,7 @@ export default function QuestionnaireDetailsPage() {
           )}
         </Card>
 
-        <Card className="workbench-evidence">
+        <Card className="workbench-evidence sticky-panel">
           <div className="card-title-row">
             <h3 style={{ margin: 0 }}>Evidence</h3>
             <div className="toolbar-row">
