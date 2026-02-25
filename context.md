@@ -64,6 +64,32 @@ Normalization invariants (claim-check clobber fix):
   - `src/server/answerEngine.test.ts` positive-control engine path repro
   - both now pass with the invariant in place.
 
+## 4.1) UI Theme: D-Dark Shell
+
+- Dark shell + light workbench rule:
+  - dark chrome for top nav, sidebar, header band, and app frame
+  - light canvas for cards, tables, answer bodies, and evidence snippets
+- Theme tokens (defined in `src/app/globals.css`):
+  - shell/canvas/surfaces: `--bg-shell`, `--bg-canvas`, `--surface`, `--border`
+  - typography: `--text`, `--muted-text`
+  - brand: `--brand`, `--brand-foreground`
+  - status palette:
+    - `--status-approved` (green)
+    - `--status-review` (amber)
+    - `--status-draft` (neutral)
+    - `--status-notfound` (red)
+- Layout conventions:
+  - App shell component: `src/components/AppShell.tsx`
+  - desktop sidebar width ~260px, collapsible to ~56px
+  - mobile sidebar is a drawer overlay
+  - gradients are restricted to chrome/empty-state surfaces (not long-text tables/snippets)
+- Component conventions:
+  - primitives in `src/components/ui.tsx` (`Button`, `Badge`, `Card`, `TextInput`, `TextArea`)
+  - questionnaire details page is a review workbench:
+    - left question rail (search + status filters)
+    - main answer panel (expand/collapse + actions)
+    - right evidence panel (citation chips + snippet viewer + copy actions)
+
 ## 5) API Surface
 
 Pages:

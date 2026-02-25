@@ -461,3 +461,45 @@ This log now tracks only the current MVP pivot and recent implementation work.
   - `Not found in provided documents.`
   - `Not specified in provided documents.`
 - outputs results to stdout and appends a dated entry to `docs/build-log.md`.
+
+## 2026-02-25 - ui-ddark-shell-v1 (D-Dark Shell theme refresh)
+
+### Theme tokens + shell
+
+- Added global design tokens in `src/app/globals.css`:
+  - `--bg-shell`, `--bg-canvas`, `--surface`, `--border`, `--text`, `--muted-text`
+  - `--brand`, `--brand-foreground`
+  - `--status-approved`, `--status-review`, `--status-draft`, `--status-notfound`
+- Implemented reusable shell and primitives:
+  - `src/components/AppShell.tsx`
+  - `src/components/ui.tsx`
+- `src/app/layout.tsx` now wraps all pages with AppShell:
+  - dark nav/sidebar/header band + light content canvas
+  - mobile drawer sidebar
+  - route-aware CTA in top nav
+
+### Page updates
+
+- Home (`src/app/page.tsx`):
+  - updated landing section to card-based quick start blocks.
+- Questionnaires list (`src/app/questionnaires/page.tsx`):
+  - restyled import flow, preview table, saved questionnaire table, and gradient empty state.
+  - shows source filename + last updated.
+- Questionnaire details (`src/app/questionnaires/[id]/page.tsx`):
+  - converted to review workbench:
+    - left rail question list + search/filters
+    - main answer panel with expand/collapse + actions
+    - right evidence panel with citation chips/snippet viewer/copy actions
+- Documents (`src/app/documents/page.tsx`):
+  - restyled upload card (drag-drop styled shell), stats, and inventory table.
+
+### UI polish
+
+- Added subtle transitions and clearer hover/focus states for buttons/chips/cards.
+- Added tooltip titles on status badges and evidence chips.
+- Kept gradients limited to shell chrome, header bands, and empty-state surfaces (not long text/table bodies).
+
+### Validation
+
+- `npm test` => PASS
+- `npm run build` => PASS
