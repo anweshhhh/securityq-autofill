@@ -10,7 +10,7 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 - Evidence ingestion: upload `.txt`/`.md`, chunk, embed, list, delete
 - Answer engine: retrieve + rerank + sufficiency gate + grounded answer with citations
 - Questionnaire workflow: CSV import, select question column, single-run autofill, details view, CSV export
-- Approval workflow baseline: `ApprovedAnswer` model retained for next iteration
+- Approval workflow (Phase 1): approve/edit/unapprove overrides per question + review status controls
 - Debug tooling: allowed only behind `DEV_MODE=true` (and persistence also requires `DEBUG_EVIDENCE=true`)
 
 ## 3) Non-Negotiables
@@ -78,7 +78,11 @@ API:
 - `DELETE /api/documents/:id`
 - `POST /api/documents/upload`
 - `POST /api/documents/embed`
+- `POST /api/approved-answers`
+- `PATCH /api/approved-answers/:id`
+- `DELETE /api/approved-answers/:id`
 - `POST /api/questions/answer`
+- `POST /api/questions/:id/review`
 - `GET /api/questionnaires`
 - `POST /api/questionnaires/headers`
 - `POST /api/questionnaires/import`
@@ -87,10 +91,20 @@ API:
 - `DELETE /api/questionnaires/:id`
 - `GET /api/questionnaires/:id/export`
 
-Phase 1 planned API additions (not implemented yet):
-- `PUT /api/questionnaires/:id/questions/:questionId/approval`
-- `DELETE /api/questionnaires/:id/questions/:questionId/approval`
-- `GET /api/questionnaires/:id` response extension with `approvedAnswer` per question
+Questionnaire details payload (`GET /api/questionnaires/:id`) now includes per question:
+- `reviewStatus`
+- `approvedAnswer` (nullable):
+  - `id`
+  - `answerText`
+  - `citationChunkIds`
+  - `source`
+  - `note`
+  - `updatedAt`
+
+Export behavior (`GET /api/questionnaires/:id/export`):
+- default mode: `preferApproved` (approved override if present, else generated)
+- `mode=approvedOnly`: non-approved rows export blank answer/citations
+- `mode=generated`: ignores approved overrides
 
 ## 6) Database schema state
 
@@ -133,7 +147,8 @@ Use `.env.example` as source of truth.
 
 - Ingestion: upload/chunk/embed path
 - Answer engine: FOUND / NOT_FOUND / PARTIAL behavior and citation guardrails
-- Questionnaire workflow: import -> autofill -> export -> delete
+- Questionnaire workflow: import -> autofill -> approval actions -> export modes -> delete
+- Approval validation: cross-org citation chunk IDs are rejected
 - All OpenAI calls mocked; tests are network-independent
 - Active bug regression tests:
   - `src/server/normalizeAnswerOutput.bug.test.ts`
@@ -141,11 +156,12 @@ Use `.env.example` as source of truth.
 
 ## 10) Next Focus
 
-- Evolve `ApprovedAnswer` from strict `questionId` binding to reusable, evidence-validated approvals.
+- Evolve `ApprovedAnswer` beyond strict `questionId` binding to reusable, evidence-validated approvals.
+- Add approval evidence revalidation when source evidence changes.
 
-## 11) Phase 1: Approval workflow schema
+## 11) Phase 1: Approval workflow schema + API/UI
 
-Implemented in schema/migration:
+Schema (already implemented):
 - `Question.reviewStatus` with enum values:
   - `DRAFT`
   - `NEEDS_REVIEW`
@@ -158,10 +174,20 @@ Implemented in schema/migration:
   - reviewer metadata via `approvedBy` and `note`
   - lifecycle timestamps `createdAt` + `updatedAt`
 
-Still pending (Phase 1 API/UI implementation):
-- Approval API routes for approve/unapprove/edit/reject actions
-- `/questionnaires/[id]` approval controls + filters
-- Export selection mode to prefer approved overrides by default
+API/UI (implemented):
+- Approval routes:
+  - `POST /api/approved-answers`
+  - `PATCH /api/approved-answers/:id`
+  - `DELETE /api/approved-answers/:id`
+  - `POST /api/questions/:id/review` (`NEEDS_REVIEW` / `DRAFT`)
+- UI in `/questionnaires/[id]`:
+  - status badge (`Draft` / `Approved` / `Needs review`)
+  - Approve current generated answer
+  - Edit approved answer + citation chunk IDs
+  - Mark needs review / mark draft
+  - Unapprove
+  - filters: All / Draft / Approved / Needs review
+- Export preference modes wired to UI links on `/questionnaires` list page.
 
 ## 12) New Chat Handoff Template
 

@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { parseCsvText } from "@/lib/csv";
+import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
 import { prisma } from "@/lib/prisma";
 
 const {
@@ -56,9 +58,17 @@ vi.mock("@/lib/questionnaireService", async () => {
 import { POST as importRoute } from "./import/route";
 import { POST as autofillRoute } from "./[id]/autofill/route";
 import { GET as exportRoute } from "./[id]/export/route";
-import { DELETE as deleteRoute } from "./[id]/route";
+import { DELETE as deleteRoute, GET as questionnaireDetailsRoute } from "./[id]/route";
+import { POST as approvedAnswersCreateRoute } from "../approved-answers/route";
+import {
+  DELETE as approvedAnswersDeleteRoute,
+  PATCH as approvedAnswersPatchRoute
+} from "../approved-answers/[id]/route";
+import { POST as questionReviewRoute } from "../questions/[id]/review/route";
 
 const TEST_QUESTIONNAIRE_NAME_PREFIX = "vitest-workflow-";
+const TEST_DOCUMENT_NAME_PREFIX = "vitest-workflow-doc-";
+const TEST_ORG_NAME_PREFIX = "vitest-workflow-org-";
 
 function fixture(name: string): string {
   return readFileSync(join(process.cwd(), `test/fixtures/${name}`), "utf8");
@@ -109,10 +119,174 @@ async function cleanupQuestionnaires() {
   });
 }
 
+async function cleanupWorkflowDocuments() {
+  const documents = await prisma.document.findMany({
+    where: {
+      name: {
+        startsWith: TEST_DOCUMENT_NAME_PREFIX
+      }
+    },
+    select: {
+      id: true
+    }
+  });
+
+  if (documents.length === 0) {
+    return;
+  }
+
+  const documentIds = documents.map((document) => document.id);
+  await prisma.documentChunk.deleteMany({
+    where: {
+      documentId: {
+        in: documentIds
+      }
+    }
+  });
+
+  await prisma.document.deleteMany({
+    where: {
+      id: {
+        in: documentIds
+      }
+    }
+  });
+}
+
+async function cleanupWorkflowOrganizations() {
+  const organizations = await prisma.organization.findMany({
+    where: {
+      name: {
+        startsWith: TEST_ORG_NAME_PREFIX
+      }
+    },
+    select: {
+      id: true
+    }
+  });
+
+  if (organizations.length === 0) {
+    return;
+  }
+
+  const organizationIds = organizations.map((organization) => organization.id);
+
+  await prisma.approvedAnswer.deleteMany({
+    where: {
+      organizationId: {
+        in: organizationIds
+      }
+    }
+  });
+
+  await prisma.question.deleteMany({
+    where: {
+      questionnaire: {
+        organizationId: {
+          in: organizationIds
+        }
+      }
+    }
+  });
+
+  await prisma.questionnaire.deleteMany({
+    where: {
+      organizationId: {
+        in: organizationIds
+      }
+    }
+  });
+
+  await prisma.documentChunk.deleteMany({
+    where: {
+      document: {
+        organizationId: {
+          in: organizationIds
+        }
+      }
+    }
+  });
+
+  await prisma.document.deleteMany({
+    where: {
+      organizationId: {
+        in: organizationIds
+      }
+    }
+  });
+
+  await prisma.organization.deleteMany({
+    where: {
+      id: {
+        in: organizationIds
+      }
+    }
+  });
+}
+
+async function cleanupWorkflowData() {
+  await cleanupQuestionnaires();
+  await cleanupWorkflowDocuments();
+  await cleanupWorkflowOrganizations();
+}
+
+async function seedEvidenceChunksForOrganization(organizationId: string) {
+  const suffix = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+  const documentA = await prisma.document.create({
+    data: {
+      organizationId,
+      name: `${TEST_DOCUMENT_NAME_PREFIX}${suffix}-a`,
+      originalName: "workflow-a.txt",
+      mimeType: "text/plain",
+      status: "CHUNKED"
+    }
+  });
+
+  const documentB = await prisma.document.create({
+    data: {
+      organizationId,
+      name: `${TEST_DOCUMENT_NAME_PREFIX}${suffix}-b`,
+      originalName: "workflow-b.txt",
+      mimeType: "text/plain",
+      status: "CHUNKED"
+    }
+  });
+
+  const tlsChunk = await prisma.documentChunk.create({
+    data: {
+      documentId: documentA.id,
+      chunkIndex: 0,
+      content: "External traffic requires TLS 1.2 or higher."
+    }
+  });
+
+  const ssoChunk = await prisma.documentChunk.create({
+    data: {
+      documentId: documentA.id,
+      chunkIndex: 1,
+      content: "Single sign-on is supported for workforce identity providers."
+    }
+  });
+
+  const partialChunk = await prisma.documentChunk.create({
+    data: {
+      documentId: documentB.id,
+      chunkIndex: 0,
+      content: "Encryption at rest is enabled."
+    }
+  });
+
+  return {
+    tlsChunkId: tlsChunk.id,
+    ssoChunkId: ssoChunk.id,
+    partialChunkId: partialChunk.id
+  };
+}
+
 describe.sequential("questionnaire workflow integration", () => {
   beforeEach(async () => {
     process.env.DEV_MODE = "false";
-    await cleanupQuestionnaires();
+    await cleanupWorkflowData();
     answerQuestionMock.mockReset();
     getEmbeddingAvailabilityMock.mockReset();
     createEmbeddingMock.mockReset();
@@ -126,7 +300,7 @@ describe.sequential("questionnaire workflow integration", () => {
   });
 
   afterEach(async () => {
-    await cleanupQuestionnaires();
+    await cleanupWorkflowData();
   });
 
   afterAll(async () => {
@@ -392,5 +566,457 @@ describe.sequential("questionnaire workflow integration", () => {
     expect(partialQuestion?.answer).toBe(notSpecifiedText);
     expect(Array.isArray(partialQuestion?.citations)).toBe(true);
     expect((partialQuestion?.citations as Array<unknown>).length).toBeGreaterThan(0);
+  });
+
+  it("approval API flow supports approve/edit/review/unapprove with org-scoped citation validation", async () => {
+    const organization = await getOrCreateDefaultOrganization();
+    const chunkIds = await seedEvidenceChunksForOrganization(organization.id);
+
+    const csvContent =
+      "Control ID,Question\n" +
+      "Q-1,What minimum TLS version is required?\n" +
+      "Q-2,Do you support SSO?\n" +
+      "Q-3,What is the encryption key rotation interval?\n";
+
+    const formData = new FormData();
+    formData.append("file", new File([csvContent], "approval-flow.csv", { type: "text/csv" }));
+    formData.append("questionColumn", "Question");
+    formData.append("name", `${TEST_QUESTIONNAIRE_NAME_PREFIX}${Date.now()}`);
+
+    const importResponse = await importRoute(
+      new Request("http://localhost/api/questionnaires/import", {
+        method: "POST",
+        body: formData
+      })
+    );
+    const importPayload = (await importResponse.json()) as {
+      questionnaire?: { id: string };
+    };
+    expect(importResponse.status).toBe(201);
+
+    const questionnaireId = importPayload.questionnaire?.id;
+    expect(questionnaireId).toBeTruthy();
+
+    answerQuestionMock
+      .mockResolvedValueOnce({
+        answer: "External traffic requires TLS 1.2.",
+        citations: [
+          {
+            docName: "Workflow Evidence",
+            chunkId: chunkIds.tlsChunkId,
+            quotedSnippet: "External traffic requires TLS 1.2 or higher."
+          }
+        ]
+      })
+      .mockResolvedValueOnce({
+        answer: "Single sign-on is supported.",
+        citations: [
+          {
+            docName: "Workflow Evidence",
+            chunkId: chunkIds.ssoChunkId,
+            quotedSnippet: "Single sign-on is supported for workforce identity providers."
+          }
+        ]
+      })
+      .mockResolvedValueOnce({
+        answer: "Not specified in provided documents.",
+        citations: [
+          {
+            docName: "Workflow Evidence",
+            chunkId: chunkIds.partialChunkId,
+            quotedSnippet: "Encryption at rest is enabled."
+          }
+        ]
+      });
+
+    const autofillResponse = await autofillRoute(new Request("http://localhost"), {
+      params: { id: questionnaireId as string }
+    });
+    expect(autofillResponse.status).toBe(200);
+
+    const questions = await prisma.question.findMany({
+      where: {
+        questionnaireId: questionnaireId as string
+      },
+      orderBy: {
+        rowIndex: "asc"
+      },
+      select: {
+        id: true,
+        reviewStatus: true
+      }
+    });
+    expect(questions).toHaveLength(3);
+    expect(questions.map((question) => question.reviewStatus)).toEqual(["DRAFT", "DRAFT", "DRAFT"]);
+
+    const firstApprovalResponse = await approvedAnswersCreateRoute(
+      new Request("http://localhost/api/approved-answers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          questionId: questions[0].id
+        })
+      })
+    );
+    const firstApprovalPayload = (await firstApprovalResponse.json()) as {
+      approvedAnswer?: { id: string };
+    };
+    expect(firstApprovalResponse.status).toBe(200);
+    expect(firstApprovalPayload.approvedAnswer?.id).toBeTruthy();
+
+    const secondApprovalResponse = await approvedAnswersCreateRoute(
+      new Request("http://localhost/api/approved-answers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          questionId: questions[1].id
+        })
+      })
+    );
+    const secondApprovalPayload = (await secondApprovalResponse.json()) as {
+      approvedAnswer?: { id: string };
+    };
+    expect(secondApprovalResponse.status).toBe(200);
+    expect(secondApprovalPayload.approvedAnswer?.id).toBeTruthy();
+
+    const editedApprovedAnswerText = "SSO is enabled and can be integrated through supported identity providers.";
+    const patchResponse = await approvedAnswersPatchRoute(
+      new Request(`http://localhost/api/approved-answers/${secondApprovalPayload.approvedAnswer?.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          answerText: editedApprovedAnswerText,
+          citationChunkIds: [chunkIds.ssoChunkId]
+        })
+      }),
+      {
+        params: {
+          id: secondApprovalPayload.approvedAnswer?.id as string
+        }
+      }
+    );
+    expect(patchResponse.status).toBe(200);
+
+    const needsReviewResponse = await questionReviewRoute(
+      new Request(`http://localhost/api/questions/${questions[2].id}/review`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          reviewStatus: "NEEDS_REVIEW"
+        })
+      }),
+      {
+        params: {
+          id: questions[2].id
+        }
+      }
+    );
+    expect(needsReviewResponse.status).toBe(200);
+
+    const unapproveResponse = await approvedAnswersDeleteRoute(
+      new Request(`http://localhost/api/approved-answers/${firstApprovalPayload.approvedAnswer?.id}`, {
+        method: "DELETE"
+      }),
+      {
+        params: {
+          id: firstApprovalPayload.approvedAnswer?.id as string
+        }
+      }
+    );
+    expect(unapproveResponse.status).toBe(200);
+
+    const refreshedQuestions = await prisma.question.findMany({
+      where: {
+        questionnaireId: questionnaireId as string
+      },
+      orderBy: {
+        rowIndex: "asc"
+      },
+      select: {
+        id: true,
+        reviewStatus: true,
+        approvedAnswer: {
+          select: {
+            answerText: true,
+            citationChunkIds: true
+          }
+        }
+      }
+    });
+
+    expect(refreshedQuestions[0].reviewStatus).toBe("DRAFT");
+    expect(refreshedQuestions[0].approvedAnswer).toBeNull();
+    expect(refreshedQuestions[1].reviewStatus).toBe("APPROVED");
+    expect(refreshedQuestions[1].approvedAnswer?.answerText).toBe(editedApprovedAnswerText);
+    expect(refreshedQuestions[1].approvedAnswer?.citationChunkIds).toEqual([chunkIds.ssoChunkId]);
+    expect(refreshedQuestions[2].reviewStatus).toBe("NEEDS_REVIEW");
+    expect(refreshedQuestions[2].approvedAnswer).toBeNull();
+
+    const detailsResponse = await questionnaireDetailsRoute(new Request("http://localhost"), {
+      params: {
+        id: questionnaireId as string
+      }
+    });
+    const detailsPayload = (await detailsResponse.json()) as {
+      questions: Array<{
+        reviewStatus?: string;
+        approvedAnswer?: {
+          id?: string;
+          answerText?: string;
+          citationChunkIds?: string[];
+        } | null;
+      }>;
+    };
+
+    expect(detailsResponse.status).toBe(200);
+    expect(detailsPayload.questions).toHaveLength(3);
+    expect(detailsPayload.questions[0].reviewStatus).toBe("DRAFT");
+    expect(detailsPayload.questions[0].approvedAnswer).toBeNull();
+    expect(detailsPayload.questions[1].reviewStatus).toBe("APPROVED");
+    expect(detailsPayload.questions[1].approvedAnswer?.answerText).toBe(editedApprovedAnswerText);
+    expect(detailsPayload.questions[1].approvedAnswer?.citationChunkIds).toEqual([chunkIds.ssoChunkId]);
+    expect(detailsPayload.questions[2].reviewStatus).toBe("NEEDS_REVIEW");
+    expect(detailsPayload.questions[2].approvedAnswer).toBeNull();
+  });
+
+  it("export mode supports preferApproved, approvedOnly, and generated", async () => {
+    const organization = await getOrCreateDefaultOrganization();
+    const chunkIds = await seedEvidenceChunksForOrganization(organization.id);
+
+    const csvContent =
+      "Control ID,Question\n" +
+      "Q-1,What minimum TLS version is required?\n" +
+      "Q-2,Do you support SSO?\n";
+
+    const formData = new FormData();
+    formData.append("file", new File([csvContent], "approval-export.csv", { type: "text/csv" }));
+    formData.append("questionColumn", "Question");
+    formData.append("name", `${TEST_QUESTIONNAIRE_NAME_PREFIX}${Date.now()}`);
+
+    const importResponse = await importRoute(
+      new Request("http://localhost/api/questionnaires/import", {
+        method: "POST",
+        body: formData
+      })
+    );
+    const importPayload = (await importResponse.json()) as {
+      questionnaire?: { id: string };
+    };
+    expect(importResponse.status).toBe(201);
+
+    const questionnaireId = importPayload.questionnaire?.id;
+    expect(questionnaireId).toBeTruthy();
+
+    const generatedTlsAnswer = "Generated TLS answer: minimum version is TLS 1.2.";
+    const generatedSsoAnswer = "Generated SSO answer: SSO is supported.";
+    const approvedTlsAnswer = "Approved TLS answer: minimum version is TLS 1.2+.";
+
+    answerQuestionMock
+      .mockResolvedValueOnce({
+        answer: generatedTlsAnswer,
+        citations: [
+          {
+            docName: "Workflow Evidence",
+            chunkId: chunkIds.tlsChunkId,
+            quotedSnippet: "External traffic requires TLS 1.2 or higher."
+          }
+        ]
+      })
+      .mockResolvedValueOnce({
+        answer: generatedSsoAnswer,
+        citations: [
+          {
+            docName: "Workflow Evidence",
+            chunkId: chunkIds.ssoChunkId,
+            quotedSnippet: "Single sign-on is supported for workforce identity providers."
+          }
+        ]
+      });
+
+    const autofillResponse = await autofillRoute(new Request("http://localhost"), {
+      params: { id: questionnaireId as string }
+    });
+    expect(autofillResponse.status).toBe(200);
+
+    const questions = await prisma.question.findMany({
+      where: {
+        questionnaireId: questionnaireId as string
+      },
+      orderBy: {
+        rowIndex: "asc"
+      },
+      select: {
+        id: true
+      }
+    });
+
+    const approvalResponse = await approvedAnswersCreateRoute(
+      new Request("http://localhost/api/approved-answers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          questionId: questions[0].id
+        })
+      })
+    );
+    const approvalPayload = (await approvalResponse.json()) as {
+      approvedAnswer?: { id: string };
+    };
+    expect(approvalResponse.status).toBe(200);
+
+    const patchResponse = await approvedAnswersPatchRoute(
+      new Request(`http://localhost/api/approved-answers/${approvalPayload.approvedAnswer?.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          answerText: approvedTlsAnswer,
+          citationChunkIds: [chunkIds.tlsChunkId]
+        })
+      }),
+      {
+        params: {
+          id: approvalPayload.approvedAnswer?.id as string
+        }
+      }
+    );
+    expect(patchResponse.status).toBe(200);
+
+    const preferApprovedExportResponse = await exportRoute(
+      new Request(`http://localhost/api/questionnaires/${questionnaireId}/export`),
+      {
+        params: {
+          id: questionnaireId as string
+        }
+      }
+    );
+    expect(preferApprovedExportResponse.status).toBe(200);
+    const preferApprovedCsv = parseCsvText(await preferApprovedExportResponse.text());
+    const preferRowOne = preferApprovedCsv.rows.find((row) => row["Control ID"] === "Q-1");
+    const preferRowTwo = preferApprovedCsv.rows.find((row) => row["Control ID"] === "Q-2");
+    expect(preferRowOne?.Answer).toBe(approvedTlsAnswer);
+    expect(preferRowTwo?.Answer).toBe(generatedSsoAnswer);
+
+    const approvedOnlyExportResponse = await exportRoute(
+      new Request(`http://localhost/api/questionnaires/${questionnaireId}/export?mode=approvedOnly`),
+      {
+        params: {
+          id: questionnaireId as string
+        }
+      }
+    );
+    expect(approvedOnlyExportResponse.status).toBe(200);
+    const approvedOnlyCsv = parseCsvText(await approvedOnlyExportResponse.text());
+    const approvedOnlyRowOne = approvedOnlyCsv.rows.find((row) => row["Control ID"] === "Q-1");
+    const approvedOnlyRowTwo = approvedOnlyCsv.rows.find((row) => row["Control ID"] === "Q-2");
+    expect(approvedOnlyRowOne?.Answer).toBe(approvedTlsAnswer);
+    expect(approvedOnlyRowTwo?.Answer).toBe("");
+    expect(approvedOnlyRowTwo?.Citations).toBe("");
+
+    const generatedExportResponse = await exportRoute(
+      new Request(`http://localhost/api/questionnaires/${questionnaireId}/export?mode=generated`),
+      {
+        params: {
+          id: questionnaireId as string
+        }
+      }
+    );
+    expect(generatedExportResponse.status).toBe(200);
+    const generatedCsv = parseCsvText(await generatedExportResponse.text());
+    const generatedRowOne = generatedCsv.rows.find((row) => row["Control ID"] === "Q-1");
+    const generatedRowTwo = generatedCsv.rows.find((row) => row["Control ID"] === "Q-2");
+    expect(generatedRowOne?.Answer).toBe(generatedTlsAnswer);
+    expect(generatedRowTwo?.Answer).toBe(generatedSsoAnswer);
+  });
+
+  it("rejects approval when citation chunk IDs are from a different organization", async () => {
+    const csvContent = "Control ID,Question\nQ-1,Do you support SSO?\n";
+    const formData = new FormData();
+    formData.append("file", new File([csvContent], "cross-org.csv", { type: "text/csv" }));
+    formData.append("questionColumn", "Question");
+    formData.append("name", `${TEST_QUESTIONNAIRE_NAME_PREFIX}${Date.now()}`);
+
+    const importResponse = await importRoute(
+      new Request("http://localhost/api/questionnaires/import", {
+        method: "POST",
+        body: formData
+      })
+    );
+    const importPayload = (await importResponse.json()) as {
+      questionnaire?: { id: string };
+    };
+    expect(importResponse.status).toBe(201);
+
+    const questionnaireId = importPayload.questionnaire?.id;
+    expect(questionnaireId).toBeTruthy();
+
+    const question = await prisma.question.findFirst({
+      where: {
+        questionnaireId: questionnaireId as string
+      },
+      select: {
+        id: true
+      }
+    });
+    expect(question?.id).toBeTruthy();
+
+    const foreignOrganization = await prisma.organization.create({
+      data: {
+        name: `${TEST_ORG_NAME_PREFIX}${Date.now()}`
+      }
+    });
+
+    const foreignDocument = await prisma.document.create({
+      data: {
+        organizationId: foreignOrganization.id,
+        name: `${TEST_DOCUMENT_NAME_PREFIX}${Date.now()}-foreign`,
+        originalName: "foreign.txt",
+        mimeType: "text/plain",
+        status: "CHUNKED"
+      }
+    });
+
+    const foreignChunk = await prisma.documentChunk.create({
+      data: {
+        documentId: foreignDocument.id,
+        chunkIndex: 0,
+        content: "Foreign organization evidence."
+      }
+    });
+
+    const approvalResponse = await approvedAnswersCreateRoute(
+      new Request("http://localhost/api/approved-answers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          questionId: question?.id,
+          answerText: "Manual approved answer.",
+          citationChunkIds: [foreignChunk.id],
+          source: "MANUAL_EDIT"
+        })
+      })
+    );
+    const approvalPayload = (await approvalResponse.json()) as {
+      error?: {
+        code?: string;
+        message?: string;
+      };
+    };
+
+    expect(approvalResponse.status).toBe(400);
+    expect(approvalPayload.error?.code).toBe("VALIDATION_ERROR");
   });
 });

@@ -357,3 +357,107 @@ This log now tracks only the current MVP pivot and recent implementation work.
 
 - `npm test` => PASS
 - `npm run build` => PASS
+
+## 2026-02-25 - phase1: approval API routes
+
+### Added API routes
+
+- `POST /api/approved-answers`:
+  - create/upsert by `questionId`
+  - approves current generated answer+citation set by default
+  - updates `Question.reviewStatus` to `APPROVED`
+- `PATCH /api/approved-answers/:id`:
+  - edit approved answer text/citation chunk IDs
+  - enforces non-empty citations and org-scoped chunk ownership
+  - updates source to `MANUAL_EDIT`
+- `DELETE /api/approved-answers/:id`:
+  - removes approved override
+  - resets `Question.reviewStatus` to `DRAFT`
+- `POST /api/questions/:id/review`:
+  - sets review status to `NEEDS_REVIEW` or `DRAFT`
+
+### Validation & guardrails
+
+- no hardcoded questionnaire/document/question logic
+- strict validation:
+  - empty citations rejected with `400`
+  - chunk IDs must exist and belong to the same organization as the question
+- consistent structured error responses for new routes:
+  - `{ error: { code, message, details? } }`
+
+## 2026-02-25 - phase1: include approved answers in questionnaire payload
+
+### `GET /api/questionnaires/:id` payload extension
+
+- each question now includes:
+  - `reviewStatus`
+  - `approvedAnswer` (nullable):
+    - `id`
+    - `answerText`
+    - `citationChunkIds`
+    - `source`
+    - `note`
+    - `updatedAt`
+- implemented via Prisma `select/include` on the existing details query (no N+1).
+
+## 2026-02-25 - phase1: approval UI + export prefers approved
+
+### UI (`/questionnaires/[id]`)
+
+- added per-question:
+  - status badge (`Draft` / `Approved` / `Needs review`)
+  - Approve button (uses generated answer+citation set)
+  - Mark Needs Review + Mark Draft actions
+  - Unapprove action
+  - inline edit form for approved answer text + citation chunk IDs
+- filters updated to:
+  - `All`
+  - `Draft`
+  - `Approved`
+  - `Needs review`
+
+### Export behavior
+
+- `GET /api/questionnaires/:id/export` now supports:
+  - default `preferApproved`
+  - `mode=approvedOnly`
+  - `mode=generated`
+- `approvedOnly` exports blank answer/citations for non-approved rows.
+- questionnaire list UI now includes links for default, approved-only, and generated-only exports.
+
+## 2026-02-25 - phase1: approval workflow tests + docs
+
+### Tests
+
+- extended `src/app/api/questionnaires/workflow.test.ts` with deterministic integration coverage for:
+  - import -> autofill -> approve two -> edit one approved -> mark one needs review -> unapprove one
+  - export modes:
+    - `preferApproved`
+    - `approvedOnly`
+    - `generated`
+  - org-scope validation:
+    - approving with chunk IDs from a different org fails with `400 VALIDATION_ERROR`
+
+### Validation
+
+- `npm test` => PASS
+- `npm run build` => PASS
+
+## 2026-02-25 - chore: add autofill scorecard script
+
+### Added
+
+- `scripts/scorecard.ts`
+- `npm run scorecard -- <path-to-export.csv>`
+
+### Behavior
+
+- reads export CSV columns (`Category`, `Question`, `Answer`, `Citations`)
+- computes:
+  - `FOUND` / `PARTIAL` / `NOT_FOUND` counts
+  - citation compliance checks
+  - per-category breakdown
+- uses exact templates:
+  - `Not found in provided documents.`
+  - `Not specified in provided documents.`
+- outputs results to stdout and appends a dated entry to `docs/build-log.md`.
