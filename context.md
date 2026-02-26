@@ -1,5 +1,9 @@
 # Project Context
 
+## Phase Status
+
+- Phase 2: COMPLETE
+
 ## 1) Product Summary
 
 Security Questionnaire Autofill focused on **Trust & Consistency**.
@@ -229,6 +233,15 @@ Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now expl
   - requires non-NOT_FOUND answer and non-empty citations
   - citations must still exist and belong to the same organization
   - semantic reused rows and strict NOT_FOUND rows are never approved by this bulk action
+
+### Questionnaire UX fixes (latest)
+
+- Trust Bar autofill progress now advances during a run using per-question `updatedAt` timestamps:
+  - `Question.updatedAt` added and surfaced to questionnaire details payload.
+  - UI computes in-run progress as count of questions updated since run start, so reruns begin at `0/N` instead of showing stale previous totals.
+- Answer panel text output now suppresses question-echo prefixes in generated/approved content:
+  - if model output starts with a repeated question line (`Q: ...` / exact question text), UI strips that prefix and renders only the answer body.
+- Answer-panel action buttons (`Show Generated/Show Approved`, `Expand`, `Copy answer`) are forced to a single horizontal row to preserve vertical space for answer text.
 
 ## 4.1) UI Theme: D-Dark Shell
 

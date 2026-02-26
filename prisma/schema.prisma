@@ -93,6 +93,7 @@ model Question {
   reuseMatchType ReuseMatchType?
   reusedAt       DateTime?
   createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
   approvedAnswer  ApprovedAnswer?
 
   @@unique([questionnaireId, rowIndex])

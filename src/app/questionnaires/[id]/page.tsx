@@ -27,6 +27,7 @@ type QuestionRow = {
   text: string;
   answer: string | null;
   citations: Citation[];
+  updatedAt: string;
   reviewStatus: "DRAFT" | "APPROVED" | "NEEDS_REVIEW";
   reusedFromApprovedAnswerId: string | null;
   reuseMatchType: "EXACT" | "SEMANTIC" | null;
@@ -265,6 +266,48 @@ function statusLabel(status: QuestionRow["reviewStatus"]) {
     return "Needs review";
   }
   return "Draft";
+}
+
+function normalizedTextForCompare(value: string): string {
+  return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function stripLeadingQuestionEcho(answerText: string, questionText: string): string {
+  const trimmedAnswer = answerText.trim();
+  if (!trimmedAnswer) {
+    return "";
+  }
+
+  const lines = trimmedAnswer.split(/\r?\n/).map((line) => line.trim());
+  const nonEmptyLines = lines.filter((line) => line.length > 0);
+  if (nonEmptyLines.length === 0) {
+    return "";
+  }
+
+  const normalizedQuestion = normalizedTextForCompare(questionText);
+  if (!normalizedQuestion) {
+    return trimmedAnswer;
+  }
+
+  const firstLine = nonEmptyLines[0];
+  const normalizedFirstLine = normalizedTextForCompare(firstLine.replace(/^q(uestion)?\s*[:\-]\s*/i, ""));
+  if (normalizedFirstLine === normalizedQuestion) {
+    const remaining = nonEmptyLines.slice(1).join("\n").trim();
+    if (remaining.length > 0) {
+      return remaining.replace(/^a(nswer)?\s*[:\-]\s*/i, "").trim();
+    }
+  }
+
+  const answerWithoutInlinePrefix = trimmedAnswer.replace(/^q(uestion)?\s*[:\-]\s*/i, "").trim();
+  const inlineLower = answerWithoutInlinePrefix.toLowerCase();
+  if (inlineLower.startsWith(normalizedQuestion)) {
+    const afterQuestion = answerWithoutInlinePrefix.slice(normalizedQuestion.length).trim();
+    if (afterQuestion.length > 0) {
+      return afterQuestion.replace(/^a(nswer)?\s*[:\-]\s*/i, "").trim();
+    }
+  }
+
+  return trimmedAnswer;
 }
 
 function getReuseBadgeLabel(reuseMatchType: QuestionRow["reuseMatchType"]): string | null {
@@ -526,6 +569,7 @@ export default function QuestionnaireDetailsPage() {
                 : "DRAFT";
             return normalizedStatus;
           })(),
+          updatedAt: typeof question.updatedAt === "string" ? question.updatedAt : new Date(0).toISOString(),
           reusedFromApprovedAnswerId:
             typeof question.reusedFromApprovedAnswerId === "string" && question.reusedFromApprovedAnswerId.trim().length > 0
               ? question.reusedFromApprovedAnswerId
@@ -888,9 +932,11 @@ export default function QuestionnaireDetailsPage() {
   async function runAutofill() {
     setMessage("");
     setIsRunningAutofill(true);
+    const runStartedAtMs = Date.now();
+    const totalCount = data?.questionnaire.questionCount ?? 0;
     setAutofillProgress({
       answeredCount: 0,
-      totalCount: data?.questionnaire.questionCount ?? 0
+      totalCount
     });
 
     let pollTimer: number | null = null;
@@ -904,6 +950,18 @@ export default function QuestionnaireDetailsPage() {
       pollInFlight = true;
       try {
         const latest = await loadDetails({ silent: true });
+        if (latest) {
+          const processedCount = latest.questions.reduce((count, question) => {
+            const updatedAtMs = Number.isNaN(Date.parse(question.updatedAt))
+              ? 0
+              : new Date(question.updatedAt).getTime();
+            return updatedAtMs >= runStartedAtMs ? count + 1 : count;
+          }, 0);
+          setAutofillProgress({
+            answeredCount: Math.max(0, Math.min(totalCount, processedCount)),
+            totalCount
+          });
+        }
         return latest;
       } finally {
         pollInFlight = false;
@@ -934,14 +992,18 @@ export default function QuestionnaireDetailsPage() {
       }
 
       const latest = await pollDetails();
+      setAutofillProgress({
+        answeredCount: totalCount,
+        totalCount
+      });
       const embeddedCount = Number(embedPayload.embeddedCount ?? 0);
       const embeddingPrefix =
         embeddedCount > 0 ? `Embedded ${embeddedCount} pending chunk${embeddedCount === 1 ? "" : "s"}. ` : "";
       const answeredCount = latest?.questionnaire.answeredCount ?? payload.answeredCount ?? 0;
-      const totalCount = latest?.questionnaire.questionCount ?? payload.totalCount ?? 0;
+      const finalTotalCount = latest?.questionnaire.questionCount ?? payload.totalCount ?? 0;
       const notFoundCount = latest?.questionnaire.notFoundCount ?? payload.notFoundCount ?? 0;
       setMessage(
-        `${embeddingPrefix}Autofill complete: ${answeredCount}/${totalCount} answered, ${notFoundCount} not found.`
+        `${embeddingPrefix}Autofill complete: ${answeredCount}/${finalTotalCount} answered, ${notFoundCount} not found.`
       );
     } catch (error) {
       setMessage(`Autofill failed: ${error instanceof Error ? error.message : "Unknown error."}`);
@@ -1251,8 +1313,11 @@ export default function QuestionnaireDetailsPage() {
   });
 
   const activeEvidence = evidenceItems.find((item) => item.chunkId === activeEvidenceChunkId) ?? null;
-  const generatedAnswer = (selectedQuestion?.answer ?? "").trim() || "Not answered yet.";
-  const approvedAnswer = selectedQuestion?.approvedAnswer?.answerText ?? "";
+  const generatedAnswerRaw = (selectedQuestion?.answer ?? "").trim();
+  const approvedAnswerRaw = (selectedQuestion?.approvedAnswer?.answerText ?? "").trim();
+  const generatedAnswer =
+    stripLeadingQuestionEcho(generatedAnswerRaw, selectedQuestion?.text ?? "") || "Not answered yet.";
+  const approvedAnswer = stripLeadingQuestionEcho(approvedAnswerRaw, selectedQuestion?.text ?? "");
   const showingGeneratedComparison = Boolean(selectedQuestion?.approvedAnswer) && showGeneratedDraft;
   const effectiveAnswer = showingGeneratedComparison ? generatedAnswer : approvedAnswer || generatedAnswer;
   const citationReferenceRows = useMemo(
@@ -1686,7 +1751,7 @@ export default function QuestionnaireDetailsPage() {
                   <h3 style={{ margin: 0 }}>
                     {selectedQuestion.approvedAnswer && !showingGeneratedComparison ? "Approved Answer" : "Generated Draft"}
                   </h3>
-                  <div className="toolbar-row">
+                  <div className="toolbar-row" style={{ flexWrap: "nowrap", gap: 8 }}>
                     {selectedQuestion.approvedAnswer ? (
                       <Button
                         type="button"

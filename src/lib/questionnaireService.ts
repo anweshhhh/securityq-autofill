@@ -67,6 +67,7 @@ export type QuestionnaireDetails = {
     text: string;
     answer: string | null;
     citations: unknown;
+    updatedAt: Date;
     reviewStatus: "DRAFT" | "NEEDS_REVIEW" | "APPROVED";
     reusedFromApprovedAnswerId: string | null;
     reuseMatchType: "EXACT" | "SEMANTIC" | null;
@@ -194,6 +195,7 @@ export async function getQuestionnaireDetails(
           text: true,
           answer: true,
           citations: true,
+          updatedAt: true,
           reviewStatus: true,
           reusedFromApprovedAnswerId: true,
           reuseMatchType: true,

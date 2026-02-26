@@ -2,6 +2,24 @@
 
 Current log of implemented MVP work (concise, execution-focused).
 
+## Phase Status
+
+- Phase 2: COMPLETE
+
+## 2026-02-26 - questionnaire UX bugfixes (autofill progress + answer echo cleanup)
+
+- Fixed Trust Bar autofill progress behavior in `/questionnaires/[id]`:
+  - progress no longer stays at `0/N` during run.
+  - added `Question.updatedAt` (schema + migration) and wired progress to count questions updated since run start.
+  - reruns now start at `0/N` and advance based on current run updates rather than stale prior answered totals.
+- Fixed answer panel output cleanup:
+  - generated/approved text now strips leading repeated question prefixes (`Q:`/`Question:`/exact question line) and displays answer-only content.
+- Improved answer panel action layout density:
+  - `Show Generated/Show Approved`, `Expand`, and `Copy answer` remain horizontally aligned to preserve answer reading space.
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+
 ## 2026-02-26 - phase2-reuse-05 reuse metadata + bulk approve exact reused answers
 
 - Added `Question` reuse metadata in Prisma:
