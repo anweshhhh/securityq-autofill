@@ -68,6 +68,9 @@ export type QuestionnaireDetails = {
     answer: string | null;
     citations: unknown;
     reviewStatus: "DRAFT" | "NEEDS_REVIEW" | "APPROVED";
+    reusedFromApprovedAnswerId: string | null;
+    reuseMatchType: "EXACT" | "SEMANTIC" | null;
+    reusedAt: Date | null;
     approvedAnswer: {
       id: string;
       answerText: string;
@@ -101,6 +104,10 @@ function summarizeAnswers(answers: Array<string | null>): {
     notFoundCount,
     foundCount: Math.max(answeredCount - notFoundCount, 0)
   };
+}
+
+function toQuestionReuseMatchType(matchType: "exact" | "near_exact" | "semantic"): "EXACT" | "SEMANTIC" {
+  return matchType === "exact" ? "EXACT" : "SEMANTIC";
 }
 
 export async function importQuestionnaireFromCsv(input: ImportQuestionnaireInput) {
@@ -188,6 +195,9 @@ export async function getQuestionnaireDetails(
           answer: true,
           citations: true,
           reviewStatus: true,
+          reusedFromApprovedAnswerId: true,
+          reuseMatchType: true,
+          reusedAt: true,
           approvedAnswer: {
             select: {
               id: true,
@@ -340,6 +350,7 @@ export async function processQuestionnaireAutofillBatch(params: {
             questionText: question.text,
             debug: debugEnabled
           });
+    const reusedMatchType = answer.reusedFromApprovedMatchType ?? "exact";
 
     if (debugEnabled && answer.debug) {
       debugEntries.push({
@@ -354,7 +365,7 @@ export async function processQuestionnaireAutofillBatch(params: {
         questionId: question.id,
         rowIndex: question.rowIndex,
         reusedFromApprovedAnswerId: answer.reusedFromApprovedAnswerId,
-        matchType: answer.reusedFromApprovedMatchType ?? "exact"
+        matchType: reusedMatchType
       });
     }
 
@@ -389,6 +400,17 @@ export async function processQuestionnaireAutofillBatch(params: {
       data: {
         answer: answer.answer,
         citations: answer.citations,
+        ...(answer.reusedFromApprovedAnswerId
+          ? {
+              reusedFromApprovedAnswerId: answer.reusedFromApprovedAnswerId,
+              reuseMatchType: toQuestionReuseMatchType(reusedMatchType),
+              reusedAt: new Date()
+            }
+          : {
+              reusedFromApprovedAnswerId: null,
+              reuseMatchType: null,
+              reusedAt: null
+            }),
         ...(sourceRowUpdate ? { sourceRow: sourceRowUpdate } : {})
       }
     });

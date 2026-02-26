@@ -28,6 +28,9 @@ type QuestionRow = {
   answer: string | null;
   citations: Citation[];
   reviewStatus: "DRAFT" | "APPROVED" | "NEEDS_REVIEW";
+  reusedFromApprovedAnswerId: string | null;
+  reuseMatchType: "EXACT" | "SEMANTIC" | null;
+  reusedAt: string | null;
   approvedAnswer: ApprovedAnswer | null;
 };
 
@@ -62,12 +65,29 @@ type QuestionRailItem = {
   textPreview: string;
   reviewStatus: QuestionRow["reviewStatus"];
   notFound: boolean;
+  reuseMatchType: QuestionRow["reuseMatchType"];
 };
 
 type AutofillPayload = {
   totalCount?: number;
   answeredCount?: number;
   notFoundCount?: number;
+  error?: unknown;
+};
+
+type EmbedPayload = {
+  embeddedCount?: number;
+  error?: unknown;
+};
+
+type AutofillProgressState = {
+  answeredCount: number;
+  totalCount: number;
+};
+
+type ApproveReusedPayload = {
+  approvedCount?: number;
+  skippedCount?: number;
   error?: unknown;
 };
 
@@ -247,6 +267,30 @@ function statusLabel(status: QuestionRow["reviewStatus"]) {
   return "Draft";
 }
 
+function getReuseBadgeLabel(reuseMatchType: QuestionRow["reuseMatchType"]): string | null {
+  if (reuseMatchType === "EXACT") {
+    return "Reused (exact)";
+  }
+
+  if (reuseMatchType === "SEMANTIC") {
+    return "Reused (semantic)";
+  }
+
+  return null;
+}
+
+function getReuseBadgeTone(reuseMatchType: QuestionRow["reuseMatchType"]): "approved" | "review" | null {
+  if (reuseMatchType === "EXACT") {
+    return "approved";
+  }
+
+  if (reuseMatchType === "SEMANTIC") {
+    return "review";
+  }
+
+  return null;
+}
+
 function getGeneratedEvidenceItems(question: QuestionRow): EvidenceItem[] {
   return question.citations.map((citation) => ({
     chunkId: citation.chunkId,
@@ -406,6 +450,11 @@ const QuestionRailItemButton = memo(function QuestionRailItemButton({
           <Badge tone={statusTone(item.reviewStatus)} title={statusLabel(item.reviewStatus)}>
             {statusLabel(item.reviewStatus)}
           </Badge>
+          {item.reuseMatchType ? (
+            <Badge tone={getReuseBadgeTone(item.reuseMatchType) ?? "draft"}>
+              {getReuseBadgeLabel(item.reuseMatchType)}
+            </Badge>
+          ) : null}
           {item.notFound ? <Badge tone="notfound">Not found</Badge> : null}
         </div>
       </div>
@@ -431,9 +480,11 @@ export default function QuestionnaireDetailsPage() {
   const [isAnswerExpanded, setIsAnswerExpanded] = useState(false);
   const [showGeneratedDraft, setShowGeneratedDraft] = useState(false);
   const [isRunningAutofill, setIsRunningAutofill] = useState(false);
+  const [autofillProgress, setAutofillProgress] = useState<AutofillProgressState | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isBulkConfirmOpen, setIsBulkConfirmOpen] = useState(false);
   const [isBulkApproving, setIsBulkApproving] = useState(false);
+  const [isApprovingReusedExact, setIsApprovingReusedExact] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [documentIdByName, setDocumentIdByName] = useState<Record<string, string>>({});
   const [isDocumentModalOpen, setIsDocumentModalOpen] = useState(false);
@@ -447,44 +498,68 @@ export default function QuestionnaireDetailsPage() {
   const documentModalRef = useRef<HTMLDivElement | null>(null);
   const deferredSearchText = useDeferredValue(searchText);
 
-  const loadDetails = useCallback(async () => {
-    setIsLoading(true);
-    setMessage("");
-
-    try {
-      const response = await fetch(`/api/questionnaires/${questionnaireId}`, {
-        cache: "no-store"
-      });
-      const payload = (await response.json()) as QuestionnaireDetailsPayload;
-
-      if (!response.ok) {
-        throw new Error(getApiErrorMessage(payload, "Failed to load questionnaire"));
+  const loadDetails = useCallback(
+    async (options?: { silent?: boolean }) => {
+      const silent = options?.silent === true;
+      if (!silent) {
+        setIsLoading(true);
+        setMessage("");
       }
 
-      const normalizedQuestions = (payload.questions ?? []).map((question) => ({
-        ...question,
-        citations: normalizeCitations(question.citations),
-        reviewStatus: (() => {
-          const normalizedStatus: QuestionRow["reviewStatus"] =
-            question.reviewStatus === "APPROVED" || question.reviewStatus === "NEEDS_REVIEW"
-              ? question.reviewStatus
-              : "DRAFT";
-          return normalizedStatus;
-        })(),
-        approvedAnswer: normalizeApprovedAnswer(question.approvedAnswer)
-      }));
+      try {
+        const response = await fetch(`/api/questionnaires/${questionnaireId}`, {
+          cache: "no-store"
+        });
+        const payload = (await response.json()) as QuestionnaireDetailsPayload;
 
-      setData({
-        questionnaire: payload.questionnaire,
-        questions: normalizedQuestions
-      });
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to load questionnaire");
-      setData(null);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [questionnaireId]);
+        if (!response.ok) {
+          throw new Error(getApiErrorMessage(payload, "Failed to load questionnaire"));
+        }
+
+        const normalizedQuestions = (payload.questions ?? []).map((question) => ({
+          ...question,
+          citations: normalizeCitations(question.citations),
+          reviewStatus: (() => {
+            const normalizedStatus: QuestionRow["reviewStatus"] =
+              question.reviewStatus === "APPROVED" || question.reviewStatus === "NEEDS_REVIEW"
+                ? question.reviewStatus
+                : "DRAFT";
+            return normalizedStatus;
+          })(),
+          reusedFromApprovedAnswerId:
+            typeof question.reusedFromApprovedAnswerId === "string" && question.reusedFromApprovedAnswerId.trim().length > 0
+              ? question.reusedFromApprovedAnswerId
+              : null,
+          reuseMatchType:
+            question.reuseMatchType === "EXACT" || question.reuseMatchType === "SEMANTIC"
+              ? question.reuseMatchType
+              : null,
+          reusedAt:
+            typeof question.reusedAt === "string" && question.reusedAt.trim().length > 0 ? question.reusedAt : null,
+          approvedAnswer: normalizeApprovedAnswer(question.approvedAnswer)
+        }));
+
+        const normalizedPayload: QuestionnaireDetailsPayload = {
+          questionnaire: payload.questionnaire,
+          questions: normalizedQuestions
+        };
+
+        setData(normalizedPayload);
+        return normalizedPayload;
+      } catch (error) {
+        if (!silent) {
+          setMessage(error instanceof Error ? error.message : "Failed to load questionnaire");
+          setData(null);
+        }
+        return null;
+      } finally {
+        if (!silent) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [questionnaireId]
+  );
 
   useEffect(() => {
     if (questionnaireId) {
@@ -601,7 +676,8 @@ export default function QuestionnaireDetailsPage() {
           rowIndex: question.rowIndex,
           textPreview: toQuestionPreview(question.text),
           reviewStatus: question.reviewStatus,
-          notFound: isNotFoundAnswer(question.answer)
+          notFound: isNotFoundAnswer(question.answer),
+          reuseMatchType: question.reuseMatchType
         };
       })
       .filter((item): item is QuestionRailItem => Boolean(item));
@@ -623,6 +699,20 @@ export default function QuestionnaireDetailsPage() {
     });
   }, [visibleQuestions]);
 
+  const exactReusedEligibleQuestions = useMemo(() => {
+    return (data?.questions ?? []).filter((question) => {
+      if (question.reviewStatus === "APPROVED") {
+        return false;
+      }
+
+      if (question.reuseMatchType !== "EXACT" || !question.reusedFromApprovedAnswerId) {
+        return false;
+      }
+
+      return !isNotFoundAnswer(question.answer) && extractCitationChunkIds(question).length > 0;
+    });
+  }, [data?.questions]);
+
   const approvedProgress = useMemo(() => {
     if (statusCounts.ALL === 0) {
       return 0;
@@ -630,6 +720,16 @@ export default function QuestionnaireDetailsPage() {
 
     return Math.round((statusCounts.APPROVED / statusCounts.ALL) * 100);
   }, [statusCounts]);
+
+  const autofillProgressPercent = useMemo(() => {
+    const totalCount = Number(autofillProgress?.totalCount ?? 0);
+    if (totalCount <= 0) {
+      return 0;
+    }
+
+    const answeredCount = Number(autofillProgress?.answeredCount ?? 0);
+    return Math.max(0, Math.min(100, Math.round((answeredCount / totalCount) * 100)));
+  }, [autofillProgress]);
 
   const showLoadingSkeletons = isLoading && !data;
 
@@ -788,8 +888,43 @@ export default function QuestionnaireDetailsPage() {
   async function runAutofill() {
     setMessage("");
     setIsRunningAutofill(true);
+    setAutofillProgress({
+      answeredCount: 0,
+      totalCount: data?.questionnaire.questionCount ?? 0
+    });
+
+    let pollTimer: number | null = null;
+    let pollInFlight = false;
+    let pollingStopped = false;
+    const pollDetails = async () => {
+      if (pollInFlight || pollingStopped) {
+        return null;
+      }
+
+      pollInFlight = true;
+      try {
+        const latest = await loadDetails({ silent: true });
+        return latest;
+      } finally {
+        pollInFlight = false;
+      }
+    };
 
     try {
+      pollTimer = window.setInterval(() => {
+        void pollDetails();
+      }, 1000);
+
+      const embedResponse = await fetch("/api/documents/embed", {
+        method: "POST"
+      });
+      const embedPayload = (await embedResponse.json().catch(() => ({}))) as EmbedPayload;
+      if (!embedResponse.ok) {
+        throw new Error(
+          `Embedding step failed: ${getApiErrorMessage(embedPayload, "Failed to embed document chunks.")}`
+        );
+      }
+
       const response = await fetch(`/api/questionnaires/${questionnaireId}/autofill`, {
         method: "POST"
       });
@@ -798,14 +933,26 @@ export default function QuestionnaireDetailsPage() {
         throw new Error(getApiErrorMessage(payload, "Autofill failed."));
       }
 
+      const latest = await pollDetails();
+      const embeddedCount = Number(embedPayload.embeddedCount ?? 0);
+      const embeddingPrefix =
+        embeddedCount > 0 ? `Embedded ${embeddedCount} pending chunk${embeddedCount === 1 ? "" : "s"}. ` : "";
+      const answeredCount = latest?.questionnaire.answeredCount ?? payload.answeredCount ?? 0;
+      const totalCount = latest?.questionnaire.questionCount ?? payload.totalCount ?? 0;
+      const notFoundCount = latest?.questionnaire.notFoundCount ?? payload.notFoundCount ?? 0;
       setMessage(
-        `Autofill complete: ${payload.answeredCount ?? 0}/${payload.totalCount ?? 0} answered, ${payload.notFoundCount ?? 0} not found.`
+        `${embeddingPrefix}Autofill complete: ${answeredCount}/${totalCount} answered, ${notFoundCount} not found.`
       );
-      await loadDetails();
     } catch (error) {
       setMessage(`Autofill failed: ${error instanceof Error ? error.message : "Unknown error."}`);
     } finally {
+      pollingStopped = true;
+      if (pollTimer !== null) {
+        window.clearInterval(pollTimer);
+      }
+      await loadDetails({ silent: true });
       setIsRunningAutofill(false);
+      setAutofillProgress(null);
     }
   }
 
@@ -860,6 +1007,45 @@ export default function QuestionnaireDetailsPage() {
     }
 
     await loadDetails();
+  }
+
+  async function approveExactReusedQuestions() {
+    if (exactReusedEligibleQuestions.length === 0) {
+      setMessage("No exact reused questions are eligible for approval.");
+      return;
+    }
+
+    setMessage("");
+    setIsApprovingReusedExact(true);
+
+    try {
+      const response = await fetch(`/api/questionnaires/${questionnaireId}/approve-reused`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          mode: "exactOnly"
+        })
+      });
+      const payload = (await response.json()) as ApproveReusedPayload;
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(payload, "Failed to approve reused exact questions."));
+      }
+
+      const approvedCount = Number(payload.approvedCount ?? 0);
+      const skippedCount = Number(payload.skippedCount ?? 0);
+      setMessage(
+        skippedCount > 0
+          ? `Approved ${approvedCount} reused exact question${approvedCount === 1 ? "" : "s"}. Skipped ${skippedCount}.`
+          : `Approved ${approvedCount} reused exact question${approvedCount === 1 ? "" : "s"}.`
+      );
+      await loadDetails();
+    } catch (error) {
+      setMessage(`Approve reused exact failed: ${error instanceof Error ? error.message : "Unknown error."}`);
+    } finally {
+      setIsApprovingReusedExact(false);
+    }
   }
 
   const approveQuestion = useCallback(async (question: QuestionRow) => {
@@ -1191,19 +1377,25 @@ export default function QuestionnaireDetailsPage() {
         return;
       }
 
-      if (key === "a" && selectedQuestion && selectedQuestionApprovalCandidate && !isBulkApproving) {
+      if (key === "a" && selectedQuestion && selectedQuestionApprovalCandidate && !isBulkApproving && !isApprovingReusedExact) {
         event.preventDefault();
         void approveQuestion(selectedQuestion);
         return;
       }
 
-      if (key === "r" && selectedQuestion && !isBulkApproving && selectedQuestion.reviewStatus !== "NEEDS_REVIEW") {
+      if (
+        key === "r" &&
+        selectedQuestion &&
+        !isBulkApproving &&
+        !isApprovingReusedExact &&
+        selectedQuestion.reviewStatus !== "NEEDS_REVIEW"
+      ) {
         event.preventDefault();
         void updateReviewStatus(selectedQuestion.id, "NEEDS_REVIEW");
         return;
       }
 
-      if (key === "u" && selectedQuestion?.approvedAnswer && !isBulkApproving) {
+      if (key === "u" && selectedQuestion?.approvedAnswer && !isBulkApproving && !isApprovingReusedExact) {
         event.preventDefault();
         void unapprove(selectedQuestion.approvedAnswer.id, selectedQuestion.id);
         return;
@@ -1230,6 +1422,7 @@ export default function QuestionnaireDetailsPage() {
     filteredQuestionIds,
     isBulkConfirmOpen,
     isBulkApproving,
+    isApprovingReusedExact,
     isDocumentModalOpen,
     isShortcutsOpen,
     selectedQuestion,
@@ -1271,7 +1464,7 @@ export default function QuestionnaireDetailsPage() {
               type="button"
               variant="primary"
               onClick={() => setIsBulkConfirmOpen(true)}
-              disabled={isLoading || isBulkApproving || bulkEligibleQuestions.length === 0}
+              disabled={isLoading || isBulkApproving || isApprovingReusedExact || bulkEligibleQuestions.length === 0}
               title="Approve all currently visible eligible questions"
               aria-label="Approve visible eligible questions"
             >
@@ -1280,12 +1473,42 @@ export default function QuestionnaireDetailsPage() {
             <Button
               type="button"
               variant="secondary"
+              onClick={() => void approveExactReusedQuestions()}
+              disabled={
+                isLoading ||
+                isBulkApproving ||
+                isApprovingReusedExact ||
+                isRunningAutofill ||
+                exactReusedEligibleQuestions.length === 0
+              }
+              title="Approve only exact-match reused answers with valid citations"
+              aria-label="Approve reused exact answers"
+            >
+              {isApprovingReusedExact
+                ? "Approving reused..."
+                : `Approve Reused (Exact) (${exactReusedEligibleQuestions.length})`}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              className="btn-progress"
               onClick={() => void runAutofill()}
-              disabled={isRunningAutofill || isBulkApproving}
+              disabled={isRunningAutofill || isBulkApproving || isApprovingReusedExact}
               title="Run autofill for this questionnaire"
               aria-label="Run autofill for questionnaire"
             >
-              {isRunningAutofill ? "Running..." : "Run Autofill"}
+              {isRunningAutofill ? (
+                <span className="btn-progress-content" aria-live="polite">
+                  <span className="btn-progress-track" aria-hidden="true">
+                    <span className="btn-progress-fill" style={{ width: `${autofillProgressPercent}%` }} />
+                  </span>
+                  <span className="btn-progress-label">
+                    Running {autofillProgress?.answeredCount ?? 0}/{autofillProgress?.totalCount ?? 0}
+                  </span>
+                </span>
+              ) : (
+                "Run Autofill"
+              )}
             </Button>
             <Button
               type="button"
@@ -1432,9 +1655,16 @@ export default function QuestionnaireDetailsPage() {
               <div className="card-title-row">
                 <div>
                   <h3 style={{ marginBottom: 6 }}>Question</h3>
-                  <Badge tone={statusTone(selectedQuestion.reviewStatus)} title={statusLabel(selectedQuestion.reviewStatus)}>
-                    {statusLabel(selectedQuestion.reviewStatus)}
-                  </Badge>
+                  <div className="toolbar-row compact">
+                    <Badge tone={statusTone(selectedQuestion.reviewStatus)} title={statusLabel(selectedQuestion.reviewStatus)}>
+                      {statusLabel(selectedQuestion.reviewStatus)}
+                    </Badge>
+                    {selectedQuestion.reuseMatchType ? (
+                      <Badge tone={getReuseBadgeTone(selectedQuestion.reuseMatchType) ?? "draft"}>
+                        {getReuseBadgeLabel(selectedQuestion.reuseMatchType)}
+                      </Badge>
+                    ) : null}
+                  </div>
                 </div>
                 <span className="small muted">Row {selectedQuestion.rowIndex + 1}</span>
               </div>
@@ -1443,6 +1673,12 @@ export default function QuestionnaireDetailsPage() {
                 <p className="workbench-question-text" style={{ margin: 0 }}>
                   {selectedQuestion.text || "No question text available."}
                 </p>
+                {selectedQuestion.reuseMatchType ? (
+                  <p className="small muted" style={{ margin: "8px 0 0" }}>
+                    {getReuseBadgeLabel(selectedQuestion.reuseMatchType)}
+                    {selectedQuestion.reusedAt ? ` at ${new Date(selectedQuestion.reusedAt).toLocaleString()}` : ""}
+                  </p>
+                ) : null}
               </Card>
 
               <Card style={{ marginTop: 12 }}>
@@ -1500,7 +1736,10 @@ export default function QuestionnaireDetailsPage() {
                     variant="primary"
                     onClick={() => void approveQuestion(selectedQuestion)}
                     disabled={
-                      activeQuestionActionId === selectedQuestion.id || isBulkApproving || !selectedQuestionApprovalCandidate
+                      activeQuestionActionId === selectedQuestion.id ||
+                      isBulkApproving ||
+                      isApprovingReusedExact ||
+                      !selectedQuestionApprovalCandidate
                     }
                     aria-label="Approve selected answer"
                   >
@@ -1513,6 +1752,7 @@ export default function QuestionnaireDetailsPage() {
                     disabled={
                       activeQuestionActionId === selectedQuestion.id ||
                       isBulkApproving ||
+                      isApprovingReusedExact ||
                       selectedQuestion.reviewStatus === "NEEDS_REVIEW"
                     }
                     aria-label="Mark selected question as needs review"
@@ -1526,6 +1766,7 @@ export default function QuestionnaireDetailsPage() {
                     disabled={
                       activeQuestionActionId === selectedQuestion.id ||
                       isBulkApproving ||
+                      isApprovingReusedExact ||
                       selectedQuestion.reviewStatus === "DRAFT"
                     }
                     aria-label="Mark selected question as draft"
@@ -1540,7 +1781,12 @@ export default function QuestionnaireDetailsPage() {
                         void unapprove(selectedQuestion.approvedAnswer.id, selectedQuestion.id);
                       }
                     }}
-                    disabled={activeQuestionActionId === selectedQuestion.id || isBulkApproving || !selectedQuestion.approvedAnswer}
+                    disabled={
+                      activeQuestionActionId === selectedQuestion.id ||
+                      isBulkApproving ||
+                      isApprovingReusedExact ||
+                      !selectedQuestion.approvedAnswer
+                    }
                     aria-label="Remove selected approval"
                   >
                     Unapprove
@@ -1564,11 +1810,20 @@ export default function QuestionnaireDetailsPage() {
                             type="button"
                             variant="primary"
                             onClick={() => void saveEditedApproval(selectedQuestion)}
-                            disabled={activeQuestionActionId === selectedQuestion.id || isBulkApproving}
+                            disabled={
+                              activeQuestionActionId === selectedQuestion.id ||
+                              isBulkApproving ||
+                              isApprovingReusedExact
+                            }
                           >
                             Save approved edit
                           </Button>
-                          <Button type="button" variant="ghost" onClick={cancelEdit} disabled={isBulkApproving}>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={cancelEdit}
+                            disabled={isBulkApproving || isApprovingReusedExact}
+                          >
                             Cancel
                           </Button>
                         </div>
@@ -1604,7 +1859,7 @@ export default function QuestionnaireDetailsPage() {
                 </button>
                 <button
                   type="button"
-                  className="mini-chip-icon-action has-tooltip"
+                  className="mini-chip-icon-action has-tooltip tooltip-below"
                   onClick={() => void copyText(activeEvidence?.snippet ?? "", "Selected snippet copied.")}
                   disabled={!activeEvidence?.snippet}
                   title="Copy selected snippet"
@@ -1616,7 +1871,7 @@ export default function QuestionnaireDetailsPage() {
                 </button>
                 <button
                   type="button"
-                  className="mini-chip-icon-action has-tooltip"
+                  className="mini-chip-icon-action has-tooltip tooltip-below"
                   onClick={() => void copyText(evidencePackText, "Evidence pack copied.")}
                   disabled={citationReferenceRows.length === 0}
                   title="Copy evidence pack"
@@ -1700,10 +1955,20 @@ export default function QuestionnaireDetailsPage() {
               Only questions with non-NOT_FOUND answers and non-empty citations are eligible.
             </p>
             <div className="toolbar-row">
-              <Button type="button" variant="primary" onClick={() => void approveVisibleQuestions()} disabled={isBulkApproving}>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => void approveVisibleQuestions()}
+                disabled={isBulkApproving || isApprovingReusedExact}
+              >
                 Confirm Approve Visible
               </Button>
-              <Button type="button" variant="ghost" onClick={() => setIsBulkConfirmOpen(false)} disabled={isBulkApproving}>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setIsBulkConfirmOpen(false)}
+                disabled={isBulkApproving || isApprovingReusedExact}
+              >
                 Cancel
               </Button>
             </div>

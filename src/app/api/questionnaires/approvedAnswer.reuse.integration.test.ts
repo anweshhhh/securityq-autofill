@@ -7,6 +7,8 @@ import { POST as embedRoute } from "@/app/api/documents/embed/route";
 import { POST as importRoute } from "@/app/api/questionnaires/import/route";
 import { POST as autofillRoute } from "@/app/api/questionnaires/[id]/autofill/route";
 import { POST as approvedAnswersCreateRoute } from "@/app/api/approved-answers/route";
+import { GET as questionnaireDetailsRoute } from "@/app/api/questionnaires/[id]/route";
+import { POST as approveReusedRoute } from "@/app/api/questionnaires/[id]/approve-reused/route";
 
 const {
   createEmbeddingMock,
@@ -45,6 +47,7 @@ const A_Q4_RPO = "What is your RPO for critical systems?";
 const A_Q5_SOC2 = "Do you have a SOC 2 Type II report and which Trust Services Criteria are covered?";
 const A_Q6_ISO = "Are you ISO 27001 certified?";
 
+const B_Q2_MFA_SEMANTIC = "Is MFA mandatory for administrator console access?";
 const B_Q5_DR = "Do you perform disaster recovery testing? How often?";
 const B_Q6_FEDRAMP = "What FedRAMP authorization level has been granted?";
 const B_Q7_ISO = A_Q6_ISO;
@@ -60,6 +63,10 @@ type QuestionRow = {
   text: string;
   answer: string | null;
   citations: unknown;
+  reviewStatus: "DRAFT" | "NEEDS_REVIEW" | "APPROVED";
+  reusedFromApprovedAnswerId: string | null;
+  reuseMatchType: "EXACT" | "SEMANTIC" | null;
+  reusedAt: Date | null;
 };
 
 type AutofillPayload = {
@@ -294,9 +301,55 @@ async function getQuestionRows(questionnaireId: string): Promise<QuestionRow[]> 
       id: true,
       text: true,
       answer: true,
-      citations: true
+      citations: true,
+      reviewStatus: true,
+      reusedFromApprovedAnswerId: true,
+      reuseMatchType: true,
+      reusedAt: true
     }
   });
+}
+
+async function getQuestionnaireDetails(questionnaireId: string) {
+  const response = await questionnaireDetailsRoute(new Request(`http://localhost/api/questionnaires/${questionnaireId}`), {
+    params: { id: questionnaireId }
+  });
+  expect(response.status).toBe(200);
+  return (await response.json()) as {
+    questions: Array<{
+      id: string;
+      text: string;
+      reusedFromApprovedAnswerId?: string | null;
+      reuseMatchType?: "EXACT" | "SEMANTIC" | null;
+      reusedAt?: string | null;
+      reviewStatus?: "DRAFT" | "NEEDS_REVIEW" | "APPROVED";
+    }>;
+  };
+}
+
+async function approveReusedExact(questionnaireId: string) {
+  const response = await approveReusedRoute(
+    new Request(`http://localhost/api/questionnaires/${questionnaireId}/approve-reused`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        mode: "exactOnly"
+      })
+    }),
+    {
+      params: {
+        id: questionnaireId
+      }
+    }
+  );
+  expect(response.status).toBe(200);
+  return (await response.json()) as {
+    approvedCount?: number;
+    skippedCount?: number;
+    exactReusedCount?: number;
+  };
 }
 
 async function approveQuestionsWithCitations(questionnaireId: string, questionTexts: string[]) {
@@ -534,7 +587,7 @@ describe.sequential("approved answer reuse integration", () => {
 
     const questionnaireBId = await importQuestionnaire("B", [
       A_Q1_TLS,
-      A_Q2_MFA,
+      B_Q2_MFA_SEMANTIC,
       A_Q3_AES,
       A_Q4_RPO,
       B_Q5_DR,
@@ -553,7 +606,8 @@ describe.sequential("approved answer reuse integration", () => {
       autofillB.reusedFromApprovedAnswers.map((entry) => [entry.questionId, entry.reusedFromApprovedAnswerId])
     );
 
-    for (const overlappingQuestionText of [A_Q1_TLS, A_Q2_MFA, A_Q3_AES, A_Q4_RPO]) {
+    const exactOverlaps = [A_Q1_TLS, A_Q3_AES, A_Q4_RPO];
+    for (const overlappingQuestionText of exactOverlaps) {
       const row = bByText.get(overlappingQuestionText);
       const approved = approvedFromA.get(overlappingQuestionText);
       expect(row, `Missing B row for overlap question "${overlappingQuestionText}"`).toBeTruthy();
@@ -564,6 +618,11 @@ describe.sequential("approved answer reuse integration", () => {
       expect(reusedApprovedId).toBe(approved?.approvedAnswerId);
 
       expect(row?.answer).toBe(approved?.answerText);
+      expect(row?.reusedFromApprovedAnswerId).toBe(approved?.approvedAnswerId);
+      expect(row?.reuseMatchType).toBe("EXACT");
+      expect(row?.reusedAt).toBeTruthy();
+      expect(row?.reviewStatus).not.toBe("APPROVED");
+
       const citationChunkIds = normalizeCitations(row?.citations).map((citation) => citation.chunkId);
       expect(citationChunkIds.length).toBeGreaterThan(0);
       expect(citationChunkIds).toEqual(approved?.citationChunkIds);
@@ -573,6 +632,43 @@ describe.sequential("approved answer reuse integration", () => {
         contextLabel: overlappingQuestionText
       });
     }
+
+    const semanticRow = bByText.get(B_Q2_MFA_SEMANTIC);
+    const approvedMfa = approvedFromA.get(A_Q2_MFA);
+    expect(semanticRow, `Missing B row for semantic overlap question "${B_Q2_MFA_SEMANTIC}"`).toBeTruthy();
+    expect(approvedMfa, `Missing approved answer from A for "${A_Q2_MFA}"`).toBeTruthy();
+
+    const semanticReusedApprovedId = reusedByQuestionId.get(semanticRow?.id as string);
+    expect(semanticReusedApprovedId).toBeTruthy();
+    expect(semanticReusedApprovedId).toBe(approvedMfa?.approvedAnswerId);
+    expect(semanticRow?.answer).toBe(approvedMfa?.answerText);
+    expect(semanticRow?.reusedFromApprovedAnswerId).toBe(approvedMfa?.approvedAnswerId);
+    expect(semanticRow?.reuseMatchType).toBe("SEMANTIC");
+    expect(semanticRow?.reusedAt).toBeTruthy();
+    expect(semanticRow?.reviewStatus).not.toBe("APPROVED");
+
+    const semanticCitationChunkIds = normalizeCitations(semanticRow?.citations).map((citation) => citation.chunkId);
+    expect(semanticCitationChunkIds.length).toBeGreaterThan(0);
+    expect(semanticCitationChunkIds).toEqual(approvedMfa?.citationChunkIds);
+    await assertCitationChunkOwnership({
+      organizationId: isolatedOrgId,
+      chunkIds: semanticCitationChunkIds,
+      contextLabel: B_Q2_MFA_SEMANTIC
+    });
+
+    const detailsBeforeBulkApprove = await getQuestionnaireDetails(questionnaireBId);
+    const detailsBeforeBulkApproveById = new Map(detailsBeforeBulkApprove.questions.map((row) => [row.id, row]));
+    for (const questionText of exactOverlaps) {
+      const row = bByText.get(questionText);
+      const detail = detailsBeforeBulkApproveById.get(row?.id as string);
+      expect(detail?.reusedFromApprovedAnswerId).toBeTruthy();
+      expect(detail?.reuseMatchType).toBe("EXACT");
+      expect(detail?.reusedAt).toBeTruthy();
+    }
+    const semanticDetail = detailsBeforeBulkApproveById.get(semanticRow?.id as string);
+    expect(semanticDetail?.reusedFromApprovedAnswerId).toBeTruthy();
+    expect(semanticDetail?.reuseMatchType).toBe("SEMANTIC");
+    expect(semanticDetail?.reusedAt).toBeTruthy();
 
     for (const nonOverlappingQuestionText of [B_Q5_DR, B_Q6_FEDRAMP]) {
       const row = bByText.get(nonOverlappingQuestionText);
@@ -597,6 +693,19 @@ describe.sequential("approved answer reuse integration", () => {
     expect(reusedByQuestionId.has(isoB?.id as string)).toBe(false);
     expect(isoB?.answer).toBe(NOT_FOUND_TEXT);
     expect(normalizeCitations(isoB?.citations)).toEqual([]);
+
+    const approveReusedExactResult = await approveReusedExact(questionnaireBId);
+    expect(approveReusedExactResult.exactReusedCount).toBe(3);
+    expect(approveReusedExactResult.approvedCount).toBe(3);
+
+    const bRowsAfterBulkApprove = await getQuestionRows(questionnaireBId);
+    const bAfterBulkApproveByText = new Map(bRowsAfterBulkApprove.map((row) => [row.text, row]));
+    for (const exactQuestionText of exactOverlaps) {
+      expect(bAfterBulkApproveByText.get(exactQuestionText)?.reviewStatus).toBe("APPROVED");
+    }
+    expect(bAfterBulkApproveByText.get(B_Q2_MFA_SEMANTIC)?.reviewStatus).not.toBe("APPROVED");
+    expect(bAfterBulkApproveByText.get(B_Q7_ISO)?.answer).toBe(NOT_FOUND_TEXT);
+    expect(bAfterBulkApproveByText.get(B_Q7_ISO)?.reviewStatus).not.toBe("APPROVED");
 
     const deletedChunkId = approvedFromA.get(A_Q1_TLS)?.citationChunkIds[0];
     expect(deletedChunkId).toBeTruthy();

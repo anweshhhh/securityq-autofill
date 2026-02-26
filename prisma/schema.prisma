@@ -24,6 +24,11 @@ enum ApprovedAnswerSource {
   MANUAL_EDIT
 }
 
+enum ReuseMatchType {
+  EXACT
+  SEMANTIC
+}
+
 model Organization {
   id              String            @id @default(cuid())
   name            String
@@ -84,10 +89,14 @@ model Question {
   answer          String?
   citations       Json
   reviewStatus    QuestionReviewStatus @default(DRAFT)
+  reusedFromApprovedAnswerId String?
+  reuseMatchType ReuseMatchType?
+  reusedAt       DateTime?
   createdAt       DateTime             @default(now())
   approvedAnswer  ApprovedAnswer?
 
   @@unique([questionnaireId, rowIndex])
+  @@index([questionnaireId, reuseMatchType])
 }
 
 model ApprovedAnswer {

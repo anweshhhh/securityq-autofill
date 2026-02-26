@@ -217,6 +217,18 @@ Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now expl
 - Autofill result now includes reuse metadata for downstream UI:
   - `reusedCount`
   - `reusedFromApprovedAnswers[]` with `{ questionId, rowIndex, reusedFromApprovedAnswerId, matchType }`
+- Question-level reuse metadata is now persisted on `Question` during autofill:
+  - `reusedFromApprovedAnswerId`
+  - `reuseMatchType` (`EXACT | SEMANTIC`)
+  - `reusedAt`
+- Reuse does not auto-approve:
+  - reused answers keep normal review flow (no automatic `reviewStatus=APPROVED`)
+- Bulk trust action for exact reused rows:
+  - `POST /api/questionnaires/:id/approve-reused` with `{ mode: "exactOnly" }`
+  - approves only rows with `reuseMatchType=EXACT`
+  - requires non-NOT_FOUND answer and non-empty citations
+  - citations must still exist and belong to the same organization
+  - semantic reused rows and strict NOT_FOUND rows are never approved by this bulk action
 
 ## 4.1) UI Theme: D-Dark Shell
 

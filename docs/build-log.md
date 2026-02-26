@@ -2,6 +2,32 @@
 
 Current log of implemented MVP work (concise, execution-focused).
 
+## 2026-02-26 - phase2-reuse-05 reuse metadata + bulk approve exact reused answers
+
+- Added `Question` reuse metadata in Prisma:
+  - `reusedFromApprovedAnswerId` (nullable)
+  - `reuseMatchType` (`EXACT | SEMANTIC`, nullable)
+  - `reusedAt` (nullable)
+- Added migration:
+  - `prisma/migrations/20260226235500_phase2_reuse_metadata_bulk_approve/migration.sql`
+- Autofill write path now persists reuse metadata when approved-answer reuse is selected and clears it when not reused.
+- Reuse remains non-auto-approval:
+  - autofill does not set `reviewStatus=APPROVED` for reused rows.
+- Added API bulk action:
+  - `POST /api/questionnaires/[id]/approve-reused` with body `{ mode: "exactOnly" }`
+  - approves only exact reused rows with non-NOT_FOUND answers and valid org-owned citations.
+- Questionnaire details API now includes reuse metadata per question via `GET /api/questionnaires/[id]`.
+- Updated `/questionnaires/[id]` UI:
+  - shows `Reused (exact)` / `Reused (semantic)` badges in question rail and selected question panel.
+  - added Trust Bar action: `Approve Reused (Exact) (N)`.
+  - success banner reports approved/skipped counts from bulk action.
+- Extended reuse integration coverage:
+  - `src/app/api/questionnaires/approvedAnswer.reuse.integration.test.ts`
+  - asserts metadata persistence + API exposure, exact-only bulk approval behavior, semantic rows remain unapproved, and ISO 27001 NOT_FOUND is never approved.
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+
 ## 2026-02-26 - phase2-reuse-02 approved-answer reuse test suite
 
 - Added deterministic integration coverage for approved-answer reuse across questionnaires:
