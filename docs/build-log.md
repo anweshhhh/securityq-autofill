@@ -2,6 +2,25 @@
 
 Current log of implemented MVP work (concise, execution-focused).
 
+## 2026-02-26 - phase2-reuse-02 approved-answer reuse test suite
+
+- Added deterministic integration coverage for approved-answer reuse across questionnaires:
+  - `src/app/api/questionnaires/approvedAnswer.reuse.integration.test.ts`
+- Test flow implemented:
+  - uploads `template_evidence_pack.txt`, embeds chunks
+  - imports Questionnaire A (6 questions: TLS, MFA, AES+KMS, RPO, SOC2+TSC, ISO trick)
+  - runs autofill A, approves Q1-Q5 (with citation checks), leaves ISO unapproved
+  - imports Questionnaire B (4 overlaps from A Q1-Q4, 2 non-overlap questions, ISO trick)
+  - runs autofill B and asserts overlap reuse, citation validity, and non-overlap non-reuse
+  - safety scenario deletes a cited chunk from an approved answer, reruns B, and verifies invalid-citation approvals are not reused
+- Evidence-first assertions enforced in test:
+  - reused answers require non-empty citations
+  - reused citation chunk IDs must exist and belong to the organization
+  - no post-rerun reused answer may reference missing chunks
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+
 ## 2026-02-26 - phase2-reuse-01 approved-answer reuse
 
 - Implemented cross-questionnaire approved-answer reuse in autofill flow.
