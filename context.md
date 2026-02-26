@@ -150,6 +150,26 @@ Current mitigation in `src/lib/openai.ts` (`normalizeExtractorOutput`):
     - if fallback answer/citations are invalid, return strict `Not found in provided documents.`.
   - this prevents schema-mismatch-driven global NOT_FOUND while preserving evidence-first constraints.
 
+### Extractor prompt schema
+
+Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now explicitly enforces:
+- JSON-only output (no prose/markdown/code fences).
+- exact top-level keys:
+  - `requirements`
+  - `extracted`
+  - `overall`
+- strict types:
+  - `requirements: string[]`
+  - `extracted: Array<{ requirement: string, value: string | null, supportingChunkIds: string[] }>`
+  - `overall: "FOUND" | "PARTIAL" | "NOT_FOUND"`
+- explicit prohibition:
+  - `Do NOT use objects/maps for requirements or extracted. Use arrays only.`
+- citation ID safety:
+  - `supportingChunkIds` must be selected only from provided `allowedChunkIds`.
+- prompt input includes compact allowed ID set as:
+  - `allowedChunkIds (CSV): id1,id2,...`
+- prompt includes a minimal generic JSON example to reduce schema drift.
+
 ## 4.1) UI Theme: D-Dark Shell
 
 - Dark shell + light workbench rule:

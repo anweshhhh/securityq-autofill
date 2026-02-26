@@ -603,6 +603,31 @@ Current log of implemented MVP work (concise, execution-focused).
   - `npm test` => PASS
   - `npm run build` => PASS
 
+## 2026-02-26 - phase2-gate-09-tighten-extractor-prompt-schema
+
+- Tightened extractor prompt contract in `src/lib/openai.ts` (`generateEvidenceSufficiency`):
+  - requires exact top-level keys:
+    - `requirements`
+    - `extracted`
+    - `overall`
+  - requires strict schema text in prompt:
+    - `requirements: string[]`
+    - `extracted: Array<{ requirement: string, value: string | null, supportingChunkIds: string[] }>`
+    - `overall: "FOUND" | "PARTIAL" | "NOT_FOUND"`
+  - explicit instruction added:
+    - `Do NOT use objects/maps for requirements or extracted. Use arrays only.`
+  - explicit JSON-only constraint:
+    - no prose, no markdown, no code fences
+  - added minimal generic JSON example output (non-domain-specific).
+- Added compact allowed chunk ID context in user prompt:
+  - `allowedChunkIds (CSV): <id1,id2,...>`
+  - keeps token footprint small while giving explicit valid citation set.
+- Added unit test:
+  - `src/lib/openai.extractorPrompt.test.ts`
+  - asserts prompt includes strict schema requirements, no-maps instruction, and allowedChunkIds CSV line.
+- Validation:
+  - `npm test` => PASS
+
 ## Latest validation
 
 - `npm test` => PASS

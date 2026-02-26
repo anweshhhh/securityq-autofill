@@ -113,6 +113,15 @@ function toSnippetText(snippets: RetrievedSnippet[]): string {
     .join("\n\n");
 }
 
+function toAllowedChunkIdsCsv(snippets: RetrievedSnippet[]): string {
+  return dedupeStrings(
+    snippets
+      .map((snippet) => snippet.chunkId.trim())
+      .filter((chunkId) => chunkId.length > 0),
+    snippets.length
+  ).join(",");
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -521,13 +530,18 @@ export async function generateEvidenceSufficiency(params: {
   const systemPrompt =
     "You are an evidence extractor for document question-answering. " +
     "Use ONLY the provided snippets. Do not guess, infer, or use external knowledge. " +
-    "First list atomic answer requirements from the question. " +
-    "Then extract a value for each requirement. If a requirement is not explicitly present, set value to null. " +
-    "For every non-null value, include supportingChunkIds that directly support it (must be chunkIds from snippet list). " +
-    "Return strict JSON with keys: requirements, extracted, overall. " +
-    "overall must be one of FOUND, PARTIAL, NOT_FOUND.";
+    "Output JSON only. No prose. No markdown. No code fences. " +
+    "Return exactly these keys at top level: requirements, extracted, overall. " +
+    "Schema requirement: requirements: string[]. " +
+    "Schema requirement: extracted: Array<{ requirement: string, value: string | null, supportingChunkIds: string[] }>. " +
+    "Schema requirement: overall: \"FOUND\" | \"PARTIAL\" | \"NOT_FOUND\". " +
+    "Do NOT use objects/maps for requirements or extracted. Use arrays only. " +
+    "For each extracted item with non-null value, supportingChunkIds must be non-empty and must be chosen ONLY from provided allowedChunkIds. " +
+    "If a requirement is not explicitly supported, set value to null and supportingChunkIds to []. " +
+    "Minimal valid example: " +
+    "{\"requirements\":[\"Requirement A\"],\"extracted\":[{\"requirement\":\"Requirement A\",\"value\":\"Observed value\",\"supportingChunkIds\":[\"chunk-1\"]}],\"overall\":\"FOUND\"}.";
 
-  const userPrompt = `Question:\n${params.question}\n\nSnippets:\n${toSnippetText(params.snippets)}`;
+  const userPrompt = `Question:\n${params.question}\n\nallowedChunkIds (CSV): ${toAllowedChunkIdsCsv(params.snippets)}\n\nSnippets:\n${toSnippetText(params.snippets)}`;
 
   const payload = (await requestOpenAI("/chat/completions", {
     model: OPENAI_CHAT_MODEL,
