@@ -2,6 +2,31 @@
 
 Current log of implemented MVP work (concise, execution-focused).
 
+## 2026-02-26 - phase2-qa-01 pdf/txt parity regressions
+
+- Added deterministic PDF/TXT parity regression suite:
+  - `src/app/api/questionnaires/pdfTxt.parity.regression.test.ts`
+- Added fixtures for parity validation:
+  - `test/fixtures/template_evidence_pack.pdf` (selectable text)
+  - `test/fixtures/template_evidence_pack.txt` (same evidence content)
+  - `test/fixtures/template_questionnaire.csv` (31-question template)
+- Regression assertions:
+  - PDF flow (`upload -> embed -> autofill`) requires `foundCount >= 30` and strict ISO 27001 NOT_FOUND.
+  - TXT flow requires same outcome.
+  - Key controls must be FOUND with citations in both modes:
+    - MFA
+    - TLS minimum version
+    - AES-256 + KMS
+    - RPO/RTO
+    - SOC 2 Type II + TSC
+- Added chunk boundary unit coverage in `src/lib/chunker.test.ts` for token integrity:
+  - `AES-256`, `KMS-managed`, `TLS 1.2+`
+- Stability hardening:
+  - parity suite runs in an isolated mocked organization to avoid cross-test 409s from shared embedding-availability checks.
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+
 ## 2026-02-24 - PR-01 DEV_MODE gating
 
 - Added `DEV_MODE` (default `false`) and gated debug/noise features behind it.

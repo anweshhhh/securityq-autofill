@@ -170,6 +170,33 @@ Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now expl
   - `allowedChunkIds (CSV): id1,id2,...`
 - prompt includes a minimal generic JSON example to reduce schema drift.
 
+### PDF/TXT parity regression coverage
+
+- Added deterministic parity regression:
+  - `src/app/api/questionnaires/pdfTxt.parity.regression.test.ts`
+- Added stable fixtures:
+  - `test/fixtures/template_evidence_pack.pdf` (selectable text)
+  - `test/fixtures/template_evidence_pack.txt` (same evidence content)
+  - `test/fixtures/template_questionnaire.csv`
+- Parity test contract (OpenAI fully mocked, no network):
+  - upload PDF -> embed -> autofill (31-question fixture) and assert:
+    - `foundCount >= 30`
+    - strict ISO 27001 NOT_FOUND (`Not found in provided documents.` with empty citations)
+  - upload TXT -> embed -> autofill and assert same outcome
+  - for key controls, assert FOUND + citations in both modes:
+    - MFA
+    - TLS minimum version
+    - AES-256 + KMS
+    - RPO/RTO
+    - SOC 2 Type II + Trust Services Criteria
+- Added chunk boundary regression coverage:
+  - `src/lib/chunker.test.ts` asserts critical tokens remain intact in at least one chunk:
+    - `AES-256`
+    - `KMS-managed`
+    - `TLS 1.2+`
+- Test isolation detail:
+  - parity suite mocks `getOrCreateDefaultOrganization` to a dedicated test org to prevent cross-suite embedding-availability collisions.
+
 ## 4.1) UI Theme: D-Dark Shell
 
 - Dark shell + light workbench rule:
