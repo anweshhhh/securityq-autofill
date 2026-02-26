@@ -578,6 +578,31 @@ Current log of implemented MVP work (concise, execution-focused).
   - `npm test` => PASS
   - `npm run build` => PASS
 
+## 2026-02-26 - phase2-gate-08-safe-fallback-on-extractor-invalid
+
+- Updated extractor-enabled path in `src/server/answerEngine.ts` to avoid global strict NOT_FOUND collapse from extractor schema mismatch:
+  - when extractor output is marked invalid (`extractorInvalid=true`) and reranked context exists,
+  - engine now falls back to grounded draft generation over the same reranked topN snippets.
+- Safe fallback invariants:
+  - fallback result is accepted only when:
+    - grounded answer text is non-empty, and
+    - grounded citations are non-empty after validation against chosen allowed chunk IDs.
+  - invalid/missing citations still collapse to strict NOT_FOUND.
+  - fallback output is returned with:
+    - `needsReview=true`
+    - `confidence="low"`
+  - no template rewrite is applied on this fallback path.
+- Evidence strictness preserved:
+  - citations remain subset-validated against selected reranked chunk IDs only
+  - non-NOT_FOUND answers with empty citations are never returned
+  - true no-evidence branches continue to return strict NOT_FOUND.
+- Added regression coverage in `src/server/answerEngine.test.ts`:
+  - simulates extractor-invalid output from broken-but-parseable extractor shape
+  - verifies engine does not collapse to strict NOT_FOUND when grounded draft includes valid citations.
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+
 ## Latest validation
 
 - `npm test` => PASS

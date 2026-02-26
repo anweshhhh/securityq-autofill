@@ -220,4 +220,60 @@ describe("MVP answer engine contract", () => {
     );
     expect(result.citations.length).toBeGreaterThan(0);
   });
+
+  it("falls back to grounded draft when extractor output is invalid despite parseable shape", async () => {
+    retrieveTopChunksMock.mockResolvedValue([
+      {
+        chunkId: "chunk-iam-1",
+        docName: "Evidence Pack",
+        quotedSnippet: "MFA is required for privileged and administrative access.",
+        fullContent: "MFA is required for privileged and administrative access.",
+        similarity: 0.9
+      }
+    ]);
+
+    // Simulates normalized output from a broken-but-parseable extractor shape (e.g., extracted map).
+    generateEvidenceSufficiencyMock.mockResolvedValue({
+      requirements: ["MFA for privileged/admin access"],
+      extracted: [
+        {
+          requirement: "MFA for privileged/admin access",
+          value: null,
+          supportingChunkIds: []
+        }
+      ],
+      overall: "NOT_FOUND",
+      hadShapeRepair: true,
+      extractorInvalid: true,
+      invalidReason: "NO_VALID_EXTRACTED_ITEMS"
+    });
+
+    generateGroundedAnswerMock.mockResolvedValue({
+      answer: "Yes. MFA is enforced for privileged and administrative access.",
+      citations: [
+        {
+          chunkId: "chunk-iam-1",
+          quotedSnippet: "MFA is required for privileged and administrative access."
+        }
+      ],
+      confidence: "high",
+      needsReview: false
+    });
+
+    const result = await answerQuestion({
+      orgId: "org-1",
+      questionText: "Do you require MFA for privileged or administrative access?"
+    });
+
+    expect(result.answer).not.toBe("Not found in provided documents.");
+    expect(result.citations).toEqual([
+      {
+        chunkId: "chunk-iam-1",
+        docName: "Evidence Pack",
+        quotedSnippet: "MFA is required for privileged and administrative access."
+      }
+    ]);
+    expect(result.needsReview).toBe(true);
+    expect(result.confidence).toBe("low");
+  });
 });

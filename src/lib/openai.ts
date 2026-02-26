@@ -29,6 +29,7 @@ export type EvidenceSufficiencyModelOutput = {
   overall: EvidenceExtractorGateOverall;
   hadShapeRepair: boolean;
   extractorInvalid: boolean;
+  invalidReason: "NO_VALID_EXTRACTED_ITEMS" | null;
 };
 
 export type LegacyEvidenceSufficiencyModelOutput = {
@@ -445,6 +446,7 @@ export function normalizeExtractorOutput(
   overall: "FOUND" | "PARTIAL" | "NOT_FOUND";
   hadShapeRepair: boolean;
   extractorInvalid: boolean;
+  invalidReason: "NO_VALID_EXTRACTED_ITEMS" | null;
 } {
   const parsed = isRecord(raw) ? raw : {};
   let hadShapeRepair = !isRecord(raw);
@@ -476,6 +478,7 @@ export function normalizeExtractorOutput(
   const extracted = extractedList.extracted;
   const validExtracted = extracted.filter((entry) => entry.value !== null && entry.supportingChunkIds.length > 0);
   const extractorInvalid = validExtracted.length === 0;
+  const invalidReason: "NO_VALID_EXTRACTED_ITEMS" | null = extractorInvalid ? "NO_VALID_EXTRACTED_ITEMS" : null;
   if (extractorInvalid) {
     hadShapeRepair = true;
   }
@@ -506,7 +509,8 @@ export function normalizeExtractorOutput(
     extracted,
     overall,
     hadShapeRepair,
-    extractorInvalid
+    extractorInvalid,
+    invalidReason
   };
 }
 

@@ -143,7 +143,12 @@ Current mitigation in `src/lib/openai.ts` (`normalizeExtractorOutput`):
   - at least one valid extracted item (`value` + valid supporting chunk IDs) is required for non-NOT_FOUND
   - otherwise output is `NOT_FOUND` and marked `extractorInvalid=true`
 - engine fallback:
-  - when extractor output is marked invalid, extractor path falls back to legacy sufficiency gate for safer rollout behavior.
+  - when extractor output is marked invalid and reranked context exists, extractor path falls back to grounded draft generation using the same reranked topN context.
+  - fallback acceptance invariant:
+    - accept only if grounded answer is non-empty and citations remain non-empty after allowed-chunk validation.
+    - accepted fallback responses are forced to `needsReview=true` and `confidence="low"`.
+    - if fallback answer/citations are invalid, return strict `Not found in provided documents.`.
+  - this prevents schema-mismatch-driven global NOT_FOUND while preserving evidence-first constraints.
 
 ## 4.1) UI Theme: D-Dark Shell
 

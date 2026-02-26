@@ -547,7 +547,8 @@ function evaluateLegacyGate(params: {
       extracted,
       overall,
       hadShapeRepair: false,
-      extractorInvalid: false
+      extractorInvalid: false,
+      invalidReason: null
     }
   };
 }
@@ -594,6 +595,77 @@ function selectChosenChunks(params: {
   return selectedChunkIds
     .map((chunkId) => rerankedById.get(chunkId))
     .filter((chunk): chunk is ScoredChunk => Boolean(chunk));
+}
+
+function mapModelCitationsToChosenChunks(params: {
+  groundedCitations: Array<{ chunkId: string; quotedSnippet: string }>;
+  chosenById: Map<string, ScoredChunk>;
+}): Citation[] {
+  return dedupeCitations(
+    params.groundedCitations
+      .map((citation) => {
+        const chunk = params.chosenById.get(citation.chunkId);
+        if (!chunk) {
+          return null;
+        }
+
+        return {
+          docName: chunk.docName,
+          chunkId: chunk.chunkId,
+          quotedSnippet: normalizeWhitespace(citation.quotedSnippet || chunk.quotedSnippet)
+        };
+      })
+      .filter((citation): citation is Citation => citation !== null)
+  );
+}
+
+async function generateGroundedFallbackFromReranked(params: {
+  question: string;
+  rerankedTopN: ScoredChunk[];
+  debugEnabled: boolean;
+  debugInfo: EvidenceDebugInfo;
+  returnNotFound: (reason: NotFoundReason) => EvidenceAnswer;
+}): Promise<EvidenceAnswer> {
+  if (params.rerankedTopN.length === 0) {
+    return params.returnNotFound("NO_RELEVANT_EVIDENCE");
+  }
+
+  const groundedDraft = await generateGroundedAnswer({
+    question: params.question,
+    snippets: params.rerankedTopN.map((chunk) => ({
+      chunkId: chunk.chunkId,
+      docName: chunk.docName,
+      quotedSnippet: chunk.quotedSnippet
+    }))
+  });
+  const chosenById = new Map(params.rerankedTopN.map((chunk) => [chunk.chunkId, chunk]));
+  const citations = mapModelCitationsToChosenChunks({
+    groundedCitations: groundedDraft.citations,
+    chosenById
+  });
+  const answer = sanitizeExtractedText(groundedDraft.answer).trim();
+
+  if (!answer || answer === NOT_FOUND_TEXT || citations.length === 0) {
+    return params.returnNotFound("NO_RELEVANT_EVIDENCE");
+  }
+
+  const fallbackAnswer: EvidenceAnswer = {
+    answer,
+    citations,
+    confidence: "low",
+    needsReview: true
+  };
+
+  params.debugInfo.chosenChunks = params.rerankedTopN.map((chunk) => ({
+    chunkId: chunk.chunkId,
+    docName: chunk.docName
+  }));
+  params.debugInfo.finalCitations = fallbackAnswer.citations.map((citation) => ({
+    chunkId: citation.chunkId,
+    docName: citation.docName
+  }));
+
+  return withDebugInfo(fallbackAnswer, params.debugEnabled, params.debugInfo);
 }
 
 type GateDecision = {
@@ -745,23 +817,34 @@ export async function answerQuestion(params: AnswerQuestionParams): Promise<Evid
       validChunkIds
     });
 
-    if (extractorGate.extractorInvalid) {
-      gateDecision = await resolveLegacyDecision();
-    } else {
-      debugInfo.sufficiency = {
-        ...extractorGate,
-        requirements: extractorDecision.requirements,
-        extracted: extractorDecision.extracted,
-        overall: extractorDecision.overall
-      };
-      gateDecision = {
-        mode: "extractor",
-        overall: extractorDecision.overall,
-        supportingChunkIds: extractorDecision.supportingChunkIds,
-        allRequirementsSatisfied: extractorDecision.allRequirementsSatisfied,
-        extracted: extractorDecision.extracted
-      };
+    debugInfo.sufficiency = {
+      ...extractorGate,
+      requirements: extractorDecision.requirements,
+      extracted: extractorDecision.extracted,
+      overall: extractorDecision.overall
+    };
+
+    const shouldFallbackToGroundedDraft =
+      extractorGate.extractorInvalid &&
+      rerankedTopN.length > 0 &&
+      (extractorGate.hadShapeRepair === true || extractorGate.invalidReason != null);
+    if (shouldFallbackToGroundedDraft) {
+      return generateGroundedFallbackFromReranked({
+        question,
+        rerankedTopN,
+        debugEnabled,
+        debugInfo,
+        returnNotFound
+      });
     }
+
+    gateDecision = {
+      mode: "extractor",
+      overall: extractorDecision.overall,
+      supportingChunkIds: extractorDecision.supportingChunkIds,
+      allRequirementsSatisfied: extractorDecision.allRequirementsSatisfied,
+      extracted: extractorDecision.extracted
+    };
   } else {
     gateDecision = await resolveLegacyDecision();
   }
@@ -850,22 +933,10 @@ export async function answerQuestion(params: AnswerQuestionParams): Promise<Evid
       quotedSnippet: chunk.quotedSnippet
     }))
   });
-  const modelCitations = dedupeCitations(
-    grounded.citations
-      .map((citation) => {
-        const chunk = chosenById.get(citation.chunkId);
-        if (!chunk) {
-          return null;
-        }
-
-        return {
-          docName: chunk.docName,
-          chunkId: chunk.chunkId,
-          quotedSnippet: normalizeWhitespace(citation.quotedSnippet || chunk.quotedSnippet)
-        };
-      })
-      .filter((citation): citation is Citation => citation !== null)
-  );
+  const modelCitations = mapModelCitationsToChosenChunks({
+    groundedCitations: grounded.citations,
+    chosenById
+  });
 
   if (modelCitations.length === 0) {
     return returnNotFound("FILTERED_AS_IRRELEVANT");
