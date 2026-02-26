@@ -628,6 +628,31 @@ Current log of implemented MVP work (concise, execution-focused).
 - Validation:
   - `npm test` => PASS
 
+## 2026-02-26 - phase2-gate-10-validate-pdf-only-end-to-end
+
+- Added PDF-only questionnaire autofill regression test:
+  - `src/app/api/questionnaires/pdfOnly.autofill.regression.test.ts`
+- Added fixture used by this flow:
+  - `test/fixtures/template_evidence_pack.pdf`
+- Flow executed in test:
+  - upload PDF fixture (`POST /api/documents/upload`)
+  - embed chunks (`POST /api/documents/embed`)
+  - import questionnaire CSV (`POST /api/questionnaires/import`)
+  - run autofill (`POST /api/questionnaires/:id/autofill`)
+- Assertions:
+  - required checks return non-NOT_FOUND answers with non-empty citations:
+    - production access restricted + least privilege
+    - minimum TLS version
+    - AES-256 at rest + KMS
+    - SOC 2 Type II + TSC
+  - trick checks remain strict NOT_FOUND with empty citations.
+- Before/after counts:
+  - before (schema-drift diagnosis in phase2-gate-04): `FOUND=0`, `NOT_FOUND=3` for targeted PDF checks
+  - after (this end-to-end autofill regression): `FOUND=4`, `NOT_FOUND=2`, `TOTAL=6`
+- Validation:
+  - `npm test` => PASS (`24` passed, `1` skipped)
+  - `npm run build` => PASS
+
 ## Latest validation
 
 - `npm test` => PASS

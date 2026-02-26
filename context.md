@@ -350,7 +350,9 @@ Use `.env.example` as source of truth.
   - `src/server/normalizeAnswerOutput.bug.test.ts`
   - `src/server/answerEngine.test.ts` (`does not clobber an affirmative grounded answer...`)
   - `src/server/answerEngine.pdfGate.regression.test.ts` (PDF extractor-gate regression coverage)
+  - `src/app/api/questionnaires/pdfOnly.autofill.regression.test.ts` (PDF-only upload->embed->import->autofill end-to-end regression)
   - fixture used: `test/fixtures/evidence-gate.pdf`
+  - fixture used: `test/fixtures/template_evidence_pack.pdf`
 
 ## 9.1) UI Audit Tooling
 
