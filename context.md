@@ -118,11 +118,14 @@ Normalization invariants (claim-check clobber fix):
       - keyboard shortcuts with help modal (`?`, `J/K`, `A`, `R`, `U`, `C`, `E`) disabled while typing in form fields
       - loading skeletons shown for rail/main/evidence while questionnaire details are fetching
     - evidence panel conventions:
-      - citation chips show `DocName + ...<chunkId last6>` with per-chip `Copy ID` and `Open Doc` actions
-      - snippet viewer highlights key question terms client-side and supports `Copy Snippet` + `Copy All Citations`
+      - citation chips show doc name only (ellipsized) with compact per-row actions (`Copy reference`, `Open document`)
+      - snippet viewer highlights key question terms client-side and supports compact toolbar copy actions (`Copy citation IDs`, `Copy selected snippet`, optional evidence pack copy)
       - evidence text remains on light surfaces in bounded scroll containers with preserved line breaks
       - per-citation row layout is two-zone (`chip label` + `compact action icons`) to avoid text-button clipping in narrow side panels
       - per-citation action controls are compact icon buttons with tooltip titles and explicit `aria-label`s
+      - chip label now prioritizes doc name only (ellipsized); chunk IDs are hidden from primary chip text
+      - citation IDs remain available for auditability via tooltip and copy-reference actions (`DocName#ChunkId`)
+      - evidence toolbar is compact (`Evidence (N)` + icon actions), reducing vertical whitespace in the right panel
       - no document detail page currently; `Open Doc` uses a read-only modal backed by `GET /api/documents/:id` full-text reconstruction from chunks
     - export UX conventions:
       - export is modal-driven on `/questionnaires` and `/questionnaires/[id]`

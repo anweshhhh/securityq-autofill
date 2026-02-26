@@ -281,6 +281,34 @@ Current log of implemented MVP work (concise, execution-focused).
     - DOM assertions: `4/4` passed
     - axe violations: `0`
 
+## 2026-02-26 - ui-evidence-panel-compact
+
+- Compact Evidence panel toolbar on `/questionnaires/[id]`:
+  - header now shows `Evidence (N)` with compact icon actions
+  - replaced tall stacked controls with single-row small controls:
+    - copy citation IDs (newline format: `DocName#ChunkId`)
+    - copy selected snippet
+    - copy evidence pack (answer + citation refs + selected snippet)
+- Citation chips now prioritize readability:
+  - chip text shows doc name only (ellipsized)
+  - chunk IDs are no longer displayed in-chip
+  - full `DocName#ChunkId` remains available via tooltip and copy-reference action
+- Per-citation row actions remain compact and consistent:
+  - copy reference
+  - open document
+- Evidence-first workflow preserved:
+  - citations remain visible/clickable
+  - selecting citation still drives snippet viewer
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+  - `npm run ui:audit -- http://localhost:3000/questionnaires/cmm0zazy5000ggp4qxjq8sokv`
+    - artifacts: `artifacts/ui-audit/2026-02-26T01-32-31-473Z`
+    - console errors/warnings: `0`
+    - network failures: `0`
+    - DOM assertions: `4/4` passed
+    - axe violations: `0`
+
 ## Latest validation
 
 - `npm test` => PASS

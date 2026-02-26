@@ -361,6 +361,28 @@ function OpenDocIcon() {
   );
 }
 
+function SnippetIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M4 5.5C4 4.12 5.12 3 6.5 3H17.5C18.88 3 20 4.12 20 5.5V14.5C20 15.88 18.88 17 17.5 17H9.62L5.53 20.77C5.09 21.17 4.4 20.86 4.4 20.26V17C4.17 16.96 3.95 16.88 3.75 16.75C3.28 16.44 3 15.92 3 15.36V5.5H4ZM6.5 4.5C5.95 4.5 5.5 4.95 5.5 5.5V14.5C5.5 15.05 5.95 15.5 6.5 15.5H9.92L18.5 15.5C19.05 15.5 19.5 15.05 19.5 14.5V5.5C19.5 4.95 19.05 4.5 18.5 4.5H6.5ZM8 8.25H17V9.75H8V8.25ZM8 11.25H14.5V12.75H8V11.25Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function EvidencePackIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M5.5 3H14.5L19 7.5V19C19 20.1 18.1 21 17 21H5.5C4.4 21 3.5 20.1 3.5 19V5C3.5 3.9 4.4 3 5.5 3ZM14 4.5V8H17.5L14 4.5ZM5.5 4.5C5.23 4.5 5 4.73 5 5V19C5 19.27 5.23 19.5 5.5 19.5H17C17.27 19.5 17.5 19.27 17.5 19V9.5H13.5C12.95 9.5 12.5 9.05 12.5 8.5V4.5H5.5ZM7 12H15V13.5H7V12ZM7 15H13V16.5H7V15Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 const QuestionRailItemButton = memo(function QuestionRailItemButton({
   item,
   active,
@@ -1047,7 +1069,27 @@ export default function QuestionnaireDetailsPage() {
   const approvedAnswer = selectedQuestion?.approvedAnswer?.answerText ?? "";
   const showingGeneratedComparison = Boolean(selectedQuestion?.approvedAnswer) && showGeneratedDraft;
   const effectiveAnswer = showingGeneratedComparison ? generatedAnswer : approvedAnswer || generatedAnswer;
-  const effectiveCitationIds = evidenceItems.map((item) => item.chunkId);
+  const citationReferenceRows = useMemo(
+    () => evidenceItems.map((item) => `${item.docName}#${item.chunkId}`),
+    [evidenceItems]
+  );
+  const citationReferenceText = useMemo(() => citationReferenceRows.join("\n"), [citationReferenceRows]);
+  const selectedCitationReference = activeEvidence ? `${activeEvidence.docName}#${activeEvidence.chunkId}` : "";
+  const evidencePackText = useMemo(() => {
+    const lines = [
+      "Answer:",
+      effectiveAnswer,
+      "",
+      "Citations:",
+      citationReferenceText || "None"
+    ];
+
+    if (activeEvidence?.snippet) {
+      lines.push("", `Selected citation: ${selectedCitationReference}`, "Selected snippet:", activeEvidence.snippet);
+    }
+
+    return lines.join("\n");
+  }, [activeEvidence?.snippet, citationReferenceText, effectiveAnswer, selectedCitationReference]);
   const selectedQuestionApprovalCandidate = selectedQuestion ? getApprovalCandidate(selectedQuestion) : null;
   const questionKeyTerms = useMemo(
     () => getQuestionKeyTerms(selectedQuestion?.text ?? ""),
@@ -1547,80 +1589,103 @@ export default function QuestionnaireDetailsPage() {
 
         <Card className="workbench-evidence sticky-panel" data-testid="evidence-panel">
           <div ref={evidencePanelRef} tabIndex={0} className="focus-target" role="region" aria-label="Evidence panel">
-          <div className="card-title-row">
-            <h3 style={{ margin: 0 }}>Evidence</h3>
-            <div className="toolbar-row">
-              <Badge tone="draft" title="Citations linked to current answer">
-                {evidenceItems.length} citation(s)
-              </Badge>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => void copyText(effectiveCitationIds.join(", "), "All citation IDs copied.")}
-                disabled={effectiveCitationIds.length === 0}
-                title="Copy all citation chunk IDs"
-              >
-                Copy All Citations
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => void copyText(activeEvidence?.snippet ?? "", "Snippet copied.")}
-                disabled={!activeEvidence?.snippet}
-                title="Copy selected snippet text"
-              >
-                Copy Snippet
-              </Button>
+            <div className="evidence-header">
+              <h3 style={{ margin: 0 }}>Evidence ({evidenceItems.length})</h3>
+              <div className="evidence-toolbar">
+                <button
+                  type="button"
+                  className="mini-chip-icon-action has-tooltip"
+                  onClick={() => void copyText(citationReferenceText, "Citation references copied.")}
+                  disabled={citationReferenceRows.length === 0}
+                  title="Copy citation IDs"
+                  data-tooltip="Copy citation IDs"
+                  aria-label="Copy citation IDs"
+                >
+                  <CopyIcon />
+                  <span className="sr-only">Copy citation IDs</span>
+                </button>
+                <button
+                  type="button"
+                  className="mini-chip-icon-action has-tooltip"
+                  onClick={() => void copyText(activeEvidence?.snippet ?? "", "Selected snippet copied.")}
+                  disabled={!activeEvidence?.snippet}
+                  title="Copy selected snippet"
+                  data-tooltip="Copy selected snippet"
+                  aria-label="Copy selected snippet"
+                >
+                  <SnippetIcon />
+                  <span className="sr-only">Copy selected snippet</span>
+                </button>
+                <button
+                  type="button"
+                  className="mini-chip-icon-action has-tooltip"
+                  onClick={() => void copyText(evidencePackText, "Evidence pack copied.")}
+                  disabled={citationReferenceRows.length === 0}
+                  title="Copy evidence pack"
+                  data-tooltip="Copy evidence pack"
+                  aria-label="Copy evidence pack"
+                >
+                  <EvidencePackIcon />
+                  <span className="sr-only">Copy evidence pack</span>
+                </button>
+              </div>
             </div>
-          </div>
 
-          {evidenceItems.length === 0 ? (
-            <div className="muted small">No citations available for the current question.</div>
-          ) : (
-            <>
-              <div className="evidence-chip-list">
-                {evidenceItems.map((item) => (
-                  <div key={item.chunkId} className={cx("evidence-chip-item", item.chunkId === activeEvidenceChunkId && "active")}>
-                    <button
-                      type="button"
-                      className={cx("chip evidence-chip-trigger", item.chunkId === activeEvidenceChunkId && "active")}
-                      onClick={() => setActiveEvidenceChunkId(item.chunkId)}
-                      title={`${item.docName}#${item.chunkId}`}
-                      aria-label={`Select evidence from ${item.docName} chunk ${item.chunkId}`}
-                    >
-                      <span className="evidence-chip-doc">{item.docName}</span>
-                      <span className="mono-id evidence-chip-suffix">...{item.chunkId.slice(-6)}</span>
-                    </button>
-                    <div className="evidence-chip-actions">
-                      <button
-                        type="button"
-                        className="mini-chip-icon-action"
-                        onClick={() => void copyText(item.chunkId, "Chunk ID copied.")}
-                        title="Copy ID"
-                        aria-label={`Copy chunk id ${item.chunkId}`}
+            {evidenceItems.length === 0 ? (
+              <div className="muted small">No citations available for the current question.</div>
+            ) : (
+              <>
+                <div className="evidence-chip-list">
+                  {evidenceItems.map((item) => {
+                    const citationReference = `${item.docName}#${item.chunkId}`;
+                    return (
+                      <div
+                        key={item.chunkId}
+                        className={cx("evidence-chip-item", item.chunkId === activeEvidenceChunkId && "active")}
                       >
-                        <CopyIcon />
-                        <span className="sr-only">Copy ID</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="mini-chip-icon-action"
-                        onClick={() => void openDocumentModal(item.docName)}
-                        title="Open Doc"
-                        aria-label={`Open source document ${item.docName}`}
-                      >
-                        <OpenDocIcon />
-                        <span className="sr-only">Open document</span>
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="snippet-scroll" style={{ marginTop: 10 }}>
-                {activeEvidence ? highlightedSnippetParts : "Select a citation chip to view snippet text."}
-              </div>
-            </>
-          )}
+                        <button
+                          type="button"
+                          className={cx("chip evidence-chip-trigger has-tooltip", item.chunkId === activeEvidenceChunkId && "active")}
+                          onClick={() => setActiveEvidenceChunkId(item.chunkId)}
+                          title={citationReference}
+                          data-tooltip={citationReference}
+                          aria-label={`Select evidence from ${citationReference}`}
+                        >
+                          <span className="evidence-chip-doc">{item.docName}</span>
+                        </button>
+                        <div className="evidence-chip-actions">
+                          <button
+                            type="button"
+                            className="mini-chip-icon-action has-tooltip"
+                            onClick={() => void copyText(citationReference, "Citation reference copied.")}
+                            title="Copy reference"
+                            data-tooltip="Copy reference"
+                            aria-label={`Copy citation reference ${citationReference}`}
+                          >
+                            <CopyIcon />
+                            <span className="sr-only">Copy reference</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="mini-chip-icon-action has-tooltip"
+                            onClick={() => void openDocumentModal(item.docName)}
+                            title="Open document"
+                            data-tooltip="Open document"
+                            aria-label={`Open source document ${item.docName}`}
+                          >
+                            <OpenDocIcon />
+                            <span className="sr-only">Open document</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="snippet-scroll" style={{ marginTop: 8 }}>
+                  {activeEvidence ? highlightedSnippetParts : "Select a citation chip to view snippet text."}
+                </div>
+              </>
+            )}
           </div>
         </Card>
         </div>
