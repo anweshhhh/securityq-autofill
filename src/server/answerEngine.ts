@@ -545,7 +545,9 @@ function evaluateLegacyGate(params: {
     debugSufficiency: {
       requirements,
       extracted,
-      overall
+      overall,
+      hadShapeRepair: false,
+      extractorInvalid: false
     }
   };
 }
@@ -712,31 +714,7 @@ export async function answerQuestion(params: AnswerQuestionParams): Promise<Evid
   }));
   const validChunkIds = new Set(rerankedTopN.map((chunk) => chunk.chunkId));
   let gateDecision: GateDecision;
-
-  if (isExtractorGateEnabled()) {
-    const extractorGate = await generateEvidenceSufficiency({
-      question,
-      snippets
-    });
-    const extractorDecision = evaluateExtractorGate({
-      gate: extractorGate,
-      validChunkIds
-    });
-
-    debugInfo.sufficiency = {
-      ...extractorGate,
-      requirements: extractorDecision.requirements,
-      extracted: extractorDecision.extracted,
-      overall: extractorDecision.overall
-    };
-    gateDecision = {
-      mode: "extractor",
-      overall: extractorDecision.overall,
-      supportingChunkIds: extractorDecision.supportingChunkIds,
-      allRequirementsSatisfied: extractorDecision.allRequirementsSatisfied,
-      extracted: extractorDecision.extracted
-    };
-  } else {
+  const resolveLegacyDecision = async (): Promise<GateDecision> => {
     const legacyGate = await generateLegacyEvidenceSufficiency({
       question,
       snippets
@@ -748,13 +726,44 @@ export async function answerQuestion(params: AnswerQuestionParams): Promise<Evid
     });
 
     debugInfo.sufficiency = legacyDecision.debugSufficiency;
-    gateDecision = {
+    return {
       mode: "legacy",
       overall: legacyDecision.overall,
       supportingChunkIds: legacyDecision.supportingChunkIds,
       allRequirementsSatisfied: legacyDecision.allRequirementsSatisfied,
       extracted: []
     };
+  };
+
+  if (isExtractorGateEnabled()) {
+    const extractorGate = await generateEvidenceSufficiency({
+      question,
+      snippets
+    });
+    const extractorDecision = evaluateExtractorGate({
+      gate: extractorGate,
+      validChunkIds
+    });
+
+    if (extractorGate.extractorInvalid) {
+      gateDecision = await resolveLegacyDecision();
+    } else {
+      debugInfo.sufficiency = {
+        ...extractorGate,
+        requirements: extractorDecision.requirements,
+        extracted: extractorDecision.extracted,
+        overall: extractorDecision.overall
+      };
+      gateDecision = {
+        mode: "extractor",
+        overall: extractorDecision.overall,
+        supportingChunkIds: extractorDecision.supportingChunkIds,
+        allRequirementsSatisfied: extractorDecision.allRequirementsSatisfied,
+        extracted: extractorDecision.extracted
+      };
+    }
+  } else {
+    gateDecision = await resolveLegacyDecision();
   }
 
   if (gateDecision.overall === "NOT_FOUND") {

@@ -27,6 +27,8 @@ export type EvidenceSufficiencyModelOutput = {
   requirements: string[];
   extracted: EvidenceExtractorGateItem[];
   overall: EvidenceExtractorGateOverall;
+  hadShapeRepair: boolean;
+  extractorInvalid: boolean;
 };
 
 export type LegacyEvidenceSufficiencyModelOutput = {
@@ -40,6 +42,23 @@ type RetrievedSnippet = {
   docName: string;
   quotedSnippet: string;
 };
+
+const EXTRACTOR_LIST_LIMITS = {
+  requirements: 12,
+  extracted: 16,
+  supportingChunkIds: 5
+} as const;
+
+const REQUIREMENT_MAP_IGNORED_KEYS = new Set([
+  "requirements",
+  "extracted",
+  "overall",
+  "supportingchunkids",
+  "supporting_chunk_ids",
+  "chunkids",
+  "chunk_ids",
+  "chunks"
+]);
 
 function getApiKey(): string {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -93,6 +112,404 @@ function toSnippetText(snippets: RetrievedSnippet[]): string {
     .join("\n\n");
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeRequirementMatchKey(value: string): string {
+  return value.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function normalizeRequirementText(value: string): string {
+  return value.replace(/[_]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function toStringOrNull(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function dedupeStrings(values: string[], limit: number): string[] {
+  return Array.from(new Set(values)).slice(0, limit);
+}
+
+function collectStringLeaves(value: unknown, output: string[], depth = 0) {
+  if (depth > 6) {
+    return;
+  }
+
+  const asString = toStringOrNull(value);
+  if (asString) {
+    output.push(asString);
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectStringLeaves(item, output, depth + 1);
+    }
+    return;
+  }
+
+  if (isRecord(value)) {
+    for (const nested of Object.values(value)) {
+      collectStringLeaves(nested, output, depth + 1);
+    }
+  }
+}
+
+function looksLikeRequirementKey(key: string): boolean {
+  const normalized = normalizeRequirementMatchKey(key);
+  if (!normalized || normalized.length < 3) {
+    return false;
+  }
+
+  if (/^\d+$/.test(normalized)) {
+    return false;
+  }
+
+  if (REQUIREMENT_MAP_IGNORED_KEYS.has(normalized.replace(/\s+/g, ""))) {
+    return false;
+  }
+
+  return true;
+}
+
+function toChunkIdList(raw: unknown): string[] {
+  if (typeof raw === "string") {
+    const single = raw.trim();
+    return single ? [single] : [];
+  }
+
+  if (Array.isArray(raw)) {
+    return raw
+      .filter((value): value is string => typeof value === "string")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+  }
+
+  return [];
+}
+
+function normalizeChunkIds(raw: unknown, allowedChunkIds: Set<string>): string[] {
+  return dedupeStrings(
+    toChunkIdList(raw).filter((chunkId) => allowedChunkIds.has(chunkId)),
+    EXTRACTOR_LIST_LIMITS.supportingChunkIds
+  );
+}
+
+function getCandidateChunkCarrier(raw: unknown): unknown {
+  if (!isRecord(raw)) {
+    return raw;
+  }
+
+  if ("supportingChunkIds" in raw) {
+    return raw.supportingChunkIds;
+  }
+
+  if ("chunkIds" in raw) {
+    return raw.chunkIds;
+  }
+
+  if ("chunks" in raw) {
+    return raw.chunks;
+  }
+
+  return raw;
+}
+
+function extractTopLevelRequirementChunkMap(
+  raw: unknown,
+  allowedChunkIds: Set<string>
+): { map: Map<string, string[]>; hadShapeRepair: boolean } {
+  const map = new Map<string, string[]>();
+
+  if (!isRecord(raw)) {
+    return { map, hadShapeRepair: false };
+  }
+
+  let hadShapeRepair = false;
+  for (const [key, value] of Object.entries(raw)) {
+    const requirement = normalizeRequirementText(key);
+    if (!requirement) {
+      continue;
+    }
+
+    const chunkIds = normalizeChunkIds(getCandidateChunkCarrier(value), allowedChunkIds);
+    if (chunkIds.length === 0) {
+      continue;
+    }
+
+    hadShapeRepair = true;
+    map.set(normalizeRequirementMatchKey(requirement), chunkIds);
+  }
+
+  return { map, hadShapeRepair };
+}
+
+function normalizeRequirementList(raw: unknown): { requirements: string[]; hadShapeRepair: boolean } {
+  if (Array.isArray(raw)) {
+    return {
+      requirements: dedupeStrings(
+        raw
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => normalizeRequirementText(value))
+          .filter((value) => value.length > 0),
+        EXTRACTOR_LIST_LIMITS.requirements
+      ),
+      hadShapeRepair: false
+    };
+  }
+
+  const asSingle = toStringOrNull(raw);
+  if (asSingle) {
+    return {
+      requirements: [normalizeRequirementText(asSingle)],
+      hadShapeRepair: true
+    };
+  }
+
+  if (!isRecord(raw)) {
+    return {
+      requirements: [],
+      hadShapeRepair: false
+    };
+  }
+
+  const valuesAsStrings = Object.values(raw)
+    .map((value) => toStringOrNull(value))
+    .filter((value): value is string => value !== null)
+    .map((value) => normalizeRequirementText(value))
+    .filter((value) => value.length > 0);
+  if (valuesAsStrings.length > 0) {
+    return {
+      requirements: dedupeStrings(valuesAsStrings, EXTRACTOR_LIST_LIMITS.requirements),
+      hadShapeRepair: true
+    };
+  }
+
+  const keyCandidates = Object.keys(raw)
+    .filter((key) => looksLikeRequirementKey(key))
+    .map((key) => normalizeRequirementText(key))
+    .filter((value) => value.length > 0);
+  if (keyCandidates.length > 0) {
+    return {
+      requirements: dedupeStrings(keyCandidates, EXTRACTOR_LIST_LIMITS.requirements),
+      hadShapeRepair: true
+    };
+  }
+
+  const leaves: string[] = [];
+  collectStringLeaves(raw, leaves);
+
+  return {
+    requirements: dedupeStrings(
+      leaves.map((value) => normalizeRequirementText(value)).filter((value) => value.length > 0),
+      EXTRACTOR_LIST_LIMITS.requirements
+    ),
+    hadShapeRepair: true
+  };
+}
+
+function normalizeExtractedItem(params: {
+  requirement: string;
+  rawValue: unknown;
+  rawSupportingChunkIds: unknown;
+  allowedChunkIds: Set<string>;
+}): EvidenceExtractorGateItem | null {
+  const requirement = normalizeRequirementText(params.requirement);
+  if (!requirement) {
+    return null;
+  }
+
+  const supportingChunkIds = normalizeChunkIds(params.rawSupportingChunkIds, params.allowedChunkIds);
+  const value = toStringOrNull(params.rawValue);
+  const normalizedValue = value && supportingChunkIds.length > 0 ? value : null;
+
+  return {
+    requirement,
+    value: normalizedValue,
+    supportingChunkIds: normalizedValue ? supportingChunkIds : []
+  };
+}
+
+function normalizeExtractedList(params: {
+  raw: unknown;
+  allowedChunkIds: Set<string>;
+  topLevelRequirementChunkMap: Map<string, string[]>;
+}): { extracted: EvidenceExtractorGateItem[]; hadShapeRepair: boolean } {
+  if (Array.isArray(params.raw)) {
+    const extracted = params.raw
+      .map((entry) => {
+        if (!isRecord(entry)) {
+          return null;
+        }
+
+        const requirement = toStringOrNull(entry.requirement);
+        if (!requirement) {
+          return null;
+        }
+
+        const rawValue = entry.value ?? entry.extractedValue ?? null;
+        const requirementKey = normalizeRequirementMatchKey(requirement);
+        const mappedChunkIds = params.topLevelRequirementChunkMap.get(requirementKey) ?? [];
+        const rawSupportingChunkIds =
+          entry.supportingChunkIds ?? entry.chunkIds ?? entry.chunks ?? (mappedChunkIds.length > 0 ? mappedChunkIds : []);
+
+        return normalizeExtractedItem({
+          requirement,
+          rawValue,
+          rawSupportingChunkIds,
+          allowedChunkIds: params.allowedChunkIds
+        });
+      })
+      .filter((entry): entry is EvidenceExtractorGateItem => entry !== null)
+      .slice(0, EXTRACTOR_LIST_LIMITS.extracted);
+
+    return {
+      extracted,
+      hadShapeRepair: false
+    };
+  }
+
+  if (!isRecord(params.raw)) {
+    return {
+      extracted: [],
+      hadShapeRepair: false
+    };
+  }
+
+  const extracted: EvidenceExtractorGateItem[] = [];
+  for (const [rawKey, rawEntry] of Object.entries(params.raw)) {
+    const normalizedKeyNoSpace = rawKey.toLowerCase().replace(/[\s_-]+/g, "");
+    if (REQUIREMENT_MAP_IGNORED_KEYS.has(normalizedKeyNoSpace)) {
+      continue;
+    }
+
+    const requirementFromKey = normalizeRequirementText(rawKey);
+    if (!requirementFromKey) {
+      continue;
+    }
+
+    let requirement = requirementFromKey;
+    let rawValue: unknown = rawEntry;
+    let rawSupportingChunkIds: unknown = [];
+
+    if (isRecord(rawEntry)) {
+      requirement = toStringOrNull(rawEntry.requirement) ?? requirementFromKey;
+      rawValue = rawEntry.value ?? rawEntry.extractedValue ?? null;
+      rawSupportingChunkIds = rawEntry.supportingChunkIds ?? rawEntry.chunkIds ?? rawEntry.chunks ?? [];
+    }
+
+    const mappedChunkIds = params.topLevelRequirementChunkMap.get(normalizeRequirementMatchKey(requirement));
+    if (
+      (rawSupportingChunkIds == null || normalizeChunkIds(rawSupportingChunkIds, params.allowedChunkIds).length === 0) &&
+      mappedChunkIds &&
+      mappedChunkIds.length > 0
+    ) {
+      rawSupportingChunkIds = mappedChunkIds;
+    }
+
+    const normalized = normalizeExtractedItem({
+      requirement,
+      rawValue,
+      rawSupportingChunkIds,
+      allowedChunkIds: params.allowedChunkIds
+    });
+    if (!normalized) {
+      continue;
+    }
+
+    extracted.push(normalized);
+    if (extracted.length >= EXTRACTOR_LIST_LIMITS.extracted) {
+      break;
+    }
+  }
+
+  return {
+    extracted,
+    hadShapeRepair: true
+  };
+}
+
+export function normalizeExtractorOutput(
+  raw: unknown,
+  allowedChunkIds: Set<string>
+): {
+  requirements: string[];
+  extracted: Array<{ requirement: string; value: string | null; supportingChunkIds: string[] }>;
+  overall: "FOUND" | "PARTIAL" | "NOT_FOUND";
+  hadShapeRepair: boolean;
+  extractorInvalid: boolean;
+} {
+  const parsed = isRecord(raw) ? raw : {};
+  let hadShapeRepair = !isRecord(raw);
+
+  const topLevelChunkCarrier = parsed.supportingChunkIds ?? parsed.chunkIds ?? null;
+  const topLevelRequirementChunkMap = extractTopLevelRequirementChunkMap(topLevelChunkCarrier, allowedChunkIds);
+  hadShapeRepair = hadShapeRepair || topLevelRequirementChunkMap.hadShapeRepair;
+
+  const requirementList = normalizeRequirementList(parsed.requirements);
+  hadShapeRepair = hadShapeRepair || requirementList.hadShapeRepair;
+
+  const extractedList = normalizeExtractedList({
+    raw: parsed.extracted,
+    allowedChunkIds,
+    topLevelRequirementChunkMap: topLevelRequirementChunkMap.map
+  });
+  hadShapeRepair = hadShapeRepair || extractedList.hadShapeRepair;
+
+  const requirements =
+    requirementList.requirements.length > 0
+      ? requirementList.requirements
+      : dedupeStrings(
+          extractedList.extracted
+            .map((entry) => entry.requirement)
+            .map((entry) => normalizeRequirementText(entry))
+            .filter((entry) => entry.length > 0),
+          EXTRACTOR_LIST_LIMITS.requirements
+        );
+  const extracted = extractedList.extracted;
+  const validExtracted = extracted.filter((entry) => entry.value !== null && entry.supportingChunkIds.length > 0);
+  const extractorInvalid = validExtracted.length === 0;
+  if (extractorInvalid) {
+    hadShapeRepair = true;
+  }
+
+  const requirementSet = new Set(requirements.map((requirement) => normalizeRequirementMatchKey(requirement)));
+  const satisfiedRequirementSet = new Set(
+    validExtracted.map((entry) => normalizeRequirementMatchKey(entry.requirement))
+  );
+  const allRequirementsSatisfied =
+    requirementSet.size > 0
+      ? Array.from(requirementSet).every((requirement) => satisfiedRequirementSet.has(requirement))
+      : validExtracted.length > 0 && extracted.every((entry) => entry.value !== null);
+
+  const overall: EvidenceExtractorGateOverall = (() => {
+    if (extractorInvalid) {
+      return "NOT_FOUND";
+    }
+
+    if (allRequirementsSatisfied) {
+      return "FOUND";
+    }
+
+    return "PARTIAL";
+  })();
+
+  return {
+    requirements,
+    extracted,
+    overall,
+    hadShapeRepair,
+    extractorInvalid
+  };
+}
+
 export async function generateEvidenceSufficiency(params: {
   question: string;
   snippets: RetrievedSnippet[];
@@ -125,111 +542,8 @@ export async function generateEvidenceSufficiency(params: {
     throw new Error("Chat completion response did not include content");
   }
 
-  const parsed = JSON.parse(content) as
-    | {
-        requirements?: unknown;
-        extracted?: unknown;
-        overall?: unknown;
-      }
-    | null;
-
-  const validChunkIds = new Set(params.snippets.map((snippet) => snippet.chunkId));
-  const requirements = Array.isArray(parsed?.requirements)
-    ? parsed.requirements
-        .filter((value): value is string => typeof value === "string")
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0)
-        .slice(0, 12)
-    : [];
-
-  const extracted = Array.isArray(parsed?.extracted)
-    ? parsed.extracted
-        .map((entry) => {
-          if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-            return null;
-          }
-
-          const typed = entry as {
-            requirement?: unknown;
-            value?: unknown;
-            supportingChunkIds?: unknown;
-          };
-
-          const requirement = typeof typed.requirement === "string" ? typed.requirement.trim() : "";
-          if (!requirement) {
-            return null;
-          }
-
-          const supportingChunkIdsRaw = Array.isArray(typed.supportingChunkIds)
-            ? typed.supportingChunkIds
-                .filter((value): value is string => typeof value === "string")
-                .map((value) => value.trim())
-                .filter((value) => value.length > 0 && validChunkIds.has(value))
-            : [];
-          const supportingChunkIds = Array.from(new Set(supportingChunkIdsRaw)).slice(0, 5);
-
-          const rawValue = typeof typed.value === "string" ? typed.value.trim() : null;
-          const value = rawValue && supportingChunkIds.length > 0 ? rawValue : null;
-
-          return {
-            requirement,
-            value,
-            supportingChunkIds: value ? supportingChunkIds : []
-          } satisfies EvidenceExtractorGateItem;
-        })
-        .filter((entry): entry is EvidenceExtractorGateItem => entry !== null)
-        .slice(0, 16)
-    : [];
-
-  const normalizedRequirements =
-    requirements.length > 0
-      ? requirements
-      : Array.from(new Set(extracted.map((entry) => entry.requirement).filter((value) => value.length > 0))).slice(
-          0,
-          12
-        );
-
-  const requirementSet = new Set(
-    normalizedRequirements.map((requirement) => requirement.toLowerCase().replace(/\s+/g, " ").trim())
-  );
-  const satisfiedRequirements = new Set(
-    extracted
-      .filter((entry) => entry.value !== null && entry.supportingChunkIds.length > 0)
-      .map((entry) => entry.requirement.toLowerCase().replace(/\s+/g, " ").trim())
-  );
-
-  const allValuesNull = extracted.length === 0 || extracted.every((entry) => entry.value === null);
-  const someValuesNonNull = extracted.some((entry) => entry.value !== null);
-  const allRequirementsSatisfied =
-    requirementSet.size > 0
-      ? Array.from(requirementSet).every((requirement) => satisfiedRequirements.has(requirement))
-      : extracted.length > 0 && extracted.every((entry) => entry.value !== null);
-
-  const parsedOverall =
-    parsed?.overall === "FOUND" || parsed?.overall === "PARTIAL" || parsed?.overall === "NOT_FOUND"
-      ? parsed.overall
-      : null;
-  const overall: EvidenceExtractorGateOverall = (() => {
-    if (parsedOverall === "NOT_FOUND" || allValuesNull) {
-      return "NOT_FOUND";
-    }
-
-    if (allRequirementsSatisfied) {
-      return "FOUND";
-    }
-
-    if (someValuesNonNull) {
-      return "PARTIAL";
-    }
-
-    return "NOT_FOUND";
-  })();
-
-  return {
-    requirements: normalizedRequirements,
-    extracted,
-    overall
-  };
+  const parsed = JSON.parse(content) as unknown;
+  return normalizeExtractorOutput(parsed, new Set(params.snippets.map((snippet) => snippet.chunkId)));
 }
 
 export async function generateLegacyEvidenceSufficiency(params: {

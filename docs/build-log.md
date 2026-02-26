@@ -260,6 +260,23 @@ Current log of implemented MVP work (concise, execution-focused).
     - DOM assertions: `4/4` passed
     - axe violations: `0`
 
+## 2026-02-26 - phase2-01 PDF ingestion support
+
+- Added `.pdf` support to evidence upload validation while keeping existing `.txt`/`.md` behavior unchanged.
+- Added server-side PDF extraction in `src/lib/extractText.ts` using `pdf-parse` with per-page separators:
+  - `--- Page N ---`
+- Preserved existing ingestion pipeline semantics:
+  - extract text -> deterministic chunking -> store `Document` + `DocumentChunk`
+- Updated documents API/UI to surface document type cleanly:
+  - upload accept list includes PDF
+  - inventory shows a type badge (`PDF` / `MD` / `TXT`)
+- Added deterministic ingestion contract coverage for PDF:
+  - fixture: `test/fixtures/evidence-c.pdf`
+  - verifies upload creates chunks and extracted chunk text contains expected phrases.
+- Validation run:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+
 ## 2026-02-26 - ui-polish-evidence-actions
 
 - Polished evidence row actions in `/questionnaires/[id]` without logic changes:
@@ -330,6 +347,236 @@ Current log of implemented MVP work (concise, execution-focused).
     - network failures: `0`
     - DOM assertions: `4/4` passed
     - axe violations: `0`
+
+## 2026-02-26 - ui-evidence-tooltip-visibility
+
+- Fixed evidence toolbar tooltip visibility for:
+  - `Copy selected snippet`
+  - `Copy evidence pack`
+- Root cause: top-positioned tooltips were clipped near the panel header.
+- Update:
+  - header icon tooltips now render below the control (`tooltip-below` variant), preserving hover/focus visibility.
+- Validation:
+  - `npm run build` => PASS
+
+## 2026-02-26 - debug-upload-unexpected-token
+
+- Investigated UI error:
+  - `Unexpected token '<', "<!DOCTYPE "... is not valid JSON`
+- Root cause identified:
+  - `POST /api/documents/upload` returned HTML 500 in dev because route module crashed during load.
+  - Crash source was `pdf-parse` ESM import path (`pdfjs-dist/legacy/build/pdf.mjs`) throwing:
+    - `TypeError: Object.defineProperty called on non-object`
+  - Since the crash happened before handler execution, Next returned its HTML error page.
+- Upload route hardening:
+  - `src/app/api/documents/upload/route.ts` now sets `export const runtime = "nodejs"`.
+  - Error responses standardized to JSON shape: `{ error: { message, code } }`.
+  - Handler always returns JSON for expected failures and caught internal errors.
+- PDF extraction fix:
+  - `src/lib/extractText.ts` now lazily imports `pdf-parse/lib/pdf-parse.js` (avoids crashing ESM path in Next dev bundling).
+  - Added `src/types/pdf-parse-lib.d.ts` for build-safe typing of that subpath.
+- Client diagnostics:
+  - `/documents` upload handler logs status/content-type in non-production.
+  - If response is non-JSON, UI now reads text and surfaces the first 300 chars in the error banner.
+- Repro/verification curl commands:
+  - Before fix (observed):  
+    `curl -i -X POST http://localhost:3000/api/documents/upload -F "file=@/Users/anweshsingh/Downloads/Attestly/securityq-autofill/test/fixtures/evidence-c.pdf"`  
+    returned `500` with `Content-Type: text/html`.
+  - After fix (observed): same command returns `201` with `Content-Type: application/json`.
+  - Failure path check:  
+    `curl -i -X POST http://localhost:3000/api/documents/upload -F "wrong=@/Users/anweshsingh/Downloads/Attestly/securityq-autofill/test/fixtures/evidence-a.txt"`  
+    returns `400` JSON with `{ error: { message: "file is required", code: "UPLOAD_FILE_REQUIRED" } }`.
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+
+## 2026-02-26 - autofill auto-embed UX smoothing
+
+- Updated questionnaire UI autofill actions to auto-run embeddings first via `POST /api/documents/embed`, then trigger questionnaire autofill.
+- Applied on both screens:
+  - `/questionnaires`
+  - `/questionnaires/[id]`
+- Behavior:
+  - removes the manual “run embed then retry autofill” step for normal flows
+  - if embedding fails, UI now reports explicit embedding-step failure before autofill
+  - success banner includes embedded chunk count when new embeddings were generated
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+
+## 2026-02-26 - workbench live autofill progress
+
+- Improved `/questionnaires/[id]` autofill UX for in-place review:
+  - `Run Autofill` button now shows an inline live progress bar and counter (`answered/total`) while autofill is running.
+  - Progress updates are driven by periodic questionnaire detail refresh during the running autofill job.
+- Live data updates during run:
+  - question rail, selected answer panel, and evidence panel now refresh incrementally as rows are answered.
+  - final refresh is applied after completion to ensure latest state is visible.
+- Added lightweight polling behavior only during active autofill; no backend contract changes.
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+
+## 2026-02-26 - phase2-pdf-coverage-diagnose
+
+- Scope: diagnose why PDF-only runs return NOT_FOUND for questions that should be answerable.
+- Target document (latest uploaded PDF):
+  - `docId`: `cmm2usn6a000yffie77116mp5`
+  - `name`: `template_evidence_pack`
+  - `createdAt`: `2026-02-26T02:37:58.738Z`
+- Chunk + embedding coverage:
+  - `totalChunks`: `3`
+  - `embeddedChunks`: `3`
+  - `missingEmbeddingChunks`: `0`
+- Phrase coverage search across `DocumentChunk.content`:
+  - Found: `least privilege`, `restricted to authorized`, `quarterly`, `every 90 days`, `TLS 1.2`, `TLS 1.2+`, `mTLS`, `AES-256`, `KMS`, `PCI DSS`, `not applicable`
+  - Not found: `AES 256` (space-only variant; hyphenated `AES-256` exists)
+  - Sample matches:
+    - `cmm2usnbq000zffieqdvoaipa`: `"Least privilege: Production access is restricted to authorized personnel ... Access recertification is performed quarterly (every 90 days) ..."`
+    - `cmm2usnbq000zffieqdvoaipa`: `"All external endpoints require encryption in transit using TLS 1.2 or higher (TLS 1.2+) ... Internal services use mTLS ..."`
+    - `cmm2usnbq000zffieqdvoaipa`: `"encrypted at rest using AES-256 ... via a centralized KMS ..."`
+    - `cmm2usnbq0011ffie04vn80xm`: `"PCI DSS is not applicable because FinCo does not store, process, or transmit payment card data."`
+- Extracted text sanity preview (first 800 chars) includes the expected IAM/encryption sections and control details.
+- DEV debug runs (`/api/questions/answer?debug=true`) for failing-style questions:
+  - `Is production access restricted ... least privilege?`
+  - `What minimum TLS version ... and is mTLS used ...?`
+  - `Are data at rest encrypted with AES-256 and managed through KMS?`
+  - In all three runs:
+    - `retrievedTopK`/`rerankedTopN` include the relevant PDF chunk IDs.
+    - But `sufficiency.sufficient=false`, resulting in strict NOT_FOUND.
+    - Example: TLS/mTLS run reported missing points despite chunk text containing both claims.
+- Diagnosis conclusion:
+  - (A) extraction missing sections: **NO** (key sections are present in chunks).
+  - (B) chunking/truncation dropping content: **NO clear evidence** (key statements present in stored chunks/excerpts).
+  - (C) missing embeddings: **NO** (`3/3` embedded).
+  - (D) retrieval/rerank misses relevant chunks: **NO** (relevant chunks are retrieved/reranked).
+  - Primary issue is downstream of retrieval: **sufficiency gate misclassification on PDF-derived snippets**.
+
+## 2026-02-26 - phase2-gate-01-regression-tests
+
+- Added PDF gate regression fixture:
+  - `test/fixtures/evidence-gate.pdf` (selectable text including least-privilege, TLS 1.2+, mTLS, AES-256, KMS statements).
+- Added failing regression test:
+  - `src/server/answerEngine.pdfGate.regression.test.ts`
+  - flow:
+    - uploads PDF fixture
+    - runs embed route
+    - calls `answerQuestion(..., debug: true)` for 3 questions:
+      - prod access restricted + least privilege
+      - transit encryption + minimum TLS + mTLS
+      - at-rest encryption + AES-256 + KMS
+    - verifies relevant chunks are retrieved in `rerankedTopN`
+    - verifies `sufficiency.sufficient === false`
+    - expects non-NOT_FOUND + non-empty citations (intended future behavior)
+- Current result (expected failing repro):
+  - test fails because answers are strict `Not found in provided documents.` with empty citations for all 3 checks.
+  - command: `npm test -- src/server/answerEngine.pdfGate.regression.test.ts`
+  - representative failures:
+    - `expected 'Not found in provided documents.' not to be ...`
+    - `expected 0 to be greater than 0`
+- No fix implemented in this step (tests-only PR step).
+
+## 2026-02-26 - phase2-gate-02-extractor-gate
+
+- Replaced brittle sufficiency boolean gate with extractor-based gate in the shared answer pipeline.
+- New gate model output (from `generateEvidenceSufficiency` in `src/lib/openai.ts`):
+  - `requirements: string[]`
+  - `extracted: Array<{ requirement, value | null, supportingChunkIds[] }>`
+  - `overall: FOUND | PARTIAL | NOT_FOUND`
+- Prompt update:
+  - explicitly forbids guessing
+  - requires `null` when not present
+  - requires supporting chunk IDs for every non-null extracted value
+- Deterministic gate logic in `src/server/answerEngine.ts`:
+  - `overall=NOT_FOUND` OR all extracted values null => strict NOT_FOUND
+  - some non-null values but not all requirements satisfied => PARTIAL (`Not specified in provided documents.`) with citations from `supportingChunkIds`
+  - all requirements satisfied => FOUND with citations from `supportingChunkIds`
+- Evidence strictness preserved:
+  - citations for FOUND/PARTIAL are filtered to selected reranked chunk IDs
+  - empty/invalid citations still collapse to strict NOT_FOUND
+- Retrieval/rerank unchanged.
+- Normalization invariant updated:
+  - FOUND + all requirements satisfied outcomes cannot be downgraded to NOT_FOUND/PARTIAL by claim-check clobber.
+- Regression/tests updates:
+  - updated answer engine and workflow mocks to extractor-gate shape
+  - added/updated PDF regression to pass under extractor gate:
+    - `src/server/answerEngine.pdfGate.regression.test.ts`
+    - fixture: `test/fixtures/evidence-gate.pdf`
+- Validation:
+  - `npm test` => PASS (`16` tests)
+  - `npm run build` => PASS
+
+## 2026-02-26 - phase2-gate-04-diagnose-all-notfound
+
+- Added targeted diagnostic harness:
+  - `src/server/answerEngine.diagnose-all-notfound.test.ts`
+  - gated execution via `RUN_EXTRACTOR_DIAGNOSE=true` so normal test runs are unaffected.
+- Diagnostic run command:
+  - `RUN_EXTRACTOR_DIAGNOSE=true npm test -- src/server/answerEngine.diagnose-all-notfound.test.ts`
+  - persisted output: `artifacts/diagnose/extractor-gate-all-notfound-2026-02-26.txt`
+- Scope:
+  - used most recent org with documents and most recent questionnaire first question fallback
+  - ran 3 categories:
+    - IAM (`MFA/2FA privileged/admin`)
+    - Encryption (`minimum TLS version`)
+    - Compliance (`SOC 2 Type II`)
+  - forced engine debug via `answerQuestion(..., debug: true)` independent of `DEV_MODE`.
+- Stage findings (consistent across all 3 questions):
+  - Retrieval is healthy:
+    - `retrievedTopK` and `rerankedTopN` contain relevant evidence chunks.
+  - Extractor path is executed:
+    - OpenAI `chat/completions` request with extractor system prompt marker observed.
+  - Raw extractor content parses as JSON, but schema is not the expected contract:
+    - observed shapes:
+      - `extracted` returned as object/map, not array of `{ requirement, value, supportingChunkIds }`
+      - `supportingChunkIds` often returned as top-level field (or nested incorrectly), not per extracted item
+      - `requirements` sometimes returned as object/map instead of string array
+  - Because parser is strict-typed by shape, normalized extractor output collapses:
+    - `parsed.requirements` non-array => `requirements=[]`
+    - `parsed.extracted` non-array => `extracted=[]`
+    - `allValuesNull=true` => normalized `overall=NOT_FOUND`
+  - Decision logic then deterministically forces strict NOT_FOUND:
+    - `gateDecision.overall === "NOT_FOUND"` => `returnNotFound("NO_RELEVANT_EVIDENCE")`
+    - final answer becomes exact `Not found in provided documents.` with `0` citations.
+- Root cause category:
+  - **extractor called and JSON parse succeeds, but extractor output schema mismatch (shape drift) collapses to NOT_FOUND**.
+- Responsible code locations:
+  - strict extractor parsing + fallback-to-empty logic:
+    - `src/lib/openai.ts:137-183`
+    - `src/lib/openai.ts:201-226`
+  - extractor gate decision forcing NOT_FOUND on empty extracted values:
+    - `src/server/answerEngine.ts:462-484`
+    - `src/server/answerEngine.ts:760-762`
+
+## 2026-02-26 - phase2-gate-07-normalize-extractor-shapes
+
+- Implemented tolerant extractor output normalization in:
+  - `src/lib/openai.ts` (`normalizeExtractorOutput`)
+- Normalizer now accepts common schema variants safely:
+  - `requirements` as array/string/object-map
+  - `extracted` as array or map (`requirement -> value` / `requirement -> { value|extractedValue, supportingChunkIds|chunkIds|chunks }`)
+  - per-item supporting IDs from `supportingChunkIds|chunkIds|chunks`
+  - top-level requirement-keyed supporting chunk maps (`supportingChunkIds|chunkIds`)
+- Safety constraints preserved:
+  - supporting chunk IDs are always filtered to allowed chunk IDs from current snippet set
+  - invalid/hallucinated chunk IDs are dropped
+  - no blanket propagation of top-level `supportingChunkIds` arrays to every extracted requirement
+- Deterministic overall decision now occurs after normalization:
+  - at least one valid extracted item (`value` + valid supporting chunk IDs) required for non-NOT_FOUND
+  - otherwise `overall=NOT_FOUND` and output marked `extractorInvalid=true`
+- Engine behavior update:
+  - extractor-enabled path now falls back to legacy sufficiency gate when extractor output is marked invalid
+  - this prevents shape-mismatch responses from collapsing every question to strict NOT_FOUND.
+- Added unit coverage:
+  - `src/lib/openai.normalizeExtractorOutput.test.ts`
+  - cases covered:
+    - extracted as map `requirement -> string`
+    - extracted as map `requirement -> { value, supportingChunkIds }`
+    - requirements as object-map
+    - top-level supportingChunkIds array is not blindly applied to all extracted requirements
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
 
 ## Latest validation
 

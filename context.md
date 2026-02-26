@@ -102,6 +102,49 @@ Normalization invariants (claim-check clobber fix):
   - `src/server/answerEngine.pdfGate.regression.test.ts` (PDF extractor-gate coverage)
   - all pass with the extractor gate in place.
 
+### Extractor gate failure modes (diagnosed)
+
+Diagnostic harness:
+- `src/server/answerEngine.diagnose-all-notfound.test.ts`
+- run with:
+  - `RUN_EXTRACTOR_DIAGNOSE=true npm test -- src/server/answerEngine.diagnose-all-notfound.test.ts`
+  - latest captured output: `artifacts/diagnose/extractor-gate-all-notfound-2026-02-26.txt`
+
+Observed failure mode for global NOT_FOUND:
+- Retrieval/rerank is healthy (`topK`/`topN` include relevant chunks).
+- Extractor gate path is actually executed (`generateEvidenceSufficiency` is called).
+- Raw extractor response is JSON, but output shape can drift from contract:
+  - `extracted` returned as object/map instead of array of `{ requirement, value, supportingChunkIds }`
+  - `supportingChunkIds` returned top-level or nested incorrectly instead of per extracted item
+  - `requirements` returned as object/map instead of string array
+- Root cause before mitigation was strict parser behavior:
+  - non-array `requirements` or `extracted` collapsed to empty arrays
+  - this forced normalized `overall=NOT_FOUND` and strict NOT_FOUND output in engine.
+
+Primary root-cause category:
+- extractor called + JSON parse success, but **schema mismatch between raw extractor output and expected contract** causes deterministic NOT_FOUND collapse.
+
+### Extractor output normalization rules
+
+Current mitigation in `src/lib/openai.ts` (`normalizeExtractorOutput`):
+- requirements normalization:
+  - array -> keep string items
+  - string -> single-item array
+  - object/map -> derive strings from values, then keys, then nested string leaves
+- extracted normalization:
+  - array form accepted (`{ requirement, value|extractedValue, supportingChunkIds|chunkIds|chunks }`)
+  - map form accepted (`requirement -> value` or `requirement -> { value|extractedValue, supportingChunkIds|chunkIds|chunks }`)
+- supporting chunk IDs:
+  - accepted aliases: `supportingChunkIds`, `chunkIds`, `chunks`
+  - top-level requirement-keyed maps are supported when per-item chunk IDs are missing
+  - top-level flat chunk ID arrays are **not** blindly applied to every extracted requirement
+  - all chunk IDs are always filtered to reranked allowed chunk IDs (invalid IDs dropped)
+- deterministic gate outcome after normalization:
+  - at least one valid extracted item (`value` + valid supporting chunk IDs) is required for non-NOT_FOUND
+  - otherwise output is `NOT_FOUND` and marked `extractorInvalid=true`
+- engine fallback:
+  - when extractor output is marked invalid, extractor path falls back to legacy sufficiency gate for safer rollout behavior.
+
 ## 4.1) UI Theme: D-Dark Shell
 
 - Dark shell + light workbench rule:
