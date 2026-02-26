@@ -15,10 +15,24 @@ export type GroundedAnswerModelOutput = {
   needsReview: boolean;
 };
 
+export type EvidenceExtractorGateOverall = "FOUND" | "PARTIAL" | "NOT_FOUND";
+
+export type EvidenceExtractorGateItem = {
+  requirement: string;
+  value: string | null;
+  supportingChunkIds: string[];
+};
+
 export type EvidenceSufficiencyModelOutput = {
+  requirements: string[];
+  extracted: EvidenceExtractorGateItem[];
+  overall: EvidenceExtractorGateOverall;
+};
+
+export type LegacyEvidenceSufficiencyModelOutput = {
   sufficient: boolean;
-  bestChunkIds: string[];
   missingPoints: string[];
+  supportingChunkIds: string[];
 };
 
 type RetrievedSnippet = {
@@ -84,11 +98,13 @@ export async function generateEvidenceSufficiency(params: {
   snippets: RetrievedSnippet[];
 }): Promise<EvidenceSufficiencyModelOutput> {
   const systemPrompt =
-    "You are an evidence sufficiency checker for document question-answering. " +
-    "Use only the provided snippets. " +
-    "Set sufficient=true only if the snippets contain enough explicit facts to answer the question directly without guessing. " +
-    "When sufficient=false, include short missingPoints explaining what evidence is missing. " +
-    "Return strict JSON with keys: sufficient, bestChunkIds, missingPoints.";
+    "You are an evidence extractor for document question-answering. " +
+    "Use ONLY the provided snippets. Do not guess, infer, or use external knowledge. " +
+    "First list atomic answer requirements from the question. " +
+    "Then extract a value for each requirement. If a requirement is not explicitly present, set value to null. " +
+    "For every non-null value, include supportingChunkIds that directly support it (must be chunkIds from snippet list). " +
+    "Return strict JSON with keys: requirements, extracted, overall. " +
+    "overall must be one of FOUND, PARTIAL, NOT_FOUND.";
 
   const userPrompt = `Question:\n${params.question}\n\nSnippets:\n${toSnippetText(params.snippets)}`;
 
@@ -109,16 +125,178 @@ export async function generateEvidenceSufficiency(params: {
     throw new Error("Chat completion response did not include content");
   }
 
-  const parsed = JSON.parse(content) as Partial<EvidenceSufficiencyModelOutput>;
+  const parsed = JSON.parse(content) as
+    | {
+        requirements?: unknown;
+        extracted?: unknown;
+        overall?: unknown;
+      }
+    | null;
+
+  const validChunkIds = new Set(params.snippets.map((snippet) => snippet.chunkId));
+  const requirements = Array.isArray(parsed?.requirements)
+    ? parsed.requirements
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+        .slice(0, 12)
+    : [];
+
+  const extracted = Array.isArray(parsed?.extracted)
+    ? parsed.extracted
+        .map((entry) => {
+          if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+            return null;
+          }
+
+          const typed = entry as {
+            requirement?: unknown;
+            value?: unknown;
+            supportingChunkIds?: unknown;
+          };
+
+          const requirement = typeof typed.requirement === "string" ? typed.requirement.trim() : "";
+          if (!requirement) {
+            return null;
+          }
+
+          const supportingChunkIdsRaw = Array.isArray(typed.supportingChunkIds)
+            ? typed.supportingChunkIds
+                .filter((value): value is string => typeof value === "string")
+                .map((value) => value.trim())
+                .filter((value) => value.length > 0 && validChunkIds.has(value))
+            : [];
+          const supportingChunkIds = Array.from(new Set(supportingChunkIdsRaw)).slice(0, 5);
+
+          const rawValue = typeof typed.value === "string" ? typed.value.trim() : null;
+          const value = rawValue && supportingChunkIds.length > 0 ? rawValue : null;
+
+          return {
+            requirement,
+            value,
+            supportingChunkIds: value ? supportingChunkIds : []
+          } satisfies EvidenceExtractorGateItem;
+        })
+        .filter((entry): entry is EvidenceExtractorGateItem => entry !== null)
+        .slice(0, 16)
+    : [];
+
+  const normalizedRequirements =
+    requirements.length > 0
+      ? requirements
+      : Array.from(new Set(extracted.map((entry) => entry.requirement).filter((value) => value.length > 0))).slice(
+          0,
+          12
+        );
+
+  const requirementSet = new Set(
+    normalizedRequirements.map((requirement) => requirement.toLowerCase().replace(/\s+/g, " ").trim())
+  );
+  const satisfiedRequirements = new Set(
+    extracted
+      .filter((entry) => entry.value !== null && entry.supportingChunkIds.length > 0)
+      .map((entry) => entry.requirement.toLowerCase().replace(/\s+/g, " ").trim())
+  );
+
+  const allValuesNull = extracted.length === 0 || extracted.every((entry) => entry.value === null);
+  const someValuesNonNull = extracted.some((entry) => entry.value !== null);
+  const allRequirementsSatisfied =
+    requirementSet.size > 0
+      ? Array.from(requirementSet).every((requirement) => satisfiedRequirements.has(requirement))
+      : extracted.length > 0 && extracted.every((entry) => entry.value !== null);
+
+  const parsedOverall =
+    parsed?.overall === "FOUND" || parsed?.overall === "PARTIAL" || parsed?.overall === "NOT_FOUND"
+      ? parsed.overall
+      : null;
+  const overall: EvidenceExtractorGateOverall = (() => {
+    if (parsedOverall === "NOT_FOUND" || allValuesNull) {
+      return "NOT_FOUND";
+    }
+
+    if (allRequirementsSatisfied) {
+      return "FOUND";
+    }
+
+    if (someValuesNonNull) {
+      return "PARTIAL";
+    }
+
+    return "NOT_FOUND";
+  })();
 
   return {
-    sufficient: parsed.sufficient === true,
-    bestChunkIds: Array.isArray(parsed.bestChunkIds)
-      ? parsed.bestChunkIds.filter((value): value is string => typeof value === "string").slice(0, 5)
-      : [],
-    missingPoints: Array.isArray(parsed.missingPoints)
-      ? parsed.missingPoints.filter((value): value is string => typeof value === "string").slice(0, 8)
-      : []
+    requirements: normalizedRequirements,
+    extracted,
+    overall
+  };
+}
+
+export async function generateLegacyEvidenceSufficiency(params: {
+  question: string;
+  snippets: RetrievedSnippet[];
+}): Promise<LegacyEvidenceSufficiencyModelOutput> {
+  const systemPrompt =
+    "You are an evidence sufficiency gate for document question-answering. " +
+    "Use ONLY the provided snippets. Do not guess, infer, or use external knowledge. " +
+    "Return strict JSON with keys: sufficient, missingPoints, supportingChunkIds. " +
+    "sufficient must be true only when the snippets explicitly contain enough information to answer the question. " +
+    "missingPoints must be an array of missing required details when sufficient is false. " +
+    "supportingChunkIds must only include chunkIds from the snippet list that directly support sufficiency.";
+
+  const userPrompt = `Question:\n${params.question}\n\nSnippets:\n${toSnippetText(params.snippets)}`;
+
+  const payload = (await requestOpenAI("/chat/completions", {
+    model: OPENAI_CHAT_MODEL,
+    temperature: 0,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt }
+    ]
+  })) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+
+  const content = payload.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error("Chat completion response did not include content");
+  }
+
+  const parsed = JSON.parse(content) as
+    | {
+        sufficient?: unknown;
+        missingPoints?: unknown;
+        supportingChunkIds?: unknown;
+      }
+    | null;
+
+  const validChunkIds = new Set(params.snippets.map((snippet) => snippet.chunkId));
+  const supportingChunkIds = Array.isArray(parsed?.supportingChunkIds)
+    ? Array.from(
+        new Set(
+          parsed.supportingChunkIds
+            .filter((value): value is string => typeof value === "string")
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0 && validChunkIds.has(value))
+        )
+      ).slice(0, 5)
+    : [];
+
+  const missingPoints = Array.isArray(parsed?.missingPoints)
+    ? parsed.missingPoints
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+        .slice(0, 12)
+    : [];
+
+  const sufficient = parsed?.sufficient === true && supportingChunkIds.length > 0;
+
+  return {
+    sufficient,
+    missingPoints,
+    supportingChunkIds: sufficient ? supportingChunkIds : []
   };
 }
 

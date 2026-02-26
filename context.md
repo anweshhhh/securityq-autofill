@@ -7,7 +7,7 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 
 ## 2) MVP Scope (Current)
 
-- Evidence ingestion: upload `.txt`/`.md`, chunk, embed, list, delete
+- Evidence ingestion: upload `.txt`/`.md`/`.pdf`, chunk, embed, list, delete
 - Answer engine: retrieve + rerank + sufficiency gate + grounded answer with citations
 - Questionnaire workflow: CSV import, select question column, single-run autofill, details view, CSV export
 - Approval workflow (Phase 1): approve/edit/unapprove overrides per question + review status controls
@@ -34,6 +34,34 @@ Core promise: answers are generated only from uploaded evidence and always inclu
   - selected context topN=5
 - One strict output-format retry for LLM answer generation
 
+### Ingestion formats + extraction notes
+
+- Supported upload formats: `.txt`, `.md`, `.pdf`
+- Text/Markdown extraction: direct file text read
+- PDF extraction: `pdf-parse` (Node-side, lazy-loaded from `pdf-parse/lib/pdf-parse.js`) with per-page separators inserted as:
+  - `--- Page N ---`
+- Chunking rules are unchanged and deterministic (`src/lib/chunker.ts`).
+- Citations continue to reference persisted `DocumentChunk.id` values only.
+- Upload route runtime is explicitly Node (`/api/documents/upload`).
+- Upload API error contract is JSON-only:
+  - `{ error: { message: string, code: string } }`
+  - client upload flow checks response `content-type` before JSON parsing and surfaces non-JSON payload snippets for debugging.
+- Autofill UI flow now runs embeddings automatically before questionnaire autofill:
+  - `/questionnaires` and `/questionnaires/[id]` call `POST /api/documents/embed` before `POST /api/questionnaires/:id/autofill`.
+
+### PDF ingestion coverage diagnostics
+
+- Latest PDF diagnostic target: `template_evidence_pack.pdf` (`docId: cmm2usn6a000yffie77116mp5`).
+- Coverage snapshot:
+  - chunks: `3`
+  - embeddings present: `3/3`
+  - missing embeddings: `0`
+- Phrase-level chunk search confirms expected control statements are present in stored chunk text (`least privilege`, access review cadence, `TLS 1.2+`, `mTLS`, `AES-256`, `KMS`, `PCI DSS not applicable`).
+- DEV debug for failing-style questions shows:
+  - relevant chunks are retrieved/reranked (`topK`/`topN` include the expected chunk IDs),
+  - but sufficiency gate can still return `sufficient=false`, causing strict NOT_FOUND.
+- Current diagnosis: PDF-only misses are primarily a **sufficiency-gate classification issue**, not extraction/chunking/embedding coverage.
+
 ### Answer engine pipeline
 
 Runtime flow in `src/server/answerEngine.ts`:
@@ -41,28 +69,38 @@ Runtime flow in `src/server/answerEngine.ts`:
    - `countEmbeddedChunksForOrganization` + `createEmbedding` + `retrieveTopChunks`
 2) deterministic rerank:
    - lexical overlap + combined score (`0.7 vector + 0.3 lexical`)
-3) sufficiency gate:
-   - `generateEvidenceSufficiency` returns `{ sufficient, bestChunkIds, missingPoints }`
-4) grounded generation:
-   - `generateWithFormatEnforcement` wraps `generateGroundedAnswer`
+3) extractor gate:
+   - `generateEvidenceSufficiency` now returns extractor JSON:
+     - `requirements`
+     - `extracted[]` (`requirement`, `value|null`, `supportingChunkIds[]`)
+     - `overall` (`FOUND | PARTIAL | NOT_FOUND`)
+   - gate decision is deterministic in code:
+     - `overall=NOT_FOUND` OR all values null => strict NOT_FOUND
+     - some values present but requirements not fully satisfied => PARTIAL
+     - all requirements satisfied => FOUND
+4) answer composition:
+   - FOUND answers are composed from extracted requirement/value pairs.
+   - PARTIAL answers return exact `Not specified in provided documents.` with citations.
+   - citations are sourced from extractor `supportingChunkIds` and must map to selected reranked chunk IDs.
 5) normalization + claim-check:
-   - `normalizeAnswerOutput` (input: model answer/confidence/review flags + validated citations + sufficiency result)
+   - `normalizeAnswerOutput` (input: composed answer + validated citations + extractor decision)
    - calls `applyClaimCheckGuardrails` in `src/lib/claimCheck.ts`
    - output: final `{ answer, citations, confidence, needsReview }`
 
 Normalization invariants (claim-check clobber fix):
-- Normalization invariant: sufficient+cited drafts cannot be downgraded by claim-check.
+- Normalization invariant: extractor FOUND + fully satisfied + cited drafts cannot be downgraded by claim-check.
 - Strict fallbacks remain:
   - empty citations => `Not found in provided documents.`
   - invalid format => `Not found in provided documents.`
-  - sufficiency false => `Not found in provided documents.` (handled before normalization)
+  - extractor NOT_FOUND/all-null => `Not found in provided documents.` (handled before normalization)
 - Clobber prevention:
-  - if sufficiency is true with no missing points, citations are non-empty/validated, raw grounded draft is affirmative (not PARTIAL/NOT_FOUND template), and claim-check rewrites to PARTIAL/NOT_FOUND template,
+  - if extractor outcome is FOUND with fully satisfied requirements, citations are non-empty/validated, raw draft is affirmative (not PARTIAL/NOT_FOUND template), and claim-check rewrites to PARTIAL/NOT_FOUND template,
   - normalization preserves the grounded draft answer, keeps citations, and sets low confidence + needsReview.
 - Regression coverage:
   - `src/server/normalizeAnswerOutput.bug.test.ts` (direct normalization repro)
   - `src/server/answerEngine.test.ts` positive-control engine path repro
-  - both now pass with the invariant in place.
+  - `src/server/answerEngine.pdfGate.regression.test.ts` (PDF extractor-gate coverage)
+  - all pass with the extractor gate in place.
 
 ## 4.1) UI Theme: D-Dark Shell
 
@@ -117,6 +155,7 @@ Normalization invariants (claim-check clobber fix):
       - bulk action rule: `Approve Visible` is scoped to current filter/search and only approves rows with non-NOT_FOUND answers, non-empty citations, and non-approved status
       - keyboard shortcuts with help modal (`?`, `J/K`, `A`, `R`, `U`, `C`, `E`) disabled while typing in form fields
       - loading skeletons shown for rail/main/evidence while questionnaire details are fetching
+      - `Run Autofill` uses live progress UI in-button (`answered/total`) and polls questionnaire details during active runs so rail/answer/evidence refresh incrementally
     - evidence panel conventions:
       - citation chips show doc name only (ellipsized) with compact per-row actions (`Copy reference`, `Open document`)
       - snippet viewer highlights key question terms client-side and supports compact toolbar copy actions (`Copy citation IDs`, `Copy selected snippet`, optional evidence pack copy)
@@ -127,6 +166,7 @@ Normalization invariants (claim-check clobber fix):
       - citation IDs remain available for auditability via tooltip and copy-reference actions (`DocName#ChunkId`)
       - evidence toolbar is compact (`Evidence (N)` + always-visible `Copy refs` + icon-only secondary actions), reducing vertical whitespace in the right panel
       - row actions visibility: desktop reveals on row hover/focus and selected row; mobile keeps row actions always visible
+      - header icon tooltips use below-placement near panel top to avoid clipping (`Copy selected snippet`, `Copy evidence pack`)
       - no document detail page currently; `Open Doc` uses a read-only modal backed by `GET /api/documents/:id` full-text reconstruction from chunks
     - export UX conventions:
       - export is modal-driven on `/questionnaires` and `/questionnaires/[id]`
@@ -221,8 +261,15 @@ Use `.env.example` as source of truth.
 
 - `DATABASE_URL`
 - `OPENAI_API_KEY`
-- `DEV_MODE` (optional, default false)
+
+### Feature flags
+
+- `DEV_MODE` (optional, default `false`)
 - `DEBUG_EVIDENCE` (optional; effective only when `DEV_MODE=true`)
+- `EXTRACTOR_GATE` (optional rollout toggle for answer gate mode):
+  - truthy (`true/1/yes/on`) => extractor gate path
+  - falsy (`false/0/no/off`) => legacy sufficiency gate path
+  - unset default: `true` in `NODE_ENV=development` and `NODE_ENV=test`, `false` otherwise
 
 ## 9) Tests (MVP Contracts)
 
@@ -234,6 +281,8 @@ Use `.env.example` as source of truth.
 - Active bug regression tests:
   - `src/server/normalizeAnswerOutput.bug.test.ts`
   - `src/server/answerEngine.test.ts` (`does not clobber an affirmative grounded answer...`)
+  - `src/server/answerEngine.pdfGate.regression.test.ts` (PDF extractor-gate regression coverage)
+  - fixture used: `test/fixtures/evidence-gate.pdf`
 
 ## 9.1) UI Audit Tooling
 

@@ -6,12 +6,14 @@ const {
   createEmbeddingMock,
   generateGroundedAnswerMock,
   generateEvidenceSufficiencyMock,
+  generateLegacyEvidenceSufficiencyMock,
   countEmbeddedChunksForOrganizationMock,
   retrieveTopChunksMock
 } = vi.hoisted(() => ({
   createEmbeddingMock: vi.fn(),
   generateGroundedAnswerMock: vi.fn(),
   generateEvidenceSufficiencyMock: vi.fn(),
+  generateLegacyEvidenceSufficiencyMock: vi.fn(),
   countEmbeddedChunksForOrganizationMock: vi.fn(),
   retrieveTopChunksMock: vi.fn()
 }));
@@ -19,7 +21,8 @@ const {
 vi.mock("@/lib/openai", () => ({
   createEmbedding: createEmbeddingMock,
   generateGroundedAnswer: generateGroundedAnswerMock,
-  generateEvidenceSufficiency: generateEvidenceSufficiencyMock
+  generateEvidenceSufficiency: generateEvidenceSufficiencyMock,
+  generateLegacyEvidenceSufficiency: generateLegacyEvidenceSufficiencyMock
 }));
 
 vi.mock("@/lib/retrieval", () => ({
@@ -36,9 +39,11 @@ function fixture(name: string): string {
 describe("MVP answer engine contract", () => {
   beforeEach(() => {
     process.env.DEV_MODE = "false";
+    process.env.EXTRACTOR_GATE = "true";
     createEmbeddingMock.mockReset();
     generateGroundedAnswerMock.mockReset();
     generateEvidenceSufficiencyMock.mockReset();
+    generateLegacyEvidenceSufficiencyMock.mockReset();
     countEmbeddedChunksForOrganizationMock.mockReset();
     retrieveTopChunksMock.mockReset();
 
@@ -67,19 +72,15 @@ describe("MVP answer engine contract", () => {
     ]);
 
     generateEvidenceSufficiencyMock.mockResolvedValue({
-      sufficient: true,
-      bestChunkIds: ["chunk-b1"],
-      missingPoints: []
-    });
-
-    generateGroundedAnswerMock.mockResolvedValue({
-      answer: "Two-factor authentication is enabled for workforce sign-in.",
-      citations: [
-        { chunkId: "chunk-b1", quotedSnippet: "Two-factor authentication is enabled for workforce sign-in." },
-        { chunkId: "not-selected", quotedSnippet: "should be dropped" }
+      requirements: ["MFA required for workforce sign-in"],
+      extracted: [
+        {
+          requirement: "MFA required for workforce sign-in",
+          value: "Two-factor authentication is enabled for workforce sign-in.",
+          supportingChunkIds: ["chunk-b1"]
+        }
       ],
-      confidence: "high",
-      needsReview: false
+      overall: "FOUND"
     });
 
     const result = await answerQuestion({
@@ -112,9 +113,15 @@ describe("MVP answer engine contract", () => {
     ]);
 
     generateEvidenceSufficiencyMock.mockResolvedValue({
-      sufficient: false,
-      bestChunkIds: [],
-      missingPoints: ["No retention period"]
+      requirements: ["Log retention period"],
+      extracted: [
+        {
+          requirement: "Log retention period",
+          value: null,
+          supportingChunkIds: []
+        }
+      ],
+      overall: "NOT_FOUND"
     });
 
     const result = await answerQuestion({
@@ -140,16 +147,20 @@ describe("MVP answer engine contract", () => {
     ]);
 
     generateEvidenceSufficiencyMock.mockResolvedValue({
-      sufficient: true,
-      bestChunkIds: ["chunk-a1"],
-      missingPoints: []
-    });
-
-    generateGroundedAnswerMock.mockResolvedValue({
-      answer: "Not specified in provided documents.",
-      citations: [{ chunkId: "chunk-a1", quotedSnippet: "MFA is enabled for all employee accounts." }],
-      confidence: "med",
-      needsReview: false
+      requirements: ["MFA required for all employee accounts", "Enrollment method"],
+      extracted: [
+        {
+          requirement: "MFA required for all employee accounts",
+          value: "MFA is enabled for all employee accounts.",
+          supportingChunkIds: ["chunk-a1"]
+        },
+        {
+          requirement: "Enrollment method",
+          value: null,
+          supportingChunkIds: []
+        }
+      ],
+      overall: "PARTIAL"
     });
 
     const result = await answerQuestion({
@@ -180,25 +191,20 @@ describe("MVP answer engine contract", () => {
     ]);
 
     generateEvidenceSufficiencyMock.mockResolvedValue({
-      sufficient: true,
-      bestChunkIds: ["chunk-1", "chunk-2"],
-      missingPoints: []
-    });
-
-    generateGroundedAnswerMock.mockResolvedValue({
-      answer: "Yes, data is encrypted in transit. The minimum TLS version enforced is TLS 1.2.",
-      citations: [
+      requirements: ["Encrypt data in transit", "Minimum TLS version"],
+      extracted: [
         {
-          chunkId: "chunk-1",
-          quotedSnippet: "Q: Do you encrypt data in transit? A: Yes. External interfaces require TLS 1.2+."
+          requirement: "Encrypt data in transit",
+          value: "Data is encrypted in transit.",
+          supportingChunkIds: ["chunk-1"]
         },
         {
-          chunkId: "chunk-2",
-          quotedSnippet: "Public APIs terminate SSL/TLS at the edge (minimum TLS 1.2)."
+          requirement: "Minimum TLS version",
+          value: "Minimum TLS version enforced is TLS 1.2.",
+          supportingChunkIds: ["chunk-2"]
         }
       ],
-      confidence: "high",
-      needsReview: false
+      overall: "FOUND"
     });
 
     const result = await answerQuestion({

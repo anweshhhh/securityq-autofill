@@ -3,8 +3,9 @@ import {
   createEmbedding,
   generateEvidenceSufficiency,
   generateGroundedAnswer,
-  type EvidenceSufficiencyModelOutput,
-  type GroundedAnswerModelOutput
+  generateLegacyEvidenceSufficiency,
+  type LegacyEvidenceSufficiencyModelOutput,
+  type EvidenceSufficiencyModelOutput
 } from "@/lib/openai";
 import {
   countEmbeddedChunksForOrganization,
@@ -60,7 +61,7 @@ export type EvidenceDebugInfo = {
 
 const TOP_K = 12;
 const RERANK_TOP_N = 5;
-const MAX_ANSWER_CHUNKS = 3;
+const MAX_ANSWER_CHUNKS = 5;
 const VECTOR_WEIGHT = 0.7;
 const LEXICAL_WEIGHT = 0.3;
 const MIN_TOP_SIMILARITY = 0.2;
@@ -68,6 +69,8 @@ const MIN_TOKEN_LENGTH = 4;
 const NOT_FOUND_TEXT = "Not found in provided documents.";
 const NORMALIZED_NOT_FOUND_TEXT = normalizeTemplateText(NOT_FOUND_TEXT);
 const NORMALIZED_NOT_SPECIFIED_TEXT = normalizeTemplateText(NOT_SPECIFIED_RESPONSE_TEXT);
+const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
+const FALSE_VALUES = new Set(["0", "false", "no", "off"]);
 
 const QUESTION_STOPWORDS = new Set([
   "about",
@@ -163,6 +166,32 @@ function isNotFoundTemplateLike(value: string): boolean {
 function isNotSpecifiedTemplateLike(value: string): boolean {
   const normalized = normalizeTemplateText(value);
   return normalized.includes(NORMALIZED_NOT_SPECIFIED_TEXT);
+}
+
+function parseBooleanFlag(value: string | undefined): boolean | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (TRUE_VALUES.has(normalized)) {
+    return true;
+  }
+
+  if (FALSE_VALUES.has(normalized)) {
+    return false;
+  }
+
+  return null;
+}
+
+function isExtractorGateEnabled(): boolean {
+  const configured = parseBooleanFlag(process.env.EXTRACTOR_GATE);
+  if (configured !== null) {
+    return configured;
+  }
+
+  return process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test";
 }
 
 function tokenizeForLexical(value: string): string[] {
@@ -294,56 +323,14 @@ function validateAnswerFormat(answer: string): boolean {
   return !hasModelFormatViolation(trimmed);
 }
 
-async function generateWithFormatEnforcement(params: {
-  question: string;
-  snippets: Array<{ chunkId: string; docName: string; quotedSnippet: string }>;
-}): Promise<{ output: GroundedAnswerModelOutput; hadFormatViolation: boolean }> {
-  const first = await generateGroundedAnswer({
-    question: params.question,
-    snippets: params.snippets
-  });
-
-  if (!hasModelFormatViolation(first.answer)) {
-    return {
-      output: first,
-      hadFormatViolation: false
-    };
-  }
-
-  const strictQuestion =
-    "Answer in concise prose only. No markdown headings. No raw snippet dump. " + params.question;
-
-  const second = await generateGroundedAnswer({
-    question: strictQuestion,
-    snippets: params.snippets
-  });
-
-  if (!hasModelFormatViolation(second.answer)) {
-    return {
-      output: second,
-      hadFormatViolation: true
-    };
-  }
-
-  return {
-    output: {
-      answer: NOT_FOUND_TEXT,
-      citations: [],
-      confidence: "low",
-      needsReview: true
-    },
-    hadFormatViolation: true
-  };
-}
-
 export function normalizeAnswerOutput(params: {
   modelAnswer: string;
   modelConfidence: "low" | "med" | "high";
   modelNeedsReview: boolean;
   modelHadFormatViolation: boolean;
   citations: Citation[];
-  sufficiencySufficient: boolean;
-  missingPoints: string[];
+  extractorOverall: "FOUND" | "PARTIAL" | "NOT_FOUND";
+  allRequirementsSatisfied: boolean;
 }): EvidenceAnswer {
   const citations = dedupeCitations(params.citations);
   if (citations.length === 0) {
@@ -373,8 +360,8 @@ export function normalizeAnswerOutput(params: {
     isNotFoundTemplateLike(answer) || isNotSpecifiedTemplateLike(answer);
 
   const preserveGroundedDraftFromClobber =
-    params.sufficiencySufficient &&
-    params.missingPoints.length === 0 &&
+    params.extractorOverall === "FOUND" &&
+    params.allRequirementsSatisfied &&
     groundedDraftIsAffirmative &&
     claimCheckRewroteToTemplate &&
     citations.length > 0;
@@ -415,6 +402,205 @@ export function normalizeAnswerOutput(params: {
     needsReview
   };
 }
+
+function normalizeRequirementKey(value: string): string {
+  return sanitizeExtractedText(value).toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function evaluateExtractorGate(params: {
+  gate: EvidenceSufficiencyModelOutput;
+  validChunkIds: Set<string>;
+}): {
+  overall: "FOUND" | "PARTIAL" | "NOT_FOUND";
+  requirements: string[];
+  extracted: EvidenceSufficiencyModelOutput["extracted"];
+  supportingChunkIds: string[];
+  allRequirementsSatisfied: boolean;
+} {
+  const extracted = params.gate.extracted
+    .map((entry) => {
+      const requirement = sanitizeExtractedText(entry.requirement ?? "").trim();
+      if (!requirement) {
+        return null;
+      }
+
+      const supportingChunkIds = Array.from(
+        new Set(
+          (entry.supportingChunkIds ?? []).filter(
+            (chunkId): chunkId is string => typeof chunkId === "string" && params.validChunkIds.has(chunkId)
+          )
+        )
+      ).slice(0, 5);
+
+      const rawValue = typeof entry.value === "string" ? sanitizeExtractedText(entry.value).trim() : null;
+      const value = rawValue && supportingChunkIds.length > 0 ? rawValue : null;
+
+      return {
+        requirement,
+        value,
+        supportingChunkIds: value ? supportingChunkIds : []
+      };
+    })
+    .filter((entry): entry is EvidenceSufficiencyModelOutput["extracted"][number] => entry !== null);
+
+  const requirements = (
+    params.gate.requirements.length > 0
+      ? params.gate.requirements
+      : extracted.map((entry) => entry.requirement)
+  )
+    .map((requirement) => sanitizeExtractedText(requirement).trim())
+    .filter((requirement) => requirement.length > 0)
+    .slice(0, 12);
+
+  const requirementKeys = Array.from(new Set(requirements.map(normalizeRequirementKey)));
+  const satisfiedRequirementKeys = new Set(
+    extracted
+      .filter((entry) => entry.value !== null && entry.supportingChunkIds.length > 0)
+      .map((entry) => normalizeRequirementKey(entry.requirement))
+  );
+
+  const someValuesNonNull = extracted.some((entry) => entry.value !== null);
+  const allValuesNull = extracted.length === 0 || extracted.every((entry) => entry.value === null);
+  const allRequirementsSatisfied =
+    requirementKeys.length > 0
+      ? requirementKeys.every((key) => satisfiedRequirementKeys.has(key))
+      : extracted.length > 0 && extracted.every((entry) => entry.value !== null);
+
+  const parsedOverall = params.gate.overall;
+  const overall: "FOUND" | "PARTIAL" | "NOT_FOUND" = (() => {
+    if (parsedOverall === "NOT_FOUND" || allValuesNull) {
+      return "NOT_FOUND";
+    }
+
+    if (someValuesNonNull && !allRequirementsSatisfied) {
+      return "PARTIAL";
+    }
+
+    if (allRequirementsSatisfied) {
+      return "FOUND";
+    }
+
+    return "NOT_FOUND";
+  })();
+
+  const supportingChunkIds = Array.from(
+    new Set(
+      extracted
+        .filter((entry) => entry.value !== null)
+        .flatMap((entry) => entry.supportingChunkIds)
+        .filter((chunkId) => params.validChunkIds.has(chunkId))
+    )
+  );
+
+  return {
+    overall,
+    requirements,
+    extracted,
+    supportingChunkIds,
+    allRequirementsSatisfied
+  };
+}
+
+function evaluateLegacyGate(params: {
+  question: string;
+  gate: LegacyEvidenceSufficiencyModelOutput;
+  validChunkIds: Set<string>;
+}): {
+  overall: "FOUND" | "NOT_FOUND";
+  supportingChunkIds: string[];
+  allRequirementsSatisfied: boolean;
+  debugSufficiency: EvidenceSufficiencyModelOutput;
+} {
+  const supportingChunkIds = Array.from(
+    new Set(
+      params.gate.supportingChunkIds.filter(
+        (chunkId): chunkId is string => typeof chunkId === "string" && params.validChunkIds.has(chunkId)
+      )
+    )
+  ).slice(0, 5);
+  const sufficient = params.gate.sufficient === true && supportingChunkIds.length > 0;
+
+  const fallbackRequirement = sanitizeExtractedText(params.question).trim() || "Question coverage";
+  const missingPoints = params.gate.missingPoints
+    .map((value) => sanitizeExtractedText(value).trim())
+    .filter((value) => value.length > 0)
+    .slice(0, 12);
+
+  const requirements = sufficient
+    ? [fallbackRequirement]
+    : missingPoints.length > 0
+      ? missingPoints
+      : [fallbackRequirement];
+  const extracted = requirements.map((requirement) => ({
+    requirement,
+    value: sufficient ? "Supported by selected evidence." : null,
+    supportingChunkIds: sufficient ? supportingChunkIds : []
+  }));
+  const overall: "FOUND" | "NOT_FOUND" = sufficient ? "FOUND" : "NOT_FOUND";
+
+  return {
+    overall,
+    supportingChunkIds: sufficient ? supportingChunkIds : [],
+    allRequirementsSatisfied: sufficient,
+    debugSufficiency: {
+      requirements,
+      extracted,
+      overall
+    }
+  };
+}
+
+function composeFoundAnswerFromExtracted(params: {
+  extracted: EvidenceSufficiencyModelOutput["extracted"];
+}): string {
+  const lines = params.extracted
+    .filter((entry) => entry.value !== null)
+    .map((entry) => `${entry.requirement}: ${entry.value}`);
+
+  return sanitizeExtractedText(lines.join(" ")).trim();
+}
+
+function selectChosenChunks(params: {
+  rerankedTopN: ScoredChunk[];
+  prioritizedChunkIds: string[];
+}): ScoredChunk[] {
+  const rerankedById = new Map(params.rerankedTopN.map((chunk) => [chunk.chunkId, chunk]));
+  const selectedChunkIds: string[] = [];
+
+  for (const chunkId of params.prioritizedChunkIds) {
+    if (!rerankedById.has(chunkId) || selectedChunkIds.includes(chunkId)) {
+      continue;
+    }
+
+    selectedChunkIds.push(chunkId);
+    if (selectedChunkIds.length >= MAX_ANSWER_CHUNKS) {
+      break;
+    }
+  }
+
+  for (const chunk of params.rerankedTopN) {
+    if (selectedChunkIds.includes(chunk.chunkId)) {
+      continue;
+    }
+
+    selectedChunkIds.push(chunk.chunkId);
+    if (selectedChunkIds.length >= MAX_ANSWER_CHUNKS) {
+      break;
+    }
+  }
+
+  return selectedChunkIds
+    .map((chunkId) => rerankedById.get(chunkId))
+    .filter((chunk): chunk is ScoredChunk => Boolean(chunk));
+}
+
+type GateDecision = {
+  mode: "extractor" | "legacy";
+  overall: "FOUND" | "PARTIAL" | "NOT_FOUND";
+  supportingChunkIds: string[];
+  allRequirementsSatisfied: boolean;
+  extracted: EvidenceSufficiencyModelOutput["extracted"];
+};
 
 function scoreRetrievedChunks(question: string, retrieved: RetrievedChunk[]): ScoredChunk[] {
   const questionTokens = tokenizeForLexical(question);
@@ -519,48 +705,66 @@ export async function answerQuestion(params: AnswerQuestionParams): Promise<Evid
     );
   }
 
-  const sufficiency = await generateEvidenceSufficiency({
-    question,
-    snippets: rerankedTopN.map((chunk) => ({
-      chunkId: chunk.chunkId,
-      docName: chunk.docName,
-      quotedSnippet: chunk.quotedSnippet
-    }))
-  });
-  debugInfo.sufficiency = sufficiency;
+  const snippets = rerankedTopN.map((chunk) => ({
+    chunkId: chunk.chunkId,
+    docName: chunk.docName,
+    quotedSnippet: chunk.quotedSnippet
+  }));
+  const validChunkIds = new Set(rerankedTopN.map((chunk) => chunk.chunkId));
+  let gateDecision: GateDecision;
 
-  if (!sufficiency.sufficient) {
+  if (isExtractorGateEnabled()) {
+    const extractorGate = await generateEvidenceSufficiency({
+      question,
+      snippets
+    });
+    const extractorDecision = evaluateExtractorGate({
+      gate: extractorGate,
+      validChunkIds
+    });
+
+    debugInfo.sufficiency = {
+      ...extractorGate,
+      requirements: extractorDecision.requirements,
+      extracted: extractorDecision.extracted,
+      overall: extractorDecision.overall
+    };
+    gateDecision = {
+      mode: "extractor",
+      overall: extractorDecision.overall,
+      supportingChunkIds: extractorDecision.supportingChunkIds,
+      allRequirementsSatisfied: extractorDecision.allRequirementsSatisfied,
+      extracted: extractorDecision.extracted
+    };
+  } else {
+    const legacyGate = await generateLegacyEvidenceSufficiency({
+      question,
+      snippets
+    });
+    const legacyDecision = evaluateLegacyGate({
+      question,
+      gate: legacyGate,
+      validChunkIds
+    });
+
+    debugInfo.sufficiency = legacyDecision.debugSufficiency;
+    gateDecision = {
+      mode: "legacy",
+      overall: legacyDecision.overall,
+      supportingChunkIds: legacyDecision.supportingChunkIds,
+      allRequirementsSatisfied: legacyDecision.allRequirementsSatisfied,
+      extracted: []
+    };
+  }
+
+  if (gateDecision.overall === "NOT_FOUND") {
     return returnNotFound("NO_RELEVANT_EVIDENCE");
   }
 
-  const rerankedById = new Map(rerankedTopN.map((chunk) => [chunk.chunkId, chunk]));
-  const selectedChunkIds: string[] = [];
-
-  for (const chunkId of sufficiency.bestChunkIds) {
-    if (!rerankedById.has(chunkId) || selectedChunkIds.includes(chunkId)) {
-      continue;
-    }
-
-    selectedChunkIds.push(chunkId);
-    if (selectedChunkIds.length >= MAX_ANSWER_CHUNKS) {
-      break;
-    }
-  }
-
-  for (const chunk of rerankedTopN) {
-    if (selectedChunkIds.includes(chunk.chunkId)) {
-      continue;
-    }
-
-    selectedChunkIds.push(chunk.chunkId);
-    if (selectedChunkIds.length >= MAX_ANSWER_CHUNKS) {
-      break;
-    }
-  }
-
-  const chosenChunks = selectedChunkIds
-    .map((chunkId) => rerankedById.get(chunkId))
-    .filter((chunk): chunk is ScoredChunk => Boolean(chunk));
+  const chosenChunks = selectChosenChunks({
+    rerankedTopN,
+    prioritizedChunkIds: gateDecision.supportingChunkIds
+  });
 
   debugInfo.chosenChunks = chosenChunks.map((chunk) => ({
     chunkId: chunk.chunkId,
@@ -571,7 +775,65 @@ export async function answerQuestion(params: AnswerQuestionParams): Promise<Evid
     return returnNotFound("NO_RELEVANT_EVIDENCE");
   }
 
-  const generation = await generateWithFormatEnforcement({
+  const chosenById = new Map(chosenChunks.map((chunk) => [chunk.chunkId, chunk]));
+  if (gateDecision.mode === "extractor") {
+    const citations = dedupeCitations(
+      gateDecision.supportingChunkIds
+        .map((chunkId) => chosenById.get(chunkId))
+        .filter((chunk): chunk is ScoredChunk => Boolean(chunk))
+        .map(buildCitationFromChunk)
+    );
+
+    if (citations.length === 0) {
+      return returnNotFound("FILTERED_AS_IRRELEVANT");
+    }
+
+    if (gateDecision.overall === "PARTIAL") {
+      const partialAnswer: EvidenceAnswer = {
+        answer: NOT_SPECIFIED_RESPONSE_TEXT,
+        citations,
+        confidence: "low",
+        needsReview: true
+      };
+
+      debugInfo.finalCitations = partialAnswer.citations.map((citation) => ({
+        chunkId: citation.chunkId,
+        docName: citation.docName
+      }));
+
+      return withDebugInfo(partialAnswer, debugEnabled, debugInfo);
+    }
+
+    const extractedDraftAnswer = composeFoundAnswerFromExtracted({
+      extracted: gateDecision.extracted
+    });
+    if (!extractedDraftAnswer) {
+      return returnNotFound("NO_RELEVANT_EVIDENCE");
+    }
+
+    const normalized = normalizeAnswerOutput({
+      modelAnswer: extractedDraftAnswer,
+      modelConfidence: "high",
+      modelNeedsReview: false,
+      modelHadFormatViolation: false,
+      citations,
+      extractorOverall: gateDecision.overall,
+      allRequirementsSatisfied: gateDecision.allRequirementsSatisfied
+    });
+
+    if (normalized.answer === NOT_FOUND_TEXT) {
+      return returnNotFound("NO_RELEVANT_EVIDENCE");
+    }
+
+    debugInfo.finalCitations = normalized.citations.map((citation) => ({
+      chunkId: citation.chunkId,
+      docName: citation.docName
+    }));
+
+    return withDebugInfo(normalized, debugEnabled, debugInfo);
+  }
+
+  const grounded = await generateGroundedAnswer({
     question,
     snippets: chosenChunks.map((chunk) => ({
       chunkId: chunk.chunkId,
@@ -579,31 +841,44 @@ export async function answerQuestion(params: AnswerQuestionParams): Promise<Evid
       quotedSnippet: chunk.quotedSnippet
     }))
   });
+  const modelCitations = dedupeCitations(
+    grounded.citations
+      .map((citation) => {
+        const chunk = chosenById.get(citation.chunkId);
+        if (!chunk) {
+          return null;
+        }
 
-  const chosenById = new Map(chosenChunks.map((chunk) => [chunk.chunkId, chunk]));
-  const citations = dedupeCitations(
-    generation.output.citations
-      .map((citation) => chosenById.get(citation.chunkId))
-      .filter((chunk): chunk is ScoredChunk => Boolean(chunk))
-      .map(buildCitationFromChunk)
+        return {
+          docName: chunk.docName,
+          chunkId: chunk.chunkId,
+          quotedSnippet: normalizeWhitespace(citation.quotedSnippet || chunk.quotedSnippet)
+        };
+      })
+      .filter((citation): citation is Citation => citation !== null)
   );
 
-  if (citations.length === 0) {
+  if (modelCitations.length === 0) {
     return returnNotFound("FILTERED_AS_IRRELEVANT");
   }
 
+  const extractorOverall = isNotSpecifiedTemplateLike(grounded.answer) ? "PARTIAL" : "FOUND";
   const normalized = normalizeAnswerOutput({
-    modelAnswer: generation.output.answer,
-    modelConfidence: generation.output.confidence,
-    modelNeedsReview: generation.output.needsReview,
-    modelHadFormatViolation: generation.hadFormatViolation,
-    citations,
-    sufficiencySufficient: sufficiency.sufficient,
-    missingPoints: sufficiency.missingPoints
+    modelAnswer: grounded.answer,
+    modelConfidence: grounded.confidence,
+    modelNeedsReview: grounded.needsReview,
+    modelHadFormatViolation: hasModelFormatViolation(grounded.answer),
+    citations: modelCitations,
+    extractorOverall,
+    allRequirementsSatisfied: extractorOverall === "FOUND"
   });
 
   if (normalized.answer === NOT_FOUND_TEXT) {
     return returnNotFound("NO_RELEVANT_EVIDENCE");
+  }
+
+  if (isNotSpecifiedTemplateLike(normalized.answer)) {
+    normalized.answer = NOT_SPECIFIED_RESPONSE_TEXT;
   }
 
   debugInfo.finalCitations = normalized.citations.map((citation) => ({

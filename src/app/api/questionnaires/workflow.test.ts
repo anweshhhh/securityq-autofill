@@ -11,6 +11,7 @@ const {
   createEmbeddingMock,
   generateGroundedAnswerMock,
   generateEvidenceSufficiencyMock,
+  generateLegacyEvidenceSufficiencyMock,
   countEmbeddedChunksForOrganizationMock,
   retrieveTopChunksMock
 } = vi.hoisted(() => ({
@@ -19,6 +20,7 @@ const {
   createEmbeddingMock: vi.fn(),
   generateGroundedAnswerMock: vi.fn(),
   generateEvidenceSufficiencyMock: vi.fn(),
+  generateLegacyEvidenceSufficiencyMock: vi.fn(),
   countEmbeddedChunksForOrganizationMock: vi.fn(),
   retrieveTopChunksMock: vi.fn()
 }));
@@ -26,7 +28,8 @@ const {
 vi.mock("@/lib/openai", () => ({
   createEmbedding: createEmbeddingMock,
   generateGroundedAnswer: generateGroundedAnswerMock,
-  generateEvidenceSufficiency: generateEvidenceSufficiencyMock
+  generateEvidenceSufficiency: generateEvidenceSufficiencyMock,
+  generateLegacyEvidenceSufficiency: generateLegacyEvidenceSufficiencyMock
 }));
 
 vi.mock("@/lib/retrieval", () => ({
@@ -286,12 +289,14 @@ async function seedEvidenceChunksForOrganization(organizationId: string) {
 describe.sequential("questionnaire workflow integration", () => {
   beforeEach(async () => {
     process.env.DEV_MODE = "false";
+    process.env.EXTRACTOR_GATE = "true";
     await cleanupWorkflowData();
     answerQuestionMock.mockReset();
     getEmbeddingAvailabilityMock.mockReset();
     createEmbeddingMock.mockReset();
     generateGroundedAnswerMock.mockReset();
     generateEvidenceSufficiencyMock.mockReset();
+    generateLegacyEvidenceSufficiencyMock.mockReset();
     countEmbeddedChunksForOrganizationMock.mockReset();
     retrieveTopChunksMock.mockReset();
     getEmbeddingAvailabilityMock.mockResolvedValue({ total: 1, embedded: 1, missing: 0 });
@@ -462,24 +467,52 @@ describe.sequential("questionnaire workflow integration", () => {
       const question = params.question.toLowerCase();
       if (question.includes("minimum tls version")) {
         return {
-          sufficient: true,
-          bestChunkIds: params.snippets.map((snippet) => snippet.chunkId),
-          missingPoints: []
+          requirements: ["Minimum TLS version", "Transit encryption"],
+          extracted: [
+            {
+              requirement: "Minimum TLS version",
+              value: "Minimum TLS version enforced is TLS 1.2.",
+              supportingChunkIds: params.snippets.map((snippet) => snippet.chunkId).slice(0, 2)
+            },
+            {
+              requirement: "Transit encryption",
+              value: "Data is encrypted in transit.",
+              supportingChunkIds: params.snippets.map((snippet) => snippet.chunkId).slice(0, 1)
+            }
+          ],
+          overall: "FOUND"
         };
       }
 
       if (question.includes("soc report period")) {
         return {
-          sufficient: false,
-          bestChunkIds: [],
-          missingPoints: ["Report period not provided"]
+          requirements: ["SOC report period"],
+          extracted: [
+            {
+              requirement: "SOC report period",
+              value: null,
+              supportingChunkIds: []
+            }
+          ],
+          overall: "NOT_FOUND"
         };
       }
 
       return {
-        sufficient: true,
-        bestChunkIds: [params.snippets[0]?.chunkId].filter(Boolean),
-        missingPoints: []
+        requirements: ["Key rotation interval", "Encryption at rest"],
+        extracted: [
+          {
+            requirement: "Encryption at rest",
+            value: "Encryption at rest is enabled.",
+            supportingChunkIds: [params.snippets[0]?.chunkId].filter(Boolean)
+          },
+          {
+            requirement: "Key rotation interval",
+            value: null,
+            supportingChunkIds: []
+          }
+        ],
+        overall: "PARTIAL"
       };
     });
 
