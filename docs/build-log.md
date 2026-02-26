@@ -2,6 +2,35 @@
 
 Current log of implemented MVP work (concise, execution-focused).
 
+## 2026-02-26 - phase2-reuse-01 approved-answer reuse
+
+- Implemented cross-questionnaire approved-answer reuse in autofill flow.
+- Added `ApprovedAnswer` metadata for matching:
+  - `normalizedQuestionText`
+  - `questionTextHash`
+  - `questionEmbedding` (`vector(1536)`)
+- Added migration:
+  - `prisma/migrations/20260226223000_phase2_approvedanswer_reuse/migration.sql`
+- Approval routes now persist matching metadata + embedding on create/update:
+  - `POST /api/approved-answers`
+  - `PATCH /api/approved-answers/:id`
+- Added reusable matcher (`src/lib/approvedAnswerReuse.ts`) with deterministic matching order:
+  1) exact hash/normalized text
+  2) near-exact normalized text similarity
+  3) semantic similarity via embedding threshold
+- Evidence validity guardrail enforced for reuse:
+  - all reused `citationChunkIds` must exist and belong to the same organization, or reuse candidate is rejected.
+- Autofill output now surfaces reuse metadata:
+  - `reusedCount`
+  - `reusedFromApprovedAnswers[]` with approved answer IDs + match type.
+- Regression coverage:
+  - workflow integration test now covers two questionnaires where approvals from A are reused in B (`exact` + `semantic`) and unrelated questions still fall back to engine.
+- Stability:
+  - isolated default-org mocking added to `pdfOnly.autofill.regression` test to prevent cross-suite embedding availability collisions.
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+
 ## 2026-02-26 - phase2-qa-01 pdf/txt parity regressions
 
 - Added deterministic PDF/TXT parity regression suite:

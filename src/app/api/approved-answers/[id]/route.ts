@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
 import { ApiRouteError, assertChunkOwnership, normalizeCitationChunkIds } from "@/lib/approvalValidation";
+import { createEmbedding } from "@/lib/openai";
 import { prisma } from "@/lib/prisma";
+import { buildQuestionTextMetadata } from "@/lib/questionText";
+import { embeddingToVectorLiteral } from "@/lib/retrieval";
 
 type RouteContext = {
   params: {
@@ -65,7 +68,12 @@ export async function PATCH(request: Request, context: RouteContext) {
         answerText: true,
         citationChunkIds: true,
         note: true,
-        approvedBy: true
+        approvedBy: true,
+        question: {
+          select: {
+            text: true
+          }
+        }
       }
     });
 
@@ -108,6 +116,8 @@ export async function PATCH(request: Request, context: RouteContext) {
       organizationId: organization.id,
       chunkIds: citationChunkIds
     });
+    const questionMetadata = buildQuestionTextMetadata(existing.question.text);
+    const questionEmbedding = await createEmbedding(existing.question.text);
 
     const approvedAnswer = await prisma.$transaction(async (tx) => {
       const updated = await tx.approvedAnswer.update({
@@ -115,6 +125,8 @@ export async function PATCH(request: Request, context: RouteContext) {
           id: existing.id
         },
         data: {
+          normalizedQuestionText: questionMetadata.normalizedQuestionText,
+          questionTextHash: questionMetadata.questionTextHash,
           answerText,
           citationChunkIds,
           source: "MANUAL_EDIT",
@@ -122,6 +134,21 @@ export async function PATCH(request: Request, context: RouteContext) {
           approvedBy
         }
       });
+
+      await tx.$executeRawUnsafe(
+        `
+          UPDATE "ApprovedAnswer"
+          SET
+            "questionEmbedding" = $1::vector(1536),
+            "normalizedQuestionText" = $2,
+            "questionTextHash" = $3
+          WHERE "id" = $4
+        `,
+        embeddingToVectorLiteral(questionEmbedding),
+        questionMetadata.normalizedQuestionText,
+        questionMetadata.questionTextHash,
+        updated.id
+      );
 
       await tx.question.update({
         where: {

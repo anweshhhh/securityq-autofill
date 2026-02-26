@@ -1,4 +1,5 @@
 import { NOT_FOUND_RESPONSE, type EvidenceDebugInfo } from "@/lib/answering";
+import { createApprovedAnswerReuseMatcher } from "@/lib/approvedAnswerReuse";
 import { parseCsvFile } from "@/lib/csv";
 import { prisma } from "@/lib/prisma";
 import { answerQuestion } from "@/server/answerEngine";
@@ -16,12 +17,21 @@ export type AutofillDebugEntry = {
   debug: EvidenceDebugInfo;
 };
 
+export type AutofillReusedEntry = {
+  questionId: string;
+  rowIndex: number;
+  reusedFromApprovedAnswerId: string;
+  matchType: "exact" | "near_exact" | "semantic";
+};
+
 export type AutofillResult = {
   questionnaireId: string;
   totalCount: number;
   answeredCount: number;
   foundCount: number;
   notFoundCount: number;
+  reusedCount: number;
+  reusedFromApprovedAnswers: AutofillReusedEntry[];
   debug?: {
     enabled: boolean;
     entries: AutofillDebugEntry[];
@@ -283,6 +293,7 @@ export async function processQuestionnaireAutofillBatch(params: {
   const debugEnabled = devModeEnabled && params.debug === true;
   const persistDebug = debugEnabled && process.env.DEBUG_EVIDENCE === "true";
   const debugEntries: AutofillDebugEntry[] = [];
+  const reusedEntries: AutofillReusedEntry[] = [];
 
   const questionnaire = await prisma.questionnaire.findFirst({
     where: {
@@ -306,21 +317,44 @@ export async function processQuestionnaireAutofillBatch(params: {
       rowIndex: "asc"
     }
   });
+  const approvedAnswerReuseMatcher = await createApprovedAnswerReuseMatcher({
+    organizationId: params.organizationId
+  });
 
   for (const question of questions) {
-    const answer = await answerQuestion({
-      orgId: params.organizationId,
-      questionnaireId: questionnaire.id,
-      questionId: question.id,
-      questionText: question.text,
-      debug: debugEnabled
-    });
+    const reused = await approvedAnswerReuseMatcher.findForQuestion(question.text);
+    const answer =
+      reused !== null
+        ? {
+            answer: reused.answerText,
+            citations: reused.citations,
+            confidence: "high" as const,
+            needsReview: false,
+            reusedFromApprovedAnswerId: reused.approvedAnswerId,
+            reusedFromApprovedMatchType: reused.matchType
+          }
+        : await answerQuestion({
+            orgId: params.organizationId,
+            questionnaireId: questionnaire.id,
+            questionId: question.id,
+            questionText: question.text,
+            debug: debugEnabled
+          });
 
     if (debugEnabled && answer.debug) {
       debugEntries.push({
         questionId: question.id,
         rowIndex: question.rowIndex,
         debug: answer.debug
+      });
+    }
+
+    if (answer.reusedFromApprovedAnswerId) {
+      reusedEntries.push({
+        questionId: question.id,
+        rowIndex: question.rowIndex,
+        reusedFromApprovedAnswerId: answer.reusedFromApprovedAnswerId,
+        matchType: answer.reusedFromApprovedMatchType ?? "exact"
       });
     }
 
@@ -334,6 +368,19 @@ export async function processQuestionnaireAutofillBatch(params: {
       sourceRowUpdate = {
         ...existingSourceRow,
         __answerDebug: answer.debug
+      };
+    } else if (persistDebug && answer.reusedFromApprovedAnswerId) {
+      const existingSourceRow =
+        question.sourceRow && typeof question.sourceRow === "object" && !Array.isArray(question.sourceRow)
+          ? (question.sourceRow as Record<string, unknown>)
+          : {};
+
+      sourceRowUpdate = {
+        ...existingSourceRow,
+        __approvedAnswerReuse: {
+          approvedAnswerId: answer.reusedFromApprovedAnswerId,
+          matchType: answer.reusedFromApprovedMatchType ?? "exact"
+        }
       };
     }
 
@@ -365,6 +412,8 @@ export async function processQuestionnaireAutofillBatch(params: {
         answeredCount: summary.answeredCount,
         foundCount: summary.foundCount,
         notFoundCount: summary.notFoundCount,
+        reusedCount: reusedEntries.length,
+        reusedFromApprovedAnswers: reusedEntries,
         debug: {
           enabled: true,
           entries: debugEntries
@@ -375,6 +424,8 @@ export async function processQuestionnaireAutofillBatch(params: {
         totalCount: refreshedQuestions.length,
         answeredCount: summary.answeredCount,
         foundCount: summary.foundCount,
-        notFoundCount: summary.notFoundCount
+        notFoundCount: summary.notFoundCount,
+        reusedCount: reusedEntries.length,
+        reusedFromApprovedAnswers: reusedEntries
       };
 }

@@ -97,6 +97,9 @@ model ApprovedAnswer {
   /// TODO(mvp-followup): decouple approvals from strict questionId binding so approved answers can be reused across semantically equivalent questions with evidence checks.
   questionId      String               @unique
   question        Question             @relation(fields: [questionId], references: [id])
+  normalizedQuestionText String        @default("")
+  questionTextHash       String        @default("")
+  questionEmbedding      Unsupported("vector(1536)")?
   answerText      String
   citationChunkIds String[]
   source          ApprovedAnswerSource
@@ -104,4 +107,7 @@ model ApprovedAnswer {
   note            String?
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
+
+  @@index([organizationId, questionTextHash])
+  @@index([organizationId, normalizedQuestionText])
 }

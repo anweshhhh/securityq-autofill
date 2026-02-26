@@ -25,6 +25,8 @@ export type EvidenceAnswer = {
   citations: Citation[];
   confidence: "low" | "med" | "high";
   needsReview: boolean;
+  reusedFromApprovedAnswerId?: string;
+  reusedFromApprovedMatchType?: "exact" | "near_exact" | "semantic";
   notFoundReason?: NotFoundReason;
   debug?: EvidenceDebugInfo;
 };

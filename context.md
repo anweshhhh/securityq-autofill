@@ -197,6 +197,27 @@ Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now expl
 - Test isolation detail:
   - parity suite mocks `getOrCreateDefaultOrganization` to a dedicated test org to prevent cross-suite embedding-availability collisions.
 
+### ApprovedAnswer reuse across questionnaires
+
+- Added reusable approval metadata on `ApprovedAnswer`:
+  - `normalizedQuestionText`
+  - `questionTextHash` (MD5 of normalized text)
+  - `questionEmbedding` (`vector(1536)`)
+- Approval create/update routes now persist question metadata and embedding:
+  - `POST /api/approved-answers`
+  - `PATCH /api/approved-answers/:id`
+- Autofill now attempts approval reuse before calling the answer engine:
+  - exact match first (`questionTextHash` / `normalizedQuestionText`)
+  - near-exact text match next (high-threshold normalized similarity)
+  - semantic match last (embedding cosine similarity threshold)
+- Reuse safety invariants:
+  - reused `citationChunkIds` must still resolve to existing chunks owned by the same organization
+  - if any cited chunk is missing/out-of-org, candidate reuse is rejected
+  - reused answers always return with citations and `needsReview=false`
+- Autofill result now includes reuse metadata for downstream UI:
+  - `reusedCount`
+  - `reusedFromApprovedAnswers[]` with `{ questionId, rowIndex, reusedFromApprovedAnswerId, matchType }`
+
 ## 4.1) UI Theme: D-Dark Shell
 
 - Dark shell + light workbench rule:

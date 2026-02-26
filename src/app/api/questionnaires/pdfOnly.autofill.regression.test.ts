@@ -11,12 +11,14 @@ const {
   createEmbeddingMock,
   generateEvidenceSufficiencyMock,
   generateGroundedAnswerMock,
-  generateLegacyEvidenceSufficiencyMock
+  generateLegacyEvidenceSufficiencyMock,
+  getOrCreateDefaultOrganizationMock
 } = vi.hoisted(() => ({
   createEmbeddingMock: vi.fn(),
   generateEvidenceSufficiencyMock: vi.fn(),
   generateGroundedAnswerMock: vi.fn(),
-  generateLegacyEvidenceSufficiencyMock: vi.fn()
+  generateLegacyEvidenceSufficiencyMock: vi.fn(),
+  getOrCreateDefaultOrganizationMock: vi.fn()
 }));
 
 vi.mock("@/lib/openai", () => ({
@@ -26,9 +28,15 @@ vi.mock("@/lib/openai", () => ({
   generateLegacyEvidenceSufficiency: generateLegacyEvidenceSufficiencyMock
 }));
 
+vi.mock("@/lib/defaultOrg", () => ({
+  getOrCreateDefaultOrganization: getOrCreateDefaultOrganizationMock
+}));
+
 const TEST_DOC_PREFIX = "vitest-template-evidence-pack-";
 const TEST_Q_PREFIX = "vitest-pdf-only-autofill-";
+const TEST_ORG_PREFIX = "vitest-pdf-only-org-";
 const NOT_FOUND_TEXT = "Not found in provided documents.";
+let isolatedOrgId: string | null = null;
 
 function pickSupportingChunkIds(snippets: Array<{ chunkId: string }>): string[] {
   const first = snippets[0]?.chunkId;
@@ -137,6 +145,13 @@ describe.sequential("pdf-only extractor gate questionnaire autofill regression",
       missingPoints: ["legacy fallback disabled for this regression"],
       supportingChunkIds: []
     });
+    const organization = await prisma.organization.create({
+      data: {
+        name: `${TEST_ORG_PREFIX}${Date.now()}`
+      }
+    });
+    isolatedOrgId = organization.id;
+    getOrCreateDefaultOrganizationMock.mockResolvedValue(organization);
 
     await cleanupPrefixedQuestionnaires();
     await cleanupPrefixedDocuments();
@@ -145,6 +160,43 @@ describe.sequential("pdf-only extractor gate questionnaire autofill regression",
   afterEach(async () => {
     await cleanupPrefixedQuestionnaires();
     await cleanupPrefixedDocuments();
+    if (isolatedOrgId) {
+      await prisma.approvedAnswer.deleteMany({
+        where: {
+          organizationId: isolatedOrgId
+        }
+      });
+      await prisma.question.deleteMany({
+        where: {
+          questionnaire: {
+            organizationId: isolatedOrgId
+          }
+        }
+      });
+      await prisma.questionnaire.deleteMany({
+        where: {
+          organizationId: isolatedOrgId
+        }
+      });
+      await prisma.documentChunk.deleteMany({
+        where: {
+          document: {
+            organizationId: isolatedOrgId
+          }
+        }
+      });
+      await prisma.document.deleteMany({
+        where: {
+          organizationId: isolatedOrgId
+        }
+      });
+      await prisma.organization.delete({
+        where: {
+          id: isolatedOrgId
+        }
+      });
+      isolatedOrgId = null;
+    }
   });
 
   afterAll(async () => {

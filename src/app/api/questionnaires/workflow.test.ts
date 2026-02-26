@@ -32,10 +32,14 @@ vi.mock("@/lib/openai", () => ({
   generateLegacyEvidenceSufficiency: generateLegacyEvidenceSufficiencyMock
 }));
 
-vi.mock("@/lib/retrieval", () => ({
-  countEmbeddedChunksForOrganization: countEmbeddedChunksForOrganizationMock,
-  retrieveTopChunks: retrieveTopChunksMock
-}));
+vi.mock("@/lib/retrieval", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/retrieval")>("@/lib/retrieval");
+  return {
+    ...actual,
+    countEmbeddedChunksForOrganization: countEmbeddedChunksForOrganizationMock,
+    retrieveTopChunks: retrieveTopChunksMock
+  };
+});
 
 vi.mock("@/server/answerEngine", async () => {
   const actual = await vi.importActual<typeof import("@/server/answerEngine")>(
@@ -75,6 +79,16 @@ const TEST_ORG_NAME_PREFIX = "vitest-workflow-org-";
 
 function fixture(name: string): string {
   return readFileSync(join(process.cwd(), `test/fixtures/${name}`), "utf8");
+}
+
+function sparseEmbedding(index: number, secondaryIndex?: number, secondaryWeight = 0.01): number[] {
+  const vector = new Array(1536).fill(0);
+  vector[index] = 1;
+  if (secondaryIndex !== undefined) {
+    vector[secondaryIndex] = secondaryWeight;
+  }
+
+  return vector;
 }
 
 async function cleanupQuestionnaires() {
@@ -818,6 +832,219 @@ describe.sequential("questionnaire workflow integration", () => {
     expect(detailsPayload.questions[1].approvedAnswer?.citationChunkIds).toEqual([chunkIds.ssoChunkId]);
     expect(detailsPayload.questions[2].reviewStatus).toBe("NEEDS_REVIEW");
     expect(detailsPayload.questions[2].approvedAnswer).toBeNull();
+  });
+
+  it("reuses approved answers across questionnaires via exact and semantic question matching", async () => {
+    const organization = await getOrCreateDefaultOrganization();
+    const chunkIds = await seedEvidenceChunksForOrganization(organization.id);
+
+    createEmbeddingMock.mockImplementation(async (input: string) => {
+      const question = input.toLowerCase();
+      if (question.includes("tls") || question.includes("transport")) {
+        return sparseEmbedding(0, 1, 0.02);
+      }
+
+      if (question.includes("mfa") || question.includes("admin")) {
+        return sparseEmbedding(10, 11, 0.02);
+      }
+
+      if (question.includes("iso 27001")) {
+        return sparseEmbedding(30, 31, 0.02);
+      }
+
+      return sparseEmbedding(100);
+    });
+
+    const questionnaireACsv =
+      "Control ID,Question\n" +
+      "A-1,What minimum TLS version is required for public APIs?\n" +
+      "A-2,Is MFA required for privileged administrative access?\n";
+
+    const questionnaireAFormData = new FormData();
+    questionnaireAFormData.append("file", new File([questionnaireACsv], "reuse-a.csv", { type: "text/csv" }));
+    questionnaireAFormData.append("questionColumn", "Question");
+    questionnaireAFormData.append("name", `${TEST_QUESTIONNAIRE_NAME_PREFIX}reuse-a-${Date.now()}`);
+
+    const importAResponse = await importRoute(
+      new Request("http://localhost/api/questionnaires/import", {
+        method: "POST",
+        body: questionnaireAFormData
+      })
+    );
+    expect(importAResponse.status).toBe(201);
+    const importAPayload = (await importAResponse.json()) as {
+      questionnaire?: { id: string };
+    };
+    const questionnaireAId = importAPayload.questionnaire?.id;
+    expect(questionnaireAId).toBeTruthy();
+
+    answerQuestionMock
+      .mockResolvedValueOnce({
+        answer: "Minimum TLS version is 1.2 for public APIs.",
+        citations: [
+          {
+            docName: "Workflow Evidence",
+            chunkId: chunkIds.tlsChunkId,
+            quotedSnippet: "External traffic requires TLS 1.2 or higher."
+          }
+        ]
+      })
+      .mockResolvedValueOnce({
+        answer: "MFA is required for privileged administrative access.",
+        citations: [
+          {
+            docName: "Workflow Evidence",
+            chunkId: chunkIds.ssoChunkId,
+            quotedSnippet: "Single sign-on is supported for workforce identity providers."
+          }
+        ]
+      });
+
+    const autofillAResponse = await autofillRoute(new Request("http://localhost"), {
+      params: { id: questionnaireAId as string }
+    });
+    expect(autofillAResponse.status).toBe(200);
+    expect(answerQuestionMock).toHaveBeenCalledTimes(2);
+
+    const questionnaireAQuestions = await prisma.question.findMany({
+      where: {
+        questionnaireId: questionnaireAId as string
+      },
+      orderBy: {
+        rowIndex: "asc"
+      },
+      select: {
+        id: true
+      }
+    });
+    expect(questionnaireAQuestions).toHaveLength(2);
+
+    const approveA1Response = await approvedAnswersCreateRoute(
+      new Request("http://localhost/api/approved-answers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          questionId: questionnaireAQuestions[0].id
+        })
+      })
+    );
+    expect(approveA1Response.status).toBe(200);
+    const approveA1Payload = (await approveA1Response.json()) as {
+      approvedAnswer?: { id: string };
+    };
+    expect(approveA1Payload.approvedAnswer?.id).toBeTruthy();
+
+    const approveA2Response = await approvedAnswersCreateRoute(
+      new Request("http://localhost/api/approved-answers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          questionId: questionnaireAQuestions[1].id
+        })
+      })
+    );
+    expect(approveA2Response.status).toBe(200);
+    const approveA2Payload = (await approveA2Response.json()) as {
+      approvedAnswer?: { id: string };
+    };
+    expect(approveA2Payload.approvedAnswer?.id).toBeTruthy();
+
+    const questionnaireBCsv =
+      "Control ID,Question\n" +
+      "B-1,What minimum TLS version is required for public APIs?\n" +
+      "B-2,Do you enforce MFA for admin consoles?\n" +
+      "B-3,Are you ISO 27001 certified?\n";
+
+    const questionnaireBFormData = new FormData();
+    questionnaireBFormData.append("file", new File([questionnaireBCsv], "reuse-b.csv", { type: "text/csv" }));
+    questionnaireBFormData.append("questionColumn", "Question");
+    questionnaireBFormData.append("name", `${TEST_QUESTIONNAIRE_NAME_PREFIX}reuse-b-${Date.now()}`);
+
+    const importBResponse = await importRoute(
+      new Request("http://localhost/api/questionnaires/import", {
+        method: "POST",
+        body: questionnaireBFormData
+      })
+    );
+    expect(importBResponse.status).toBe(201);
+    const importBPayload = (await importBResponse.json()) as {
+      questionnaire?: { id: string };
+    };
+    const questionnaireBId = importBPayload.questionnaire?.id;
+    expect(questionnaireBId).toBeTruthy();
+
+    answerQuestionMock.mockReset();
+    answerQuestionMock.mockResolvedValue({
+      answer: "Not found in provided documents.",
+      citations: []
+    });
+
+    const autofillBResponse = await autofillRoute(new Request("http://localhost"), {
+      params: { id: questionnaireBId as string }
+    });
+    expect(autofillBResponse.status).toBe(200);
+    const autofillBPayload = (await autofillBResponse.json()) as {
+      totalCount: number;
+      answeredCount: number;
+      foundCount: number;
+      notFoundCount: number;
+      reusedCount: number;
+      reusedFromApprovedAnswers: Array<{ reusedFromApprovedAnswerId: string; matchType: string }>;
+    };
+
+    expect(autofillBPayload.totalCount).toBe(3);
+    expect(autofillBPayload.answeredCount).toBe(3);
+    expect(autofillBPayload.foundCount).toBe(2);
+    expect(autofillBPayload.notFoundCount).toBe(1);
+    expect(autofillBPayload.reusedCount).toBe(2);
+    expect(autofillBPayload.reusedFromApprovedAnswers).toHaveLength(2);
+    expect(
+      autofillBPayload.reusedFromApprovedAnswers.map((entry) => entry.reusedFromApprovedAnswerId)
+    ).toEqual(expect.arrayContaining([approveA1Payload.approvedAnswer?.id, approveA2Payload.approvedAnswer?.id]));
+    expect(
+      autofillBPayload.reusedFromApprovedAnswers.map((entry) => entry.matchType)
+    ).toEqual(expect.arrayContaining(["exact", "semantic"]));
+
+    expect(answerQuestionMock).toHaveBeenCalledTimes(1);
+    expect(answerQuestionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        questionText: "Are you ISO 27001 certified?"
+      })
+    );
+
+    const questionnaireBQuestions = await prisma.question.findMany({
+      where: {
+        questionnaireId: questionnaireBId as string
+      },
+      orderBy: {
+        rowIndex: "asc"
+      },
+      select: {
+        text: true,
+        answer: true,
+        citations: true
+      }
+    });
+
+    const byText = new Map(questionnaireBQuestions.map((row) => [row.text, row]));
+
+    const tlsRow = byText.get("What minimum TLS version is required for public APIs?");
+    expect(tlsRow?.answer).toContain("1.2");
+    expect(Array.isArray(tlsRow?.citations)).toBe(true);
+    expect((tlsRow?.citations as Array<unknown>).length).toBeGreaterThan(0);
+
+    const mfaRow = byText.get("Do you enforce MFA for admin consoles?");
+    expect(mfaRow?.answer).toContain("MFA");
+    expect(Array.isArray(mfaRow?.citations)).toBe(true);
+    expect((mfaRow?.citations as Array<unknown>).length).toBeGreaterThan(0);
+
+    const isoRow = byText.get("Are you ISO 27001 certified?");
+    expect(isoRow?.answer).toBe("Not found in provided documents.");
+    expect(isoRow?.citations).toEqual([]);
   });
 
   it("export mode supports preferApproved, approvedOnly, and generated", async () => {
