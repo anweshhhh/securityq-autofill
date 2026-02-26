@@ -154,7 +154,15 @@ export function AppShell({ devMode, children }: AppShellProps) {
 
   return (
     <div className="app-shell">
-      <aside className={cx("shell-sidebar", isSidebarCollapsed && "collapsed")}>
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
+
+      <nav
+        className={cx("shell-sidebar", isSidebarCollapsed && "collapsed")}
+        data-testid="app-sidebar"
+        aria-label="Sidebar"
+      >
         <div className="sidebar-title-row">
           <span className="sidebar-product">
             <span className="sidebar-product-dot" />
@@ -171,8 +179,10 @@ export function AppShell({ devMode, children }: AppShellProps) {
             {isSidebarCollapsed ? ">" : "<"}
           </Button>
         </div>
-        <nav className="sidebar-nav">{renderNavLinks()}</nav>
-      </aside>
+        <div className="sidebar-nav" data-testid="app-sidebar-nav" aria-label="Sidebar links">
+          {renderNavLinks()}
+        </div>
+      </nav>
 
       {isMobileSidebarOpen ? (
         <>
@@ -182,7 +192,13 @@ export function AppShell({ devMode, children }: AppShellProps) {
             onClick={() => setIsMobileSidebarOpen(false)}
             aria-label="Close navigation drawer"
           />
-          <aside className="shell-sidebar mobile-sidebar mobile-only" ref={mobileSidebarRef} tabIndex={-1}>
+          <nav
+            className="shell-sidebar mobile-sidebar mobile-only"
+            ref={mobileSidebarRef}
+            tabIndex={-1}
+            data-testid="app-sidebar-mobile"
+            aria-label="Sidebar"
+          >
             <div className="sidebar-title-row">
               <span className="sidebar-product">
                 <span className="sidebar-product-dot" />
@@ -199,48 +215,53 @@ export function AppShell({ devMode, children }: AppShellProps) {
                 X
               </Button>
             </div>
-            <nav className="sidebar-nav">{renderNavLinks(() => setIsMobileSidebarOpen(false))}</nav>
-          </aside>
+            <div className="sidebar-nav" data-testid="app-sidebar-nav-mobile" aria-label="Sidebar links">
+              {renderNavLinks(() => setIsMobileSidebarOpen(false))}
+            </div>
+          </nav>
         </>
       ) : null}
 
       <div className="shell-main">
-        <div className="top-nav">
-          <Button
-            type="button"
-            variant="shell"
-            className="icon-btn mobile-only"
-            onClick={() => setIsMobileSidebarOpen(true)}
-            title="Open navigation"
-            aria-label="Open navigation"
-          >
-            =
-          </Button>
-          <div className="top-nav-brand">
-            <strong>SecurityQ</strong>
-            <span className="top-nav-sep">|</span>
-            <span>{pageHeader.title}</span>
-          </div>
-          <div className="top-nav-search">
-            <TextInput
-              type="search"
-              readOnly
-              placeholder="Search questionnaires, evidence, citations (coming soon)"
-            />
-          </div>
-          <Link href={primaryAction.href} className="btn btn-primary" aria-label={primaryAction.label}>
-            {primaryAction.label}
-          </Link>
-        </div>
-
-        <header className="page-header-band">
-          <h1>{pageHeader.title}</h1>
-          <p>{pageHeader.subtitle}</p>
+        <header>
+          <nav className="top-nav" aria-label="Primary">
+            <Button
+              type="button"
+              variant="shell"
+              className="icon-btn mobile-only"
+              onClick={() => setIsMobileSidebarOpen(true)}
+              title="Open navigation"
+              aria-label="Open navigation"
+            >
+              =
+            </Button>
+            <div className="top-nav-brand">
+              <strong>SecurityQ</strong>
+              <span className="top-nav-sep">|</span>
+              <span>{pageHeader.title}</span>
+            </div>
+            <div className="top-nav-search">
+              <TextInput
+                type="search"
+                readOnly
+                placeholder="Search questionnaires, evidence, citations (coming soon)"
+                aria-label="Global search (coming soon)"
+              />
+            </div>
+            <Link href={primaryAction.href} className="btn btn-primary" aria-label={primaryAction.label}>
+              {primaryAction.label}
+            </Link>
+          </nav>
         </header>
 
-        <div className="canvas-area">
+        <main id="main-content" className="canvas-area">
+          <header className="page-header-band">
+            <h1 id="page-title">{pageHeader.title}</h1>
+            <p>{pageHeader.subtitle}</p>
+          </header>
+
           <div className="canvas-inner">{children}</div>
-        </div>
+        </main>
       </div>
     </div>
   );

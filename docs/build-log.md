@@ -212,6 +212,54 @@ Current log of implemented MVP work (concise, execution-focused).
   - aligned `/documents` empty inventory state to gradient chrome empty-state pattern used in questionnaire surfaces
   - retained shared card + table primitives across `/documents` and `/questionnaires` list views
 
+## 2026-02-26 - ui-audit-questionnaire-page automation
+
+- Added automated questionnaire UI audit script:
+  - `scripts/ui_audit_questionnaire.js`
+  - npm command: `npm run ui:audit -- <url>`
+- Added UI audit dependencies:
+  - `playwright` (dev dependency)
+  - `@axe-core/playwright` (dev dependency)
+- Script outputs per run:
+  - screenshots at desktop/tablet/mobile breakpoints
+  - console warnings/errors
+  - network failures (request failures + HTTP >= 400)
+  - DOM assertions for workbench shell/panels
+  - axe accessibility summary + full raw results
+- Added minimal stable selectors (non-invasive `data-testid`) for audit assertions:
+  - app sidebar nav
+  - questionnaire question rail panel
+  - main answer panel
+  - evidence panel
+- Executed audit:
+  - URL: `http://localhost:3000/questionnaires/cmm0zazy5000ggp4qxjq8sokv`
+  - artifacts: `artifacts/ui-audit/2026-02-26T00-49-21-703Z`
+  - console errors/warnings: `0`
+  - network failures: `0`
+  - DOM assertions: `4/4` passed
+  - axe violations: `3` (`1 serious`, `2 moderate`)
+
+## 2026-02-26 - ui-a11y-fix-landmarks-progressbar
+
+- Landmarks + progressbar accessibility fixes (semantic-only, no business logic changes):
+  - App shell now exposes explicit landmarks:
+    - skip link (`Skip to main content`)
+    - sidebar navigation landmark (`aria-label="Sidebar"`)
+    - top navigation within a header (`<nav aria-label="Primary">`)
+    - single `<main id="main-content">` wrapping primary page content
+  - Trust Bar progress meter now has an accessible name/value:
+    - `aria-label` + `aria-labelledby`
+    - `aria-valuetext` (e.g., `72% approved`)
+- Re-ran validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+  - `npm run ui:audit -- http://localhost:3000/questionnaires/cmm0zazy5000ggp4qxjq8sokv`
+    - artifacts: `artifacts/ui-audit/2026-02-26T01-06-55-257Z`
+    - console errors/warnings: `0`
+    - network failures: `0`
+    - DOM assertions: `4/4` passed
+    - axe violations: `0`
+
 ## Latest validation
 
 - `npm test` => PASS

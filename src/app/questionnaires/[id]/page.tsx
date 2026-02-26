@@ -1249,9 +1249,20 @@ export default function QuestionnaireDetailsPage() {
           <Badge tone="review">Needs review {statusCounts.NEEDS_REVIEW}</Badge>
           <Badge tone="draft">Draft {statusCounts.DRAFT}</Badge>
           <Badge tone="notfound">Not found {statusCounts.NOT_FOUND}</Badge>
-          <div className="trust-progress">
-            <div className="small muted">Approved progress</div>
-            <div className="trust-progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={approvedProgress}>
+            <div className="trust-progress">
+            <div className="small muted" id="approved-progress-label">
+              Approved progress
+            </div>
+            <div
+              className="trust-progress-track"
+              role="progressbar"
+              aria-label="Approved progress"
+              aria-labelledby="approved-progress-label"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={approvedProgress}
+              aria-valuetext={`${approvedProgress}% approved`}
+            >
               <div className="trust-progress-fill" style={{ width: `${approvedProgress}%` }} />
             </div>
             <div className="small">{approvedProgress}% approved</div>
@@ -1307,8 +1318,8 @@ export default function QuestionnaireDetailsPage() {
           </Card>
         </div>
       ) : (
-        <div className="workbench-grid">
-        <Card className="sticky-panel">
+        <div className="workbench-grid" data-testid="questionnaire-workbench">
+        <Card className="sticky-panel" data-testid="question-rail-panel">
           <div className="card-title-row">
             <h3 style={{ margin: 0 }}>Questions</h3>
             <Badge tone="draft">{filteredQuestionIds.length} visible</Badge>
@@ -1351,7 +1362,7 @@ export default function QuestionnaireDetailsPage() {
           </div>
         </Card>
 
-        <Card>
+        <Card data-testid="answer-main-panel">
           {selectedQuestion ? (
             <>
               <div className="card-title-row">
@@ -1512,7 +1523,7 @@ export default function QuestionnaireDetailsPage() {
           )}
         </Card>
 
-        <Card className="workbench-evidence sticky-panel">
+        <Card className="workbench-evidence sticky-panel" data-testid="evidence-panel">
           <div ref={evidencePanelRef} tabIndex={0} className="focus-target" role="region" aria-label="Evidence panel">
           <div className="card-title-row">
             <h3 style={{ margin: 0 }}>Evidence</h3>

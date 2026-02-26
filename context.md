@@ -92,6 +92,10 @@ Normalization invariants (claim-check clobber fix):
     - not found = red
   - interactive controls require visible focus styles and accessible labels
   - modal/drawer surfaces trap keyboard focus while open and support `Esc` close
+  - landmarks + progressbar a11y:
+    - shell includes explicit landmarks (`header`, `nav`, single `main`, sidebar navigation landmark)
+    - focusable skip link (`Skip to main content`) targets `#main-content`
+    - Trust Bar progress indicator has an accessible name and value text (`aria-label`/`aria-labelledby` + `aria-valuetext`)
 - Component conventions:
   - primitives in `src/components/ui.tsx` (`Button`, `Badge`, `Card`, `TextInput`, `TextArea`)
   - questionnaire details page is a review workbench:
@@ -224,6 +228,27 @@ Use `.env.example` as source of truth.
 - Active bug regression tests:
   - `src/server/normalizeAnswerOutput.bug.test.ts`
   - `src/server/answerEngine.test.ts` (`does not clobber an affirmative grounded answer...`)
+
+## 9.1) UI Audit Tooling
+
+- Added questionnaire UI audit automation:
+  - script: `scripts/ui_audit_questionnaire.js`
+  - command: `npm run ui:audit -- <url>`
+  - default URL when omitted: `http://localhost:3000/questionnaires`
+- Audit output directory per run:
+  - `artifacts/ui-audit/<timestamp>/`
+- Each run produces:
+  - screenshots: desktop (`1440x900`), tablet (`834x1112`), mobile (`390x844`)
+  - `console-errors-warnings.json`
+  - `network-failures.json`
+  - `dom-assertions.json`
+  - `axe-summary.json` and `axe-results.json`
+  - `summary.json` and `report.txt`
+- Stable selectors for assertions are provided via minimal `data-testid` attributes:
+  - `app-sidebar-nav` / `app-sidebar-nav-mobile`
+  - `question-rail-panel`
+  - `answer-main-panel`
+  - `evidence-panel`
 
 ## 10) Next Focus
 
