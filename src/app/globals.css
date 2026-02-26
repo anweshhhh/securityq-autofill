@@ -828,36 +828,83 @@ textarea {
 }
 
 .evidence-chip-list {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: 8px;
 }
 
 .evidence-chip-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.evidence-chip-trigger {
+  width: 100%;
+  min-width: 0;
+  justify-content: space-between;
+}
+
+.evidence-chip-doc {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evidence-chip-suffix {
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.evidence-chip-actions {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
-.mini-chip-action {
+.mini-chip-icon-action {
   border: 1px solid #cdd9ef;
-  border-radius: 999px;
+  border-radius: 8px;
   background: #ffffff;
   color: #1e293b;
-  padding: 4px 8px;
-  font-size: 11px;
-  font-weight: 600;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
 }
 
-.mini-chip-action:hover {
+.mini-chip-icon-action svg {
+  width: 14px;
+  height: 14px;
+}
+
+.mini-chip-icon-action:hover {
   background: #f5f8ff;
   border-color: #b4c5e6;
 }
 
-.mini-chip-action:focus-visible {
+.mini-chip-icon-action:focus-visible {
   outline: 2px solid rgba(91, 95, 217, 0.4);
   outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .message-banner {

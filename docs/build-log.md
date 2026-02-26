@@ -260,6 +260,27 @@ Current log of implemented MVP work (concise, execution-focused).
     - DOM assertions: `4/4` passed
     - axe violations: `0`
 
+## 2026-02-26 - ui-polish-evidence-actions
+
+- Polished evidence row actions in `/questionnaires/[id]` without logic changes:
+  - retained chip content (`DocName + ...<chunkId suffix>`) with improved truncation behavior
+  - switched per-citation actions to compact icon buttons (`Copy ID`, `Open Doc`) with tooltip titles
+  - added dedicated action group layout to prevent awkward wrapping/truncation in narrow evidence panel widths
+- Preserved existing features:
+  - `Copy All Citations`
+  - `Copy Snippet`
+  - evidence snippet panel remains on light surface (no gradients behind long text)
+- Accessibility:
+  - explicit `aria-label` kept/added for per-citation action buttons
+  - icon buttons include screen-reader text
+- Validation:
+  - `npm run ui:audit -- http://localhost:3000/questionnaires/cmm0zazy5000ggp4qxjq8sokv`
+    - artifacts: `artifacts/ui-audit/2026-02-26T01-11-05-211Z`
+    - console errors/warnings: `0`
+    - network failures: `0`
+    - DOM assertions: `4/4` passed
+    - axe violations: `0`
+
 ## Latest validation
 
 - `npm test` => PASS

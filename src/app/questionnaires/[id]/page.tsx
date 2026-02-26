@@ -339,6 +339,28 @@ function toQuestionPreview(questionText: string): string {
   return normalized;
 }
 
+function CopyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M9 9.5C9 8.12 10.12 7 11.5 7H19.5C20.88 7 22 8.12 22 9.5V17.5C22 18.88 20.88 20 19.5 20H11.5C10.12 20 9 18.88 9 17.5V9.5ZM11.5 8.5C10.95 8.5 10.5 8.95 10.5 9.5V17.5C10.5 18.05 10.95 18.5 11.5 18.5H19.5C20.05 18.5 20.5 18.05 20.5 17.5V9.5C20.5 8.95 20.05 8.5 19.5 8.5H11.5ZM2 6.5C2 5.12 3.12 4 4.5 4H13.5V5.5H4.5C3.95 5.5 3.5 5.95 3.5 6.5V15.5C3.5 16.05 3.95 16.5 4.5 16.5H8V18H4.5C3.12 18 2 16.88 2 15.5V6.5Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function OpenDocIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M14 4H20V10H18.5V6.56L11.03 14.03L9.97 12.97L17.44 5.5H14V4ZM5.5 5.5H10V7H5.5C4.95 7 4.5 7.45 4.5 8V18C4.5 18.55 4.95 19 5.5 19H15.5C16.05 19 16.5 18.55 16.5 18V13.5H18V18C18 19.38 16.88 20.5 15.5 20.5H5.5C4.12 20.5 3 19.38 3 18V8C3 6.62 4.12 5.5 5.5 5.5Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 const QuestionRailItemButton = memo(function QuestionRailItemButton({
   item,
   active,
@@ -1561,32 +1583,36 @@ export default function QuestionnaireDetailsPage() {
                   <div key={item.chunkId} className={cx("evidence-chip-item", item.chunkId === activeEvidenceChunkId && "active")}>
                     <button
                       type="button"
-                      className={cx("chip", item.chunkId === activeEvidenceChunkId && "active")}
+                      className={cx("chip evidence-chip-trigger", item.chunkId === activeEvidenceChunkId && "active")}
                       onClick={() => setActiveEvidenceChunkId(item.chunkId)}
                       title={`${item.docName}#${item.chunkId}`}
                       aria-label={`Select evidence from ${item.docName} chunk ${item.chunkId}`}
                     >
-                      <span>{item.docName}</span>
-                      <span className="mono-id">...{item.chunkId.slice(-6)}</span>
+                      <span className="evidence-chip-doc">{item.docName}</span>
+                      <span className="mono-id evidence-chip-suffix">...{item.chunkId.slice(-6)}</span>
                     </button>
-                    <button
-                      type="button"
-                      className="mini-chip-action"
-                      onClick={() => void copyText(item.chunkId, "Chunk ID copied.")}
-                      title={`Copy chunk id ${item.chunkId}`}
-                      aria-label={`Copy chunk id ${item.chunkId}`}
-                    >
-                      Copy ID
-                    </button>
-                    <button
-                      type="button"
-                      className="mini-chip-action"
-                      onClick={() => void openDocumentModal(item.docName)}
-                      title={`Open source document ${item.docName}`}
-                      aria-label={`Open source document ${item.docName}`}
-                    >
-                      Open Doc
-                    </button>
+                    <div className="evidence-chip-actions">
+                      <button
+                        type="button"
+                        className="mini-chip-icon-action"
+                        onClick={() => void copyText(item.chunkId, "Chunk ID copied.")}
+                        title="Copy ID"
+                        aria-label={`Copy chunk id ${item.chunkId}`}
+                      >
+                        <CopyIcon />
+                        <span className="sr-only">Copy ID</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="mini-chip-icon-action"
+                        onClick={() => void openDocumentModal(item.docName)}
+                        title="Open Doc"
+                        aria-label={`Open source document ${item.docName}`}
+                      >
+                        <OpenDocIcon />
+                        <span className="sr-only">Open document</span>
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
