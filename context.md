@@ -125,7 +125,8 @@ Normalization invariants (claim-check clobber fix):
       - per-citation action controls are compact icon buttons with tooltip titles and explicit `aria-label`s
       - chip label now prioritizes doc name only (ellipsized); chunk IDs are hidden from primary chip text
       - citation IDs remain available for auditability via tooltip and copy-reference actions (`DocName#ChunkId`)
-      - evidence toolbar is compact (`Evidence (N)` + icon actions), reducing vertical whitespace in the right panel
+      - evidence toolbar is compact (`Evidence (N)` + always-visible `Copy refs` + icon-only secondary actions), reducing vertical whitespace in the right panel
+      - row actions visibility: desktop reveals on row hover/focus and selected row; mobile keeps row actions always visible
       - no document detail page currently; `Open Doc` uses a read-only modal backed by `GET /api/documents/:id` full-text reconstruction from chunks
     - export UX conventions:
       - export is modal-driven on `/questionnaires` and `/questionnaires/[id]`

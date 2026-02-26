@@ -309,6 +309,28 @@ Current log of implemented MVP work (concise, execution-focused).
     - DOM assertions: `4/4` passed
     - axe violations: `0`
 
+## 2026-02-26 - ui-evidence-copy-ref-visibility
+
+- Improved evidence action discoverability without reintroducing whitespace bloat:
+  - added one always-visible compact header control: `Copy refs`
+  - `Copy refs` copies all references as newline-separated `DocName#ChunkId`
+  - retained icon-only secondary controls for `Copy selected snippet` and `Copy evidence pack`
+- Per-citation row action visibility rules:
+  - row actions remain inside each citation row, right-aligned
+  - desktop: actions reveal on row hover/focus and remain visible for selected row
+  - mobile: actions are always visible
+  - row copy tooltip text now explicitly shows reference context (`Copy ref (Doc#Chunk)`)
+- Kept chip labels doc-first (ellipsized doc name only); no chunk suffix shown in primary chip text.
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+  - `npm run ui:audit -- http://localhost:3000/questionnaires/cmm0zazy5000ggp4qxjq8sokv` (run on clean dev server)
+    - artifacts: `artifacts/ui-audit/2026-02-26T01-45-55-316Z`
+    - console errors/warnings: `0`
+    - network failures: `0`
+    - DOM assertions: `4/4` passed
+    - axe violations: `0`
+
 ## Latest validation
 
 - `npm test` => PASS

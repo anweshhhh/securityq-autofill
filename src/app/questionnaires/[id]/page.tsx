@@ -1594,15 +1594,13 @@ export default function QuestionnaireDetailsPage() {
               <div className="evidence-toolbar">
                 <button
                   type="button"
-                  className="mini-chip-icon-action has-tooltip"
+                  className="evidence-copy-refs-btn"
                   onClick={() => void copyText(citationReferenceText, "Citation references copied.")}
                   disabled={citationReferenceRows.length === 0}
-                  title="Copy citation IDs"
-                  data-tooltip="Copy citation IDs"
-                  aria-label="Copy citation IDs"
+                  title="Copy refs"
+                  aria-label="Copy refs"
                 >
-                  <CopyIcon />
-                  <span className="sr-only">Copy citation IDs</span>
+                  Copy refs
                 </button>
                 <button
                   type="button"
@@ -1659,7 +1657,7 @@ export default function QuestionnaireDetailsPage() {
                             className="mini-chip-icon-action has-tooltip"
                             onClick={() => void copyText(citationReference, "Citation reference copied.")}
                             title="Copy reference"
-                            data-tooltip="Copy reference"
+                            data-tooltip={`Copy ref (${citationReference})`}
                             aria-label={`Copy citation reference ${citationReference}`}
                           >
                             <CopyIcon />

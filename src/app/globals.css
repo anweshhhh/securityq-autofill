@@ -841,6 +841,33 @@ textarea {
   gap: 4px;
 }
 
+.evidence-copy-refs-btn {
+  border: 1px solid #cdd9ef;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1e293b;
+  height: 30px;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.evidence-copy-refs-btn:hover {
+  background: #f5f8ff;
+  border-color: #b4c5e6;
+}
+
+.evidence-copy-refs-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.evidence-copy-refs-btn:focus-visible {
+  outline: 2px solid rgba(91, 95, 217, 0.4);
+  outline-offset: 2px;
+}
+
 .evidence-chip-list {
   display: grid;
   gap: 6px;
@@ -875,6 +902,16 @@ textarea {
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.evidence-chip-item:hover .evidence-chip-actions,
+.evidence-chip-item:focus-within .evidence-chip-actions,
+.evidence-chip-item.active .evidence-chip-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .mini-chip-icon-action {
@@ -932,6 +969,13 @@ textarea {
   box-shadow: 0 8px 16px rgba(15, 23, 42, 0.16);
   pointer-events: none;
   z-index: 20;
+}
+
+@media (max-width: 960px) {
+  .evidence-chip-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .sr-only {
