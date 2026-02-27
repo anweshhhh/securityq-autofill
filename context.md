@@ -27,7 +27,7 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 ## 4) Current Architecture
 
 - Stack: Next.js App Router + TypeScript + Prisma + Postgres (`pgvector`)
-- Core Prisma models: `Organization`, `Document`, `DocumentChunk`, `Questionnaire`, `Question`, `ApprovedAnswer`
+- Core Prisma models: `User`, `Account`, `Session`, `VerificationToken`, `Organization`, `Document`, `DocumentChunk`, `Questionnaire`, `Question`, `ApprovedAnswer`
 - Shared answering pipeline in `src/server/answerEngine.ts` used by:
   - `POST /api/questions/answer`
   - `POST /api/questionnaires/:id/autofill`
@@ -37,6 +37,41 @@ Core promise: answers are generated only from uploaded evidence and always inclu
   - combined score: `0.7 * vector + 0.3 * lexical`
   - selected context topN=5
 - One strict output-format retry for LLM answer generation
+
+### Authentication (Phase 4 foundation)
+
+- Auth stack:
+  - `next-auth` (Auth.js / NextAuth)
+  - Prisma adapter (`@auth/prisma-adapter`)
+  - email magic link provider with DB-backed `VerificationToken`
+- App Router auth route:
+  - `GET/POST /api/auth/[...nextauth]` via `src/app/api/auth/[...nextauth]/route.ts`
+  - runtime explicitly Node (`runtime="nodejs"`) because magic-link delivery uses Node email transport.
+- Auth config:
+  - `src/auth.ts`
+  - production: sends email via SMTP using `EMAIL_SERVER` + `EMAIL_FROM`
+  - development: `sendVerificationRequest` logs magic link URL to server console (token still stored in DB)
+- Session and user helpers:
+  - `auth()` in `src/auth.ts`
+  - `getServerAuthSession()` + `getCurrentUser()` in `src/lib/authSession.ts`
+- Route protection:
+  - middleware guards `/documents`, `/questionnaires`, and `/ask` (including nested paths)
+  - unauthenticated page access redirects to `/login?callbackUrl=...`
+  - protected API paths return JSON `401`:
+    - `/api/documents/*`
+    - `/api/questionnaires/*`
+    - `/api/questions/*`
+    - `/api/approved-answers/*`
+- Organization binding:
+  - production paths no longer use a hardcoded default org.
+  - authenticated users are mapped to an org via `User.organizationId`; org is created lazily per user if missing.
+
+### Auth environment variables
+
+- `NEXTAUTH_URL` (example: `http://localhost:3000`)
+- `NEXTAUTH_SECRET`
+- `EMAIL_SERVER` (SMTP URL)
+- `EMAIL_FROM`
 
 ### Ingestion formats + extraction notes
 

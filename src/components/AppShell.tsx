@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { signOut, useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { Button, TextInput, cx } from "@/components/ui";
@@ -107,6 +108,7 @@ function isActiveRoute(pathname: string, href: string): boolean {
 
 export function AppShell({ devMode, children }: AppShellProps) {
   const pathname = usePathname();
+  const { data: session, status } = useSession();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const mobileSidebarRef = useRef<HTMLElement | null>(null);
@@ -251,6 +253,24 @@ export function AppShell({ devMode, children }: AppShellProps) {
             <Link href={primaryAction.href} className="btn btn-primary" aria-label={primaryAction.label}>
               {primaryAction.label}
             </Link>
+            {status === "authenticated" ? (
+              <div className="toolbar-row compact">
+                <span className="small muted">{session.user?.email ?? "Signed in"}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => void signOut({ callbackUrl: "/login" })}
+                  aria-label="Sign out"
+                  title="Sign out"
+                >
+                  Sign out
+                </Button>
+              </div>
+            ) : (
+              <Link href="/login" className="btn btn-secondary" aria-label="Sign in">
+                Sign in
+              </Link>
+            )}
           </nav>
         </header>
 

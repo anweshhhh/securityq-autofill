@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AppShell } from "@/components/AppShell";
+import { AuthSessionProvider } from "@/components/AuthSessionProvider";
 
 export const metadata: Metadata = {
   title: "SecurityQ Autofill",
@@ -17,7 +18,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <AppShell devMode={devMode}>{children}</AppShell>
+        <AuthSessionProvider>
+          <AppShell devMode={devMode}>{children}</AppShell>
+        </AuthSessionProvider>
       </body>
     </html>
   );

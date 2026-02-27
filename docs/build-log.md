@@ -6,6 +6,58 @@ Current log of implemented MVP work (concise, execution-focused).
 
 - Phase 2: COMPLETE
 
+## 2026-02-27 - phase4-01 email auth foundation (Auth.js + Prisma)
+
+- Added Auth.js / NextAuth email magic-link foundation with Prisma adapter.
+- New Prisma auth models added and migrated:
+  - `User`, `Account`, `Session`, `VerificationToken`
+  - `User.organizationId` relation to `Organization` for per-user org mapping
+  - migration: `prisma/migrations/20260227013000_phase4_email_auth_foundation/migration.sql`
+- Added auth configuration:
+  - `src/auth.ts`
+  - adapter: `PrismaAdapter(prisma)`
+  - provider: Email magic-link
+  - session strategy: `jwt`
+  - production email send via SMTP env vars (`EMAIL_SERVER`, `EMAIL_FROM`)
+  - development mode logs magic link URL to server console (verification token still persisted in DB)
+- Added App Router auth route:
+  - `src/app/api/auth/[...nextauth]/route.ts` (`GET`/`POST`, Node runtime)
+- Added session helpers:
+  - `src/lib/authSession.ts` (`getServerAuthSession`, `getCurrentUser`)
+- Added route protection via middleware:
+  - protected pages: `/documents`, `/questionnaires`, `/ask` (nested included)
+  - unauthenticated page access redirects to `/login?callbackUrl=...`
+  - protected APIs return JSON `401` with `{ error: { code, message } }`
+- Added minimal login UI:
+  - `src/app/login/page.tsx`
+  - email input + send magic link flow
+  - success guidance includes dev-console link hint
+- Added authenticated nav affordance:
+  - sign-out button (and sign-in link when not authenticated) in top nav (`src/components/AppShell.tsx`)
+- Updated organization resolution:
+  - production code paths no longer rely on a hardcoded default org name
+  - user organization is resolved/created from authenticated user context
+- Added route-guard tests:
+  - `src/middleware.test.ts`
+  - verifies protected page redirect and API JSON `401` behavior
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+
+### Manual auth test runbook
+
+1. Start app (`npm run dev`) and open `/login`.
+2. Enter an email and click `Send sign-in link`.
+3. In development:
+   - copy magic link URL from server console log `[auth] Magic link for ...`.
+   - open the link in browser.
+4. Confirm session behavior:
+   - `/documents` and `/questionnaires` load only after sign-in.
+   - unauthenticated navigation to those routes redirects to `/login`.
+5. Confirm sign-out:
+   - click `Sign out` in top nav.
+   - protected pages should redirect back to `/login`.
+
 ## 2026-02-26 - questionnaire UX bugfixes (autofill progress + answer echo cleanup)
 
 - Fixed Trust Bar autofill progress behavior in `/questionnaires/[id]`:
