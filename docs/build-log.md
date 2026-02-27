@@ -6,6 +6,34 @@ Current log of implemented MVP work (concise, execution-focused).
 
 - Phase 2: COMPLETE
 
+## 2026-02-27 - phase4-01b email auth dev fallback + diagnostics
+
+- Updated magic-link email provider behavior in `src/auth.ts`:
+  - non-production: never attempts SMTP; logs `MAGIC LINK (dev): <url>` and returns success.
+  - production: requires `EMAIL_SERVER` + `EMAIL_FROM` and sends via nodemailer SMTP.
+  - production never logs magic links.
+- Added explicit diagnostics:
+  - `sendVerificationRequest` wrapped in `try/catch`
+  - non-production failures now emit detailed `console.error` with root cause.
+- Added auth env startup warnings in non-production for missing values:
+  - `NEXTAUTH_URL`/`AUTH_URL`
+  - `NEXTAUTH_SECRET`/`AUTH_SECRET`
+  - `EMAIL_SERVER`
+  - `EMAIL_FROM`
+- Improved login page error message in development:
+  - surfaces provider error code when available and directs user to server logs.
+- Runtime confirmation:
+  - auth route remains Node runtime (`src/app/api/auth/[...nextauth]/route.ts`).
+- Manual test flow (dev):
+1. Start app with `npm run dev`.
+2. Open `/login`.
+3. Submit an email address.
+4. Confirm server logs show `MAGIC LINK (dev): <url>`.
+5. Open that link in browser to complete sign-in.
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+
 ## 2026-02-27 - phase4-01 email auth foundation (Auth.js + Prisma)
 
 - Added Auth.js / NextAuth email magic-link foundation with Prisma adapter.

@@ -50,7 +50,10 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 - Auth config:
   - `src/auth.ts`
   - production: sends email via SMTP using `EMAIL_SERVER` + `EMAIL_FROM`
-  - development: `sendVerificationRequest` logs magic link URL to server console (token still stored in DB)
+  - development: `sendVerificationRequest` never attempts SMTP and logs:
+    - `MAGIC LINK (dev): <url>`
+    - verification token is still persisted in DB via adapter flow
+  - diagnostics: `sendVerificationRequest` wraps failures and logs real errors to server console in non-production
 - Session and user helpers:
   - `auth()` in `src/auth.ts`
   - `getServerAuthSession()` + `getCurrentUser()` in `src/lib/authSession.ts`
@@ -72,6 +75,11 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 - `NEXTAUTH_SECRET`
 - `EMAIL_SERVER` (SMTP URL)
 - `EMAIL_FROM`
+- Compatibility aliases also recognized:
+  - `AUTH_URL` -> `NEXTAUTH_URL`
+  - `AUTH_SECRET` -> `NEXTAUTH_SECRET`
+- Non-production startup warning:
+  - missing auth/email env values produce `console.warn` with exact missing keys for faster setup diagnosis.
 
 ### Ingestion formats + extraction notes
 

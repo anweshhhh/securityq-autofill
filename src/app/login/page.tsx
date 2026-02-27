@@ -49,7 +49,12 @@ export default function LoginPage() {
       });
 
       if (!response || response.error) {
-        setError("Unable to send sign-in link. Check email configuration and retry.");
+        const detailed = response?.error ? ` (${response.error})` : "";
+        const message =
+          process.env.NODE_ENV !== "production"
+            ? `Unable to send sign-in link${detailed}. Check server logs for auth diagnostics.`
+            : "Unable to send sign-in link. Check email configuration and retry.";
+        setError(message);
         return;
       }
 
