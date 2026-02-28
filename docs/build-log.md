@@ -6,6 +6,35 @@ Current log of implemented MVP work (concise, execution-focused).
 
 - Phase 2: COMPLETE
 
+## 2026-02-28 - phase4-02 org membership + bootstrap org on first login
+
+- Added organization membership primitives in Prisma:
+  - new enum `MembershipRole` (`OWNER`, `ADMIN`, `REVIEWER`, `VIEWER`)
+  - new `Membership` model (`userId`, `organizationId`, `role`, `createdAt`, unique `[userId, organizationId]`)
+  - removed direct `User.organizationId` coupling
+  - added `User.lastUsedOrganizationId` for active-org preference
+  - migration: `prisma/migrations/20260228150000_phase4_org_membership_bootstrap/migration.sql`
+- Added bootstrap + active-org helpers in `src/lib/organizationMembership.ts`:
+  - `ensureUserOrganizationMembership(...)` creates sanitized personal workspace + `OWNER` membership on first sign-in
+  - behavior is idempotent on repeat sign-ins
+  - `getActiveOrgForUser(userId)` resolves active org/role from memberships + `lastUsedOrganizationId`
+  - `listUserMemberships(userId)` added for UI context.
+- Updated auth sign-in callback (`src/auth.ts`) to call membership bootstrap helper instead of legacy `User.organizationId` assignment.
+- Added request context utility (`src/lib/requestContext.ts`):
+  - `getRequestContext()` returns `{ userId, orgId, role }`
+  - consistent unauthenticated error contract via `RequestContextError` (`401`, `UNAUTHORIZED`).
+- Updated default org resolver (`src/lib/defaultOrg.ts`) to derive org from request context membership rather than legacy user-org field.
+- Added auth context endpoint and minimal org UI:
+  - `GET /api/auth/context` returns current org name + memberships for authenticated users
+  - top nav (`src/components/AppShell.tsx`) now shows current org name
+  - when memberships > 1, renders a minimal (disabled) org switcher dropdown placeholder.
+- Added deterministic DB tests:
+  - `src/lib/organizationMembership.test.ts`
+  - verifies first sign-in creates org + OWNER membership once, repeat sign-in is idempotent, and active org returns expected org/role.
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+
 ## 2026-02-27 - phase4-01b email auth dev fallback + diagnostics
 
 - Updated magic-link email provider behavior in `src/auth.ts`:

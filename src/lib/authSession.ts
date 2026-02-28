@@ -19,7 +19,7 @@ export async function getCurrentUser() {
       id: true,
       email: true,
       name: true,
-      organizationId: true
+      lastUsedOrganizationId: true
     }
   });
 }

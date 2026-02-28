@@ -27,7 +27,7 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 ## 4) Current Architecture
 
 - Stack: Next.js App Router + TypeScript + Prisma + Postgres (`pgvector`)
-- Core Prisma models: `User`, `Account`, `Session`, `VerificationToken`, `Organization`, `Document`, `DocumentChunk`, `Questionnaire`, `Question`, `ApprovedAnswer`
+- Core Prisma models: `User`, `Account`, `Session`, `VerificationToken`, `Organization`, `Membership`, `Document`, `DocumentChunk`, `Questionnaire`, `Question`, `ApprovedAnswer`
 - Shared answering pipeline in `src/server/answerEngine.ts` used by:
   - `POST /api/questions/answer`
   - `POST /api/questionnaires/:id/autofill`
@@ -38,7 +38,7 @@ Core promise: answers are generated only from uploaded evidence and always inclu
   - selected context topN=5
 - One strict output-format retry for LLM answer generation
 
-### Authentication (Phase 4 foundation)
+### Authentication (Phase 4 foundation + org bootstrap)
 
 - Auth stack:
   - `next-auth` (Auth.js / NextAuth)
@@ -65,9 +65,25 @@ Core promise: answers are generated only from uploaded evidence and always inclu
     - `/api/questionnaires/*`
     - `/api/questions/*`
     - `/api/approved-answers/*`
-- Organization binding:
+- Organization + membership binding:
   - production paths no longer use a hardcoded default org.
-  - authenticated users are mapped to an org via `User.organizationId`; org is created lazily per user if missing.
+  - `User.organizationId` has been replaced by `Membership` (`userId`, `organizationId`, `role`).
+  - on first successful sign-in, the app bootstraps:
+    - a personal organization named like `<email-local-part>'s Workspace` (sanitized)
+    - an `OWNER` membership for that user.
+  - bootstrap is idempotent: repeat sign-ins do not create duplicate organizations/memberships.
+  - active org resolution is membership-derived via `getActiveOrgForUser(userId)`:
+    - one membership: use that membership
+    - multiple memberships: prefer `User.lastUsedOrganizationId`, otherwise newest membership
+    - no memberships: bootstrap org + `OWNER` membership
+  - request context helper `getRequestContext()` resolves `{ userId, orgId, role }` from session + active membership.
+
+### Organization roles
+
+- `OWNER`: full workspace control
+- `ADMIN`: administrative access
+- `REVIEWER`: review and approval workflow access
+- `VIEWER`: read-only access
 
 ### Auth environment variables
 

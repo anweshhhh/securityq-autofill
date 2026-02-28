@@ -1,13 +1,12 @@
 import { auth } from "@/auth";
-import { ensureUserOrganization } from "@/lib/organizationMembership";
+import { getRequestContext } from "@/lib/requestContext";
 import { prisma } from "@/lib/prisma";
 
 export async function getOrCreateDefaultOrganization() {
   const session = await auth();
   const sessionUserId = session?.user?.id?.trim();
-  const sessionEmail = session?.user?.email?.trim().toLowerCase();
 
-  if (!sessionUserId && !sessionEmail) {
+  if (!sessionUserId) {
     if (process.env.NODE_ENV === "test") {
       const testOrgName = "Vitest Organization";
       const existingTestOrg = await prisma.organization.findFirst({
@@ -27,31 +26,10 @@ export async function getOrCreateDefaultOrganization() {
     throw new Error("Authentication required.");
   }
 
-  const user = sessionUserId
-    ? await prisma.user.findUnique({
-        where: { id: sessionUserId },
-        select: {
-          id: true,
-          email: true,
-          name: true
-        }
-      })
-    : await prisma.user.findUnique({
-        where: { email: sessionEmail as string },
-        select: {
-          id: true,
-          email: true,
-          name: true
-        }
-      });
-
-  if (!user) {
-    throw new Error("Authenticated user not found.");
-  }
-
-  return ensureUserOrganization({
-    userId: user.id,
-    email: user.email,
-    name: user.name
+  const context = await getRequestContext();
+  return prisma.organization.findUniqueOrThrow({
+    where: {
+      id: context.orgId
+    }
   });
 }

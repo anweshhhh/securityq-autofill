@@ -29,29 +29,51 @@ enum ReuseMatchType {
   SEMANTIC
 }
 
+enum MembershipRole {
+  OWNER
+  ADMIN
+  REVIEWER
+  VIEWER
+}
+
 model Organization {
   id              String            @id @default(cuid())
   name            String
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
-  users           User[]
+  memberships     Membership[]
+  lastUsedByUsers User[]            @relation("UserLastUsedOrganization")
   documents       Document[]
   questionnaires  Questionnaire[]
   approvedAnswers ApprovedAnswer[]
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  organizationId String?
-  organization  Organization? @relation(fields: [organizationId], references: [id])
-  accounts      Account[]
-  sessions      Session[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                     String        @id @default(cuid())
+  name                   String?
+  email                  String?       @unique
+  emailVerified          DateTime?
+  image                  String?
+  lastUsedOrganizationId String?
+  lastUsedOrganization   Organization? @relation("UserLastUsedOrganization", fields: [lastUsedOrganizationId], references: [id], onDelete: SetNull)
+  memberships            Membership[]
+  accounts               Account[]
+  sessions               Session[]
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+}
+
+model Membership {
+  id             String         @id @default(cuid())
+  userId         String
+  organizationId String
+  role           MembershipRole
+  createdAt      DateTime       @default(now())
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
 }
 
 model Account {

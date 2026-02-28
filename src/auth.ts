@@ -2,7 +2,7 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import { createTransport } from "nodemailer";
 import NextAuth, { type NextAuthOptions, getServerSession } from "next-auth";
 import EmailProvider, { type SendVerificationRequestParams } from "next-auth/providers/email";
-import { ensureUserOrganization } from "@/lib/organizationMembership";
+import { ensureUserOrganizationMembership } from "@/lib/organizationMembership";
 import { prisma } from "@/lib/prisma";
 
 const isProduction = process.env.NODE_ENV === "production";
@@ -17,6 +17,10 @@ if (!process.env.NEXTAUTH_SECRET && process.env.AUTH_SECRET) {
 
 const emailServer = process.env.EMAIL_SERVER ?? "";
 const emailFrom = process.env.EMAIL_FROM ?? "";
+const authSecret =
+  process.env.NEXTAUTH_SECRET ||
+  process.env.AUTH_SECRET ||
+  (isProduction ? undefined : "dev-insecure-nextauth-secret");
 
 if (!isProduction) {
   const missingConfig: string[] = [];
@@ -45,7 +49,9 @@ async function sendVerificationRequest(params: SendVerificationRequestParams) {
 
   try {
     if (!isProduction) {
-      console.info(`MAGIC LINK (dev): ${url}`);
+      console.info("MAGIC LINK (dev) START");
+      console.info(url);
+      console.info("MAGIC LINK (dev) END");
       return;
     }
 
@@ -73,12 +79,29 @@ async function sendVerificationRequest(params: SendVerificationRequestParams) {
 }
 
 export const authOptions: NextAuthOptions = {
+  secret: authSecret,
   adapter: PrismaAdapter(prisma),
+  logger: {
+    error(code, ...message) {
+      console.error("[auth] next-auth error:", code, ...message);
+    },
+    warn(code, ...message) {
+      if (!isProduction) {
+        console.warn("[auth] next-auth warn:", code, ...message);
+      }
+    },
+    debug(code, ...message) {
+      if (!isProduction) {
+        console.debug("[auth] next-auth debug:", code, ...message);
+      }
+    }
+  },
   session: {
     strategy: "jwt"
   },
   pages: {
-    signIn: "/login"
+    signIn: "/login",
+    error: "/login"
   },
   providers: [
     EmailProvider({
@@ -88,16 +111,49 @@ export const authOptions: NextAuthOptions = {
     })
   ],
   callbacks: {
-    async signIn({ user }) {
-      if (!user.id) {
+    async signIn({ user, email }) {
+      // Email provider calls signIn twice: once during verification request,
+      // then again after the magic link is consumed.
+      if (email?.verificationRequest) {
+        return true;
+      }
+
+      let resolvedUserId: string | null =
+        typeof user.id === "string" && user.id.trim().length > 0 ? user.id : null;
+      if (!resolvedUserId && user.email) {
+        const existingUser = await prisma.user.findUnique({
+          where: {
+            email: user.email
+          },
+          select: {
+            id: true
+          }
+        });
+        resolvedUserId = existingUser?.id ?? null;
+      }
+
+      if (!resolvedUserId) {
+        if (!isProduction) {
+          console.error("[auth] signIn failed: user ID unavailable after email callback", {
+            email: user.email ?? null
+          });
+        }
         return false;
       }
 
-      await ensureUserOrganization({
-        userId: user.id,
-        email: user.email ?? null,
-        name: user.name ?? null
-      });
+      try {
+        await ensureUserOrganizationMembership({
+          userId: resolvedUserId,
+          email: user.email ?? null,
+          name: user.name ?? null
+        });
+      } catch (error) {
+        console.error("[auth] ensureUserOrganizationMembership failed during sign-in", error);
+        if (isProduction) {
+          return false;
+        }
+      }
+
       return true;
     },
     async jwt({ token, user }) {

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, TextInput, cx } from "@/components/ui";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 
@@ -16,6 +16,17 @@ type NavItem = {
   href: string;
   label: string;
   short: string;
+};
+
+type AuthContextPayload = {
+  context?: {
+    orgName: string;
+    memberships: Array<{
+      orgId: string;
+      orgName: string;
+      role: string;
+    }>;
+  };
 };
 
 function getPageHeader(pathname: string): { title: string; subtitle: string } {
@@ -109,6 +120,7 @@ function isActiveRoute(pathname: string, href: string): boolean {
 export function AppShell({ devMode, children }: AppShellProps) {
   const pathname = usePathname();
   const { data: session, status } = useSession();
+  const [authContext, setAuthContext] = useState<AuthContextPayload["context"] | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const mobileSidebarRef = useRef<HTMLElement | null>(null);
@@ -135,6 +147,42 @@ export function AppShell({ devMode, children }: AppShellProps) {
     containerRef: mobileSidebarRef,
     onEscape: () => setIsMobileSidebarOpen(false)
   });
+
+  useEffect(() => {
+    if (status !== "authenticated") {
+      setAuthContext(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadAuthContext() {
+      try {
+        const response = await fetch("/api/auth/context", { cache: "no-store" });
+        if (!response.ok) {
+          if (!cancelled) {
+            setAuthContext(null);
+          }
+          return;
+        }
+
+        const payload = (await response.json()) as AuthContextPayload;
+        if (!cancelled) {
+          setAuthContext(payload.context ?? null);
+        }
+      } catch {
+        if (!cancelled) {
+          setAuthContext(null);
+        }
+      }
+    }
+
+    void loadAuthContext();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status]);
 
   function renderNavLinks(onNavigate?: () => void) {
     return navItems.map((item) => {
@@ -256,6 +304,28 @@ export function AppShell({ devMode, children }: AppShellProps) {
             {status === "authenticated" ? (
               <div className="toolbar-row compact">
                 <span className="small muted">{session.user?.email ?? "Signed in"}</span>
+                <span className="small muted">
+                  Org: {authContext?.orgName ?? "Loading..."}
+                </span>
+                {authContext && authContext.memberships.length > 1 ? (
+                  <label className="small muted" style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
+                    Workspace
+                    <select
+                      className="input"
+                      disabled
+                      value={authContext.orgName}
+                      aria-label="Organization switcher (coming soon)"
+                      title="Organization switcher (coming soon)"
+                      style={{ minWidth: 180, height: 34 }}
+                    >
+                      {authContext.memberships.map((membership) => (
+                        <option key={membership.orgId} value={membership.orgName}>
+                          {membership.orgName}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
                 <Button
                   type="button"
                   variant="ghost"
