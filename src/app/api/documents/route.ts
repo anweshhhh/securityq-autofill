@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
+import { toApiErrorResponse } from "@/lib/apiResponse";
 import { prisma } from "@/lib/prisma";
+import { getRequestContext } from "@/lib/requestContext";
 
 export async function GET() {
   try {
-    const organization = await getOrCreateDefaultOrganization();
+    const ctx = await getRequestContext();
 
     const documents = await prisma.document.findMany({
-      where: { organizationId: organization.id },
+      where: { organizationId: ctx.orgId },
       orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
       include: {
         _count: {
@@ -22,6 +23,7 @@ export async function GET() {
         name: document.name,
         displayName: document.name || document.originalName,
         originalName: document.originalName,
+        mimeType: document.mimeType,
         status: document.status,
         errorMessage: document.errorMessage,
         createdAt: document.createdAt,
@@ -31,6 +33,6 @@ export async function GET() {
     });
   } catch (error) {
     console.error("Failed to list documents", error);
-    return NextResponse.json({ error: "Failed to list documents" }, { status: 500 });
+    return toApiErrorResponse(error, "Failed to list documents.");
   }
 }

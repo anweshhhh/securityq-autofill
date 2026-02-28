@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { jsonError, toApiErrorResponse } from "@/lib/apiResponse";
 import { isCsvFile } from "@/lib/csv";
-import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
 import { importQuestionnaireFromCsv } from "@/lib/questionnaireService";
+import { getRequestContext, RequestContextError } from "@/lib/requestContext";
 
 export async function POST(request: Request) {
   try {
@@ -11,20 +12,32 @@ export async function POST(request: Request) {
     const questionnaireName = String(formData.get("name") ?? "");
 
     if (!(fileEntry instanceof File)) {
-      return NextResponse.json({ error: "file is required" }, { status: 400 });
+      return jsonError({
+        status: 400,
+        code: "VALIDATION_ERROR",
+        message: "file is required."
+      });
     }
 
     if (!isCsvFile(fileEntry)) {
-      return NextResponse.json({ error: "Only .csv files are supported" }, { status: 400 });
+      return jsonError({
+        status: 400,
+        code: "VALIDATION_ERROR",
+        message: "Only .csv files are supported."
+      });
     }
 
     if (!questionColumn) {
-      return NextResponse.json({ error: "questionColumn is required" }, { status: 400 });
+      return jsonError({
+        status: 400,
+        code: "VALIDATION_ERROR",
+        message: "questionColumn is required."
+      });
     }
 
-    const organization = await getOrCreateDefaultOrganization();
+    const ctx = await getRequestContext(request);
     const result = await importQuestionnaireFromCsv({
-      organizationId: organization.id,
+      organizationId: ctx.orgId,
       file: fileEntry,
       questionColumn,
       questionnaireName
@@ -42,9 +55,14 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     console.error("Failed to import questionnaire CSV", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to import questionnaire CSV" },
-      { status: 400 }
-    );
+    if (error instanceof RequestContextError) {
+      return toApiErrorResponse(error, "Failed to import questionnaire CSV.");
+    }
+
+    return jsonError({
+      status: 400,
+      code: "VALIDATION_ERROR",
+      message: error instanceof Error ? error.message : "Failed to import questionnaire CSV."
+    });
   }
 }

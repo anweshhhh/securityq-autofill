@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { jsonError, toApiErrorResponse } from "@/lib/apiResponse";
 import { answerQuestion } from "@/server/answerEngine";
-import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
+import { getRequestContext } from "@/lib/requestContext";
 
 export async function POST(request: Request) {
   try {
@@ -13,12 +14,16 @@ export async function POST(request: Request) {
     const debug = isDevMode && debugRequested;
 
     if (!question) {
-      return NextResponse.json({ error: "question is required" }, { status: 400 });
+      return jsonError({
+        status: 400,
+        code: "VALIDATION_ERROR",
+        message: "question is required."
+      });
     }
 
-    const organization = await getOrCreateDefaultOrganization();
+    const ctx = await getRequestContext(request);
     const answer = await answerQuestion({
-      orgId: organization.id,
+      orgId: ctx.orgId,
       questionText: question,
       debug
     });
@@ -31,6 +36,6 @@ export async function POST(request: Request) {
     return NextResponse.json(answer);
   } catch (error) {
     console.error("Failed to answer question", error);
-    return NextResponse.json({ error: "Failed to answer question" }, { status: 500 });
+    return toApiErrorResponse(error, "Failed to answer question.");
   }
 }

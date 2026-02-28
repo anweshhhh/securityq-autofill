@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
+import { jsonError, toApiErrorResponse } from "@/lib/apiResponse";
 import { getEmbeddingAvailability, processQuestionnaireAutofillBatch } from "@/lib/questionnaireService";
+import { getRequestContext } from "@/lib/requestContext";
 
 export async function POST(_request: Request, context: { params: { id: string } }) {
   try {
@@ -11,32 +12,38 @@ export async function POST(_request: Request, context: { params: { id: string } 
       const payload = (await _request.json().catch(() => null)) as { debug?: boolean } | null;
       debugRequested = payload?.debug === true;
     }
+    const questionnaireId = context.params.id.trim();
+    if (!questionnaireId) {
+      return jsonError({
+        status: 400,
+        code: "VALIDATION_ERROR",
+        message: "Questionnaire ID is required."
+      });
+    }
+
     const debug = isDevMode && debugRequested;
-    const organization = await getOrCreateDefaultOrganization();
-    const availability = await getEmbeddingAvailability(organization.id);
+    const ctx = await getRequestContext(_request);
+    const availability = await getEmbeddingAvailability(ctx.orgId);
 
     if (availability.total === 0 || availability.embedded === 0) {
-      return NextResponse.json(
-        {
-          error: "No embedded chunks found. Upload documents and run /api/documents/embed first."
-        },
-        { status: 409 }
-      );
+      return jsonError({
+        status: 409,
+        code: "CONFLICT",
+        message: "No embedded chunks found. Upload documents and run /api/documents/embed first."
+      });
     }
 
     if (availability.missing > 0) {
-      return NextResponse.json(
-        {
-          error:
-            "Some document chunks are missing embeddings. Run /api/documents/embed and retry autofill."
-        },
-        { status: 409 }
-      );
+      return jsonError({
+        status: 409,
+        code: "CONFLICT",
+        message: "Some document chunks are missing embeddings. Run /api/documents/embed and retry autofill."
+      });
     }
 
     const progress = await processQuestionnaireAutofillBatch({
-      organizationId: organization.id,
-      questionnaireId: context.params.id,
+      organizationId: ctx.orgId,
+      questionnaireId,
       debug
     });
 
@@ -50,9 +57,13 @@ export async function POST(_request: Request, context: { params: { id: string } 
     console.error("Failed to autofill questionnaire", error);
 
     if (error instanceof Error && error.message === "Questionnaire not found") {
-      return NextResponse.json({ error: "Questionnaire not found" }, { status: 404 });
+      return jsonError({
+        status: 404,
+        code: "NOT_FOUND",
+        message: "Questionnaire not found."
+      });
     }
 
-    return NextResponse.json({ error: "Failed to autofill questionnaire" }, { status: 500 });
+    return toApiErrorResponse(error, "Failed to autofill questionnaire.");
   }
 }

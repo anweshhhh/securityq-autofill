@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { ApiRouteError } from "@/lib/approvalValidation";
-import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
+import { toApiErrorResponse } from "@/lib/apiResponse";
 import { prisma } from "@/lib/prisma";
+import { getRequestContext } from "@/lib/requestContext";
 
 type RouteContext = {
   params: {
@@ -12,31 +13,6 @@ type RouteContext = {
 type ReviewBody = {
   reviewStatus?: unknown;
 };
-
-function buildErrorResponse(error: ApiRouteError | Error) {
-  if (error instanceof ApiRouteError) {
-    return NextResponse.json(
-      {
-        error: {
-          code: error.code,
-          message: error.message,
-          details: error.details
-        }
-      },
-      { status: error.status }
-    );
-  }
-
-  return NextResponse.json(
-    {
-      error: {
-        code: "INTERNAL_ERROR",
-        message: "Failed to update question review status."
-      }
-    },
-    { status: 500 }
-  );
-}
 
 export async function POST(request: Request, context: RouteContext) {
   try {
@@ -63,12 +39,12 @@ export async function POST(request: Request, context: RouteContext) {
       });
     }
 
-    const organization = await getOrCreateDefaultOrganization();
+    const ctx = await getRequestContext(request);
     const question = await prisma.question.findFirst({
       where: {
         id: questionId,
         questionnaire: {
-          organizationId: organization.id
+          organizationId: ctx.orgId
         }
       },
       select: {
@@ -101,6 +77,6 @@ export async function POST(request: Request, context: RouteContext) {
       question: updated
     });
   } catch (error) {
-    return buildErrorResponse(error instanceof Error ? error : new Error("Unknown error"));
+    return toApiErrorResponse(error, "Failed to update question review status.");
   }
 }

@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MembershipRole } from "@prisma/client";
 import { parseCsvText } from "@/lib/csv";
-import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
 import { prisma } from "@/lib/prisma";
 
 const {
@@ -13,7 +13,9 @@ const {
   generateEvidenceSufficiencyMock,
   generateLegacyEvidenceSufficiencyMock,
   countEmbeddedChunksForOrganizationMock,
-  retrieveTopChunksMock
+  retrieveTopChunksMock,
+  getRequestContextMock,
+  MockRequestContextError
 } = vi.hoisted(() => ({
   answerQuestionMock: vi.fn(),
   getEmbeddingAvailabilityMock: vi.fn(),
@@ -22,7 +24,18 @@ const {
   generateEvidenceSufficiencyMock: vi.fn(),
   generateLegacyEvidenceSufficiencyMock: vi.fn(),
   countEmbeddedChunksForOrganizationMock: vi.fn(),
-  retrieveTopChunksMock: vi.fn()
+  retrieveTopChunksMock: vi.fn(),
+  getRequestContextMock: vi.fn(),
+  MockRequestContextError: class MockRequestContextError extends Error {
+    code: string;
+    status: number;
+
+    constructor(message: string, options: { code: string; status: number }) {
+      super(message);
+      this.code = options.code;
+      this.status = options.status;
+    }
+  }
 }));
 
 vi.mock("@/lib/openai", () => ({
@@ -62,6 +75,11 @@ vi.mock("@/lib/questionnaireService", async () => {
   };
 });
 
+vi.mock("@/lib/requestContext", () => ({
+  getRequestContext: getRequestContextMock,
+  RequestContextError: MockRequestContextError
+}));
+
 import { POST as importRoute } from "./import/route";
 import { POST as autofillRoute } from "./[id]/autofill/route";
 import { GET as exportRoute } from "./[id]/export/route";
@@ -76,6 +94,7 @@ import { POST as questionReviewRoute } from "../questions/[id]/review/route";
 const TEST_QUESTIONNAIRE_NAME_PREFIX = "vitest-workflow-";
 const TEST_DOCUMENT_NAME_PREFIX = "vitest-workflow-doc-";
 const TEST_ORG_NAME_PREFIX = "vitest-workflow-org-";
+let activeOrganizationId: string | null = null;
 
 function fixture(name: string): string {
   return readFileSync(join(process.cwd(), `test/fixtures/${name}`), "utf8");
@@ -313,13 +332,27 @@ describe.sequential("questionnaire workflow integration", () => {
     generateLegacyEvidenceSufficiencyMock.mockReset();
     countEmbeddedChunksForOrganizationMock.mockReset();
     retrieveTopChunksMock.mockReset();
+    getRequestContextMock.mockReset();
     getEmbeddingAvailabilityMock.mockResolvedValue({ total: 1, embedded: 1, missing: 0 });
     countEmbeddedChunksForOrganizationMock.mockResolvedValue(1);
     createEmbeddingMock.mockResolvedValue(new Array(1536).fill(0.02));
+
+    const organization = await prisma.organization.create({
+      data: {
+        name: `${TEST_ORG_NAME_PREFIX}${Date.now()}`
+      }
+    });
+    activeOrganizationId = organization.id;
+    getRequestContextMock.mockResolvedValue({
+      userId: `vitest-workflow-user-${Date.now()}`,
+      orgId: organization.id,
+      role: MembershipRole.OWNER
+    });
   });
 
   afterEach(async () => {
     await cleanupWorkflowData();
+    activeOrganizationId = null;
   });
 
   afterAll(async () => {
@@ -616,8 +649,10 @@ describe.sequential("questionnaire workflow integration", () => {
   });
 
   it("approval API flow supports approve/edit/review/unapprove with org-scoped citation validation", async () => {
-    const organization = await getOrCreateDefaultOrganization();
-    const chunkIds = await seedEvidenceChunksForOrganization(organization.id);
+    if (!activeOrganizationId) {
+      throw new Error("Expected active organization to be initialized.");
+    }
+    const chunkIds = await seedEvidenceChunksForOrganization(activeOrganizationId);
 
     const csvContent =
       "Control ID,Question\n" +
@@ -835,8 +870,10 @@ describe.sequential("questionnaire workflow integration", () => {
   });
 
   it("reuses approved answers across questionnaires via exact and semantic question matching", async () => {
-    const organization = await getOrCreateDefaultOrganization();
-    const chunkIds = await seedEvidenceChunksForOrganization(organization.id);
+    if (!activeOrganizationId) {
+      throw new Error("Expected active organization to be initialized.");
+    }
+    const chunkIds = await seedEvidenceChunksForOrganization(activeOrganizationId);
 
     createEmbeddingMock.mockImplementation(async (input: string) => {
       const question = input.toLowerCase();
@@ -1048,8 +1085,10 @@ describe.sequential("questionnaire workflow integration", () => {
   });
 
   it("export mode supports preferApproved, approvedOnly, and generated", async () => {
-    const organization = await getOrCreateDefaultOrganization();
-    const chunkIds = await seedEvidenceChunksForOrganization(organization.id);
+    if (!activeOrganizationId) {
+      throw new Error("Expected active organization to be initialized.");
+    }
+    const chunkIds = await seedEvidenceChunksForOrganization(activeOrganizationId);
 
     const csvContent =
       "Control ID,Question\n" +

@@ -6,6 +6,56 @@ Current log of implemented MVP work (concise, execution-focused).
 
 - Phase 2: COMPLETE
 
+## 2026-02-28 - phase4-03 enforce org scoping across APIs
+
+- Enforced request-context tenant scoping across API routes:
+  - all scoped handlers now call `getRequestContext()` and use `ctx.orgId` for DB access.
+  - removed route-level dependency on default-org fallback behavior.
+- Added shared API error helper:
+  - `src/lib/apiResponse.ts`
+  - standard JSON error envelope: `{ error: { code, message, details? } }`.
+- Routes updated for strict org scoping and JSON error policy:
+  - `GET /api/documents`
+  - `POST /api/documents/upload`
+  - `POST /api/documents/embed`
+  - `GET/DELETE /api/documents/:id`
+  - `POST /api/questions/answer`
+  - `POST /api/questions/:id/review`
+  - `GET /api/questionnaires`
+  - `POST /api/questionnaires/import`
+  - `POST /api/questionnaires/headers` (auth/context required)
+  - `POST /api/questionnaires/:id/autofill`
+  - `GET/DELETE /api/questionnaires/:id`
+  - `GET /api/questionnaires/:id/export`
+  - `POST /api/questionnaires/:id/approve-reused`
+  - `POST /api/approved-answers`
+  - `PATCH/DELETE /api/approved-answers/:id`
+- ID ownership validation policy:
+  - resource lookups use `{ id, organizationId: ctx.orgId }` (or equivalent nested org filters).
+  - out-of-org IDs return `404` (`NOT_FOUND`) to reduce resource enumeration risk.
+- Reuse + citation scoping invariants maintained:
+  - approved-answer reuse queries remain scoped to `organizationId`.
+  - citation chunk ownership checks enforce chunk -> document -> `organizationId = ctx.orgId`.
+- Added deterministic test helper for active-org context seeding:
+  - `src/test/orgContextTestUtils.ts`
+  - seeds user memberships and sets `User.lastUsedOrganizationId` for deterministic org context switching.
+- Added multi-tenant isolation integration coverage:
+  - `src/app/api/questionnaires/orgScoping.isolation.integration.test.ts`
+  - validates:
+    - Org B cannot see Org A documents/questionnaires.
+    - `/api/questions/answer` in Org B cannot use Org A evidence.
+    - approved answers from Org A are not reused in Org B autofill.
+- Updated existing integration suites to mock `getRequestContext` (instead of default-org helper), preserving deterministic org scope in route tests:
+  - `src/app/api/documents/upload/route.test.ts`
+  - `src/app/api/questionnaires/workflow.test.ts`
+  - `src/app/api/questionnaires/pdfOnly.autofill.regression.test.ts`
+  - `src/app/api/questionnaires/pdfTxt.parity.regression.test.ts`
+  - `src/app/api/questionnaires/approvedAnswer.reuse.integration.test.ts`
+  - `src/server/answerEngine.pdfGate.regression.test.ts`
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+
 ## 2026-02-28 - phase4-02 org membership + bootstrap org on first login
 
 - Added organization membership primitives in Prisma:

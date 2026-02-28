@@ -1,17 +1,29 @@
 import { NextResponse } from "next/server";
+import { jsonError, toApiErrorResponse } from "@/lib/apiResponse";
 import { buildCsvPreview, isCsvFile, parseCsvFile } from "@/lib/csv";
+import { getRequestContext, RequestContextError } from "@/lib/requestContext";
 
 export async function POST(request: Request) {
   try {
+    await getRequestContext(request);
+
     const formData = await request.formData();
     const fileEntry = formData.get("file");
 
     if (!(fileEntry instanceof File)) {
-      return NextResponse.json({ error: "file is required" }, { status: 400 });
+      return jsonError({
+        status: 400,
+        code: "VALIDATION_ERROR",
+        message: "file is required."
+      });
     }
 
     if (!isCsvFile(fileEntry)) {
-      return NextResponse.json({ error: "Only .csv files are supported" }, { status: 400 });
+      return jsonError({
+        status: 400,
+        code: "VALIDATION_ERROR",
+        message: "Only .csv files are supported."
+      });
     }
 
     const parsed = await parseCsvFile(fileEntry);
@@ -25,9 +37,14 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("Failed to read CSV headers", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to read CSV headers" },
-      { status: 400 }
-    );
+    if (error instanceof RequestContextError) {
+      return toApiErrorResponse(error, "Failed to read CSV headers.");
+    }
+
+    return jsonError({
+      status: 400,
+      code: "VALIDATION_ERROR",
+      message: error instanceof Error ? error.message : "Failed to read CSV headers."
+    });
   }
 }

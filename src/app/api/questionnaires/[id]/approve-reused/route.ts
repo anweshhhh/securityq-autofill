@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { ApiRouteError, extractCitationChunkIds } from "@/lib/approvalValidation";
-import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
+import { toApiErrorResponse } from "@/lib/apiResponse";
 import { prisma } from "@/lib/prisma";
+import { getRequestContext } from "@/lib/requestContext";
 
 const NOT_FOUND_ANSWER = "Not found in provided documents.";
 
@@ -14,31 +15,6 @@ type RouteContext = {
 type ApproveReusedBody = {
   mode?: unknown;
 };
-
-function buildErrorResponse(error: ApiRouteError | Error) {
-  if (error instanceof ApiRouteError) {
-    return NextResponse.json(
-      {
-        error: {
-          code: error.code,
-          message: error.message,
-          details: error.details
-        }
-      },
-      { status: error.status }
-    );
-  }
-
-  return NextResponse.json(
-    {
-      error: {
-        code: "INTERNAL_ERROR",
-        message: "Failed to approve reused answers."
-      }
-    },
-    { status: 500 }
-  );
-}
 
 export async function POST(request: Request, context: RouteContext) {
   try {
@@ -61,11 +37,11 @@ export async function POST(request: Request, context: RouteContext) {
       });
     }
 
-    const organization = await getOrCreateDefaultOrganization();
+    const ctx = await getRequestContext(request);
     const questionnaire = await prisma.questionnaire.findFirst({
       where: {
         id: questionnaireId,
-        organizationId: organization.id
+        organizationId: ctx.orgId
       },
       select: {
         id: true
@@ -132,7 +108,7 @@ export async function POST(request: Request, context: RouteContext) {
                 in: allChunkIds
               },
               document: {
-                organizationId: organization.id
+                organizationId: ctx.orgId
               }
             },
             select: {
@@ -161,6 +137,7 @@ export async function POST(request: Request, context: RouteContext) {
     if (questionIdsToApprove.length > 0) {
       await prisma.question.updateMany({
         where: {
+          questionnaireId: questionnaire.id,
           id: {
             in: questionIdsToApprove
           }
@@ -182,6 +159,6 @@ export async function POST(request: Request, context: RouteContext) {
       skippedInvalidCitations
     });
   } catch (error) {
-    return buildErrorResponse(error instanceof Error ? error : new Error("Unknown error"));
+    return toApiErrorResponse(error, "Failed to approve reused answers.");
   }
 }

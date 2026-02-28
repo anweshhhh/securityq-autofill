@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
 import { ApiRouteError, assertChunkOwnership, normalizeCitationChunkIds } from "@/lib/approvalValidation";
+import { toApiErrorResponse } from "@/lib/apiResponse";
 import { createEmbedding } from "@/lib/openai";
 import { prisma } from "@/lib/prisma";
 import { buildQuestionTextMetadata } from "@/lib/questionText";
+import { getRequestContext } from "@/lib/requestContext";
 import { embeddingToVectorLiteral } from "@/lib/retrieval";
 
 type RouteContext = {
@@ -19,34 +20,9 @@ type UpdateApprovedAnswerBody = {
   approvedBy?: unknown;
 };
 
-function buildErrorResponse(error: ApiRouteError | Error) {
-  if (error instanceof ApiRouteError) {
-    return NextResponse.json(
-      {
-        error: {
-          code: error.code,
-          message: error.message,
-          details: error.details
-        }
-      },
-      { status: error.status }
-    );
-  }
-
-  return NextResponse.json(
-    {
-      error: {
-        code: "INTERNAL_ERROR",
-        message: "Failed to update approved answer."
-      }
-    },
-    { status: 500 }
-  );
-}
-
 export async function PATCH(request: Request, context: RouteContext) {
   try {
-    const organization = await getOrCreateDefaultOrganization();
+    const ctx = await getRequestContext(request);
     const approvedAnswerId = context.params.id.trim();
 
     if (!approvedAnswerId) {
@@ -60,7 +36,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     const existing = await prisma.approvedAnswer.findFirst({
       where: {
         id: approvedAnswerId,
-        organizationId: organization.id
+        organizationId: ctx.orgId
       },
       select: {
         id: true,
@@ -113,7 +89,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     await assertChunkOwnership({
-      organizationId: organization.id,
+      organizationId: ctx.orgId,
       chunkIds: citationChunkIds
     });
     const questionMetadata = buildQuestionTextMetadata(existing.question.text);
@@ -166,13 +142,13 @@ export async function PATCH(request: Request, context: RouteContext) {
       approvedAnswer
     });
   } catch (error) {
-    return buildErrorResponse(error instanceof Error ? error : new Error("Unknown error"));
+    return toApiErrorResponse(error, "Failed to update approved answer.");
   }
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {
   try {
-    const organization = await getOrCreateDefaultOrganization();
+    const ctx = await getRequestContext(_request);
     const approvedAnswerId = context.params.id.trim();
 
     if (!approvedAnswerId) {
@@ -186,7 +162,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     const existing = await prisma.approvedAnswer.findFirst({
       where: {
         id: approvedAnswerId,
-        organizationId: organization.id
+        organizationId: ctx.orgId
       },
       select: {
         id: true,
@@ -222,6 +198,6 @@ export async function DELETE(_request: Request, context: RouteContext) {
       ok: true
     });
   } catch (error) {
-    return buildErrorResponse(error instanceof Error ? error : new Error("Unknown error"));
+    return toApiErrorResponse(error, "Failed to update approved answer.");
   }
 }

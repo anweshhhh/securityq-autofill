@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
 import { createEmbedding } from "@/lib/openai";
 import { buildQuestionTextMetadata } from "@/lib/questionText";
 import { embeddingToVectorLiteral } from "@/lib/retrieval";
+import { toApiErrorResponse } from "@/lib/apiResponse";
 import {
   ApiRouteError,
   assertChunkOwnership,
@@ -10,6 +10,7 @@ import {
   normalizeCitationChunkIds
 } from "@/lib/approvalValidation";
 import { prisma } from "@/lib/prisma";
+import { getRequestContext } from "@/lib/requestContext";
 
 const NOT_FOUND_ANSWER = "Not found in provided documents.";
 
@@ -21,31 +22,6 @@ type CreateApprovedAnswerBody = {
   approvedBy?: unknown;
   note?: unknown;
 };
-
-function buildErrorResponse(error: ApiRouteError | Error) {
-  if (error instanceof ApiRouteError) {
-    return NextResponse.json(
-      {
-        error: {
-          code: error.code,
-          message: error.message,
-          details: error.details
-        }
-      },
-      { status: error.status }
-    );
-  }
-
-  return NextResponse.json(
-    {
-      error: {
-        code: "INTERNAL_ERROR",
-        message: "Failed to create approved answer."
-      }
-    },
-    { status: 500 }
-  );
-}
 
 export async function POST(request: Request) {
   try {
@@ -60,12 +36,12 @@ export async function POST(request: Request) {
       });
     }
 
-    const organization = await getOrCreateDefaultOrganization();
+    const ctx = await getRequestContext(request);
     const question = await prisma.question.findFirst({
       where: {
         id: questionId,
         questionnaire: {
-          organizationId: organization.id
+          organizationId: ctx.orgId
         }
       },
       select: {
@@ -108,7 +84,7 @@ export async function POST(request: Request) {
     }
 
     await assertChunkOwnership({
-      organizationId: organization.id,
+      organizationId: ctx.orgId,
       chunkIds: citationChunkIdsCandidate
     });
 
@@ -127,7 +103,7 @@ export async function POST(request: Request) {
           questionId: question.id
         },
         create: {
-          organizationId: organization.id,
+          organizationId: ctx.orgId,
           questionId: question.id,
           normalizedQuestionText: questionMetadata.normalizedQuestionText,
           questionTextHash: questionMetadata.questionTextHash,
@@ -179,6 +155,6 @@ export async function POST(request: Request) {
       approvedAnswer
     });
   } catch (error) {
-    return buildErrorResponse(error instanceof Error ? error : new Error("Unknown error"));
+    return toApiErrorResponse(error, "Failed to create approved answer.");
   }
 }

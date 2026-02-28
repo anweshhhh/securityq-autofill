@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
+import { toApiErrorResponse } from "@/lib/apiResponse";
 import { createEmbedding } from "@/lib/openai";
 import { prisma } from "@/lib/prisma";
+import { getRequestContext } from "@/lib/requestContext";
 import { embeddingToVectorLiteral } from "@/lib/retrieval";
 
 type ChunkRow = {
@@ -11,7 +12,7 @@ type ChunkRow = {
 
 export async function POST() {
   try {
-    const organization = await getOrCreateDefaultOrganization();
+    const ctx = await getRequestContext();
 
     const chunks = await prisma.$queryRawUnsafe<ChunkRow[]>(
       `
@@ -22,7 +23,7 @@ export async function POST() {
           AND dc."embedding" IS NULL
         ORDER BY dc."createdAt" ASC, dc."id" ASC
       `,
-      organization.id
+      ctx.orgId
     );
 
     if (chunks.length === 0) {
@@ -46,6 +47,6 @@ export async function POST() {
     return NextResponse.json({ embeddedCount });
   } catch (error) {
     console.error("Failed to embed document chunks", error);
-    return NextResponse.json({ error: "Failed to embed document chunks" }, { status: 500 });
+    return toApiErrorResponse(error, "Failed to embed document chunks.");
   }
 }

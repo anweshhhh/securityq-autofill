@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MembershipRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { POST as uploadRoute } from "@/app/api/documents/upload/route";
 import { POST as embedRoute } from "@/app/api/documents/embed/route";
@@ -15,13 +16,24 @@ const {
   generateEvidenceSufficiencyMock,
   generateGroundedAnswerMock,
   generateLegacyEvidenceSufficiencyMock,
-  getOrCreateDefaultOrganizationMock
+  getRequestContextMock,
+  MockRequestContextError
 } = vi.hoisted(() => ({
   createEmbeddingMock: vi.fn(),
   generateEvidenceSufficiencyMock: vi.fn(),
   generateGroundedAnswerMock: vi.fn(),
   generateLegacyEvidenceSufficiencyMock: vi.fn(),
-  getOrCreateDefaultOrganizationMock: vi.fn()
+  getRequestContextMock: vi.fn(),
+  MockRequestContextError: class MockRequestContextError extends Error {
+    code: string;
+    status: number;
+
+    constructor(message: string, options: { code: string; status: number }) {
+      super(message);
+      this.code = options.code;
+      this.status = options.status;
+    }
+  }
 }));
 
 vi.mock("@/lib/openai", () => ({
@@ -31,8 +43,9 @@ vi.mock("@/lib/openai", () => ({
   generateLegacyEvidenceSufficiency: generateLegacyEvidenceSufficiencyMock
 }));
 
-vi.mock("@/lib/defaultOrg", () => ({
-  getOrCreateDefaultOrganization: getOrCreateDefaultOrganizationMock
+vi.mock("@/lib/requestContext", () => ({
+  getRequestContext: getRequestContextMock,
+  RequestContextError: MockRequestContextError
 }));
 
 const TEST_ORG_PREFIX = "vitest-approved-reuse-org-";
@@ -444,7 +457,7 @@ describe.sequential("approved answer reuse integration", () => {
     generateEvidenceSufficiencyMock.mockReset();
     generateGroundedAnswerMock.mockReset();
     generateLegacyEvidenceSufficiencyMock.mockReset();
-    getOrCreateDefaultOrganizationMock.mockReset();
+    getRequestContextMock.mockReset();
 
     createEmbeddingMock.mockImplementation(async (input: string) => embeddingForText(input));
     generateGroundedAnswerMock.mockResolvedValue({
@@ -535,7 +548,11 @@ describe.sequential("approved answer reuse integration", () => {
       }
     });
     isolatedOrgId = organization.id;
-    getOrCreateDefaultOrganizationMock.mockResolvedValue(organization);
+    getRequestContextMock.mockResolvedValue({
+      userId: `vitest-approved-reuse-user-${Date.now()}`,
+      orgId: organization.id,
+      role: MembershipRole.OWNER
+    });
   });
 
   afterEach(async () => {

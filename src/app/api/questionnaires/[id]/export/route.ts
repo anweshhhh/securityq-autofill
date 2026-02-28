@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import type { Citation } from "@/lib/answering";
-import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
+import { jsonError, toApiErrorResponse } from "@/lib/apiResponse";
 import { buildQuestionnaireExportCsv } from "@/lib/export";
 import { prisma } from "@/lib/prisma";
+import { getRequestContext } from "@/lib/requestContext";
 
 type ExportMode = "preferApproved" | "approvedOnly" | "generated";
 
@@ -70,15 +71,23 @@ function parseExportMode(value: string | null): ExportMode {
 
 export async function GET(_request: Request, context: { params: { id: string } }) {
   try {
-    const organization = await getOrCreateDefaultOrganization();
-    const questionnaireId = context.params.id;
+    const ctx = await getRequestContext(_request);
+    const questionnaireId = context.params.id.trim();
+    if (!questionnaireId) {
+      return jsonError({
+        status: 400,
+        code: "VALIDATION_ERROR",
+        message: "Questionnaire ID is required."
+      });
+    }
+
     const url = new URL(_request.url);
     const mode = parseExportMode(url.searchParams.get("mode"));
 
     const questionnaire = await prisma.questionnaire.findFirst({
       where: {
         id: questionnaireId,
-        organizationId: organization.id
+        organizationId: ctx.orgId
       },
       include: {
         questions: {
@@ -99,7 +108,11 @@ export async function GET(_request: Request, context: { params: { id: string } }
     });
 
     if (!questionnaire) {
-      return NextResponse.json({ error: "Questionnaire not found" }, { status: 404 });
+      return jsonError({
+        status: 404,
+        code: "NOT_FOUND",
+        message: "Questionnaire not found."
+      });
     }
 
     const headers = toStringArray(questionnaire.sourceHeaders);
@@ -118,7 +131,7 @@ export async function GET(_request: Request, context: { params: { id: string } }
               in: allApprovedCitationChunkIds
             },
             document: {
-              organizationId: organization.id
+              organizationId: ctx.orgId
             }
           },
           select: {
@@ -182,6 +195,6 @@ export async function GET(_request: Request, context: { params: { id: string } }
     });
   } catch (error) {
     console.error("Failed to export questionnaire", error);
-    return NextResponse.json({ error: "Failed to export questionnaire" }, { status: 500 });
+    return toApiErrorResponse(error, "Failed to export questionnaire.");
   }
 }

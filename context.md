@@ -85,6 +85,27 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 - `REVIEWER`: review and approval workflow access
 - `VIEWER`: read-only access
 
+### Multi-tenant isolation guarantee (Phase 4 PR3)
+
+- All API read/write operations now derive tenant scope from request context:
+  - `session -> getRequestContext() -> { userId, orgId, role }`
+- Server routes no longer rely on default-org fallback behavior.
+- All org-scoped routes now filter Prisma reads/writes by `ctx.orgId`.
+- Endpoints that accept entity IDs (`documentId`, `questionnaireId`, `questionId`, `approvedAnswerId`) enforce ownership by querying within `ctx.orgId` scope.
+- Approved-answer reuse is org-bounded:
+  - reuse candidate query is restricted to `ApprovedAnswer.organizationId = ctx.orgId`
+  - reused citations must resolve to chunks under the same org.
+- Citation ownership validation is strict:
+  - citation chunk IDs are accepted only when chunks belong to `ctx.orgId`.
+
+### API error policy for scoped resources
+
+- Authentication/context failures return JSON errors with explicit code/message (`401`/`UNAUTHORIZED`).
+- Tenant resource access by ID uses anti-enumeration behavior:
+  - out-of-org IDs are treated as not found (`404`/`NOT_FOUND`) rather than exposing cross-org existence.
+- API routes return JSON error envelopes:
+  - `{ "error": { "code": string, "message": string, "details"?: unknown } }`
+
 ### Auth environment variables
 
 - `NEXTAUTH_URL` (example: `http://localhost:3000`)

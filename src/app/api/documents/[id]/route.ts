@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getOrCreateDefaultOrganization } from "@/lib/defaultOrg";
+import { jsonError, toApiErrorResponse } from "@/lib/apiResponse";
 import { prisma } from "@/lib/prisma";
+import { getRequestContext } from "@/lib/requestContext";
 
 type RouteContext = {
   params: {
@@ -10,13 +11,20 @@ type RouteContext = {
 
 export async function GET(_request: Request, context: RouteContext) {
   try {
-    const organization = await getOrCreateDefaultOrganization();
-    const documentId = context.params.id;
+    const ctx = await getRequestContext();
+    const documentId = context.params.id.trim();
+    if (!documentId) {
+      return jsonError({
+        status: 400,
+        code: "VALIDATION_ERROR",
+        message: "Document ID is required."
+      });
+    }
 
     const document = await prisma.document.findFirst({
       where: {
         id: documentId,
-        organizationId: organization.id
+        organizationId: ctx.orgId
       },
       select: {
         id: true,
@@ -36,7 +44,11 @@ export async function GET(_request: Request, context: RouteContext) {
     });
 
     if (!document) {
-      return NextResponse.json({ error: "Document not found" }, { status: 404 });
+      return jsonError({
+        status: 404,
+        code: "NOT_FOUND",
+        message: "Document not found."
+      });
     }
 
     const fullText = document.chunks.map((chunk) => chunk.content).join("\n\n");
@@ -55,19 +67,26 @@ export async function GET(_request: Request, context: RouteContext) {
     });
   } catch (error) {
     console.error("Failed to load document", error);
-    return NextResponse.json({ error: "Failed to load document" }, { status: 500 });
+    return toApiErrorResponse(error, "Failed to load document.");
   }
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {
   try {
-    const organization = await getOrCreateDefaultOrganization();
-    const documentId = context.params.id;
+    const ctx = await getRequestContext();
+    const documentId = context.params.id.trim();
+    if (!documentId) {
+      return jsonError({
+        status: 400,
+        code: "VALIDATION_ERROR",
+        message: "Document ID is required."
+      });
+    }
 
     const document = await prisma.document.findFirst({
       where: {
         id: documentId,
-        organizationId: organization.id
+        organizationId: ctx.orgId
       },
       select: {
         id: true
@@ -75,7 +94,11 @@ export async function DELETE(_request: Request, context: RouteContext) {
     });
 
     if (!document) {
-      return NextResponse.json({ error: "Document not found" }, { status: 404 });
+      return jsonError({
+        status: 404,
+        code: "NOT_FOUND",
+        message: "Document not found."
+      });
     }
 
     await prisma.$transaction([
@@ -90,6 +113,6 @@ export async function DELETE(_request: Request, context: RouteContext) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("Failed to delete document", error);
-    return NextResponse.json({ error: "Failed to delete document" }, { status: 500 });
+    return toApiErrorResponse(error, "Failed to delete document.");
   }
 }
