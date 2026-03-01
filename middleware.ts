@@ -3,6 +3,7 @@ import { getToken } from "next-auth/jwt";
 
 function isProtectedApiPath(pathname: string): boolean {
   return (
+    pathname.startsWith("/api/dev") ||
     pathname.startsWith("/api/documents") ||
     pathname.startsWith("/api/questionnaires") ||
     pathname.startsWith("/api/questions") ||
@@ -58,6 +59,7 @@ export const config = {
     "/questionnaires/:path*",
     "/ask/:path*",
     "/api/documents/:path*",
+    "/api/dev/:path*",
     "/api/questionnaires/:path*",
     "/api/questions/:path*",
     "/api/approved-answers/:path*",

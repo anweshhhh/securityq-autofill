@@ -432,6 +432,7 @@ Pages:
 - `/ask` (DEV_MODE-gated)
 
 API:
+- `POST /api/dev/role` (DEV tools; `DEV_MODE=true` and non-production only)
 - `GET /api/documents`
 - `DELETE /api/documents/:id`
 - `POST /api/documents/upload`
@@ -513,6 +514,11 @@ Use `.env.example` as source of truth.
   - truthy (`true/1/yes/on`) => extractor gate path
   - falsy (`false/0/no/off`) => legacy sufficiency gate path
   - unset default: `true` in `NODE_ENV=development` and `NODE_ENV=test`, `false` otherwise
+- DEV role switcher (RBAC testing):
+  - enabled only when `DEV_MODE=true` and `NODE_ENV!="production"`
+  - endpoint: `POST /api/dev/role` with `{ role }`
+  - scope: updates `Membership.role` only for current authenticated `{ userId, activeOrgId }`
+  - safety: requires existing active-org membership; disabled in production code paths
 
 ## 9) Tests (MVP Contracts)
 

@@ -6,6 +6,33 @@ Current log of implemented MVP work (concise, execution-focused).
 
 - Phase 2: COMPLETE
 
+## 2026-03-01 - phase4-test-roles-01 dev role switcher for RBAC testing
+
+- Added DEV-only role switch endpoint:
+  - `POST /api/dev/role`
+  - file: `src/app/api/dev/role/route.ts`
+  - body: `{ role: "OWNER" | "ADMIN" | "REVIEWER" | "VIEWER" }`
+  - behavior:
+    - requires authenticated request context
+    - requires `DEV_MODE=true`
+    - hard-disabled in production (`NODE_ENV="production"`)
+    - updates `Membership.role` for current `(userId, activeOrgId)` only
+    - rejects role switches when active-org membership is missing
+- Added middleware protection for `/api/dev/*`:
+  - updated `middleware.ts` matcher and API-path guard.
+- Added TopNav DEV role switch UI:
+  - file: `src/components/AppShell.tsx`
+  - visible only when `DEV_MODE=true` and non-production
+  - dropdown changes call `/api/dev/role` then refresh `/api/me` authz context.
+- Added deterministic endpoint tests:
+  - file: `src/app/api/dev/role/route.test.ts`
+  - asserts:
+    - `403` when `DEV_MODE=false`
+    - role updates persisted when `DEV_MODE=true`
+- Validation:
+  - `npm test -- src/app/api/dev/role/route.test.ts` => PASS
+  - `npm test -- src/middleware.test.ts` => PASS
+
 ## 2026-03-01 - phase4-04 enforce RBAC permissions across API and UI
 
 - Added centralized RBAC map and guard utilities:

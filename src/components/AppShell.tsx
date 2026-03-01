@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppAuthzProvider, type AppAuthzState } from "@/components/AppAuthzContext";
 import { Button, TextInput, cx } from "@/components/ui";
 import { useFocusTrap } from "@/lib/useFocusTrap";
@@ -36,6 +36,8 @@ type MePayload = {
     role: Role;
   }>;
 };
+
+const ROLE_OPTIONS: Role[] = ["OWNER", "ADMIN", "REVIEWER", "VIEWER"];
 
 function getPageHeader(pathname: string): { title: string; subtitle: string } {
   if (pathname === "/") {
@@ -134,6 +136,7 @@ function isActiveRoute(pathname: string, href: string): boolean {
 export function AppShell({ devMode, children }: AppShellProps) {
   const pathname = usePathname();
   const { data: session, status } = useSession();
+  const devRoleSwitcherEnabled = devMode && process.env.NODE_ENV !== "production";
   const [authzState, setAuthzState] = useState<AppAuthzState>({
     loading: true,
     userEmail: null,
@@ -142,6 +145,7 @@ export function AppShell({ devMode, children }: AppShellProps) {
     role: null,
     memberships: []
   });
+  const [isDevRoleSwitching, setIsDevRoleSwitching] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const mobileSidebarRef = useRef<HTMLElement | null>(null);
@@ -169,6 +173,42 @@ export function AppShell({ devMode, children }: AppShellProps) {
     onEscape: () => setIsMobileSidebarOpen(false)
   });
 
+  const loadAuthContext = useCallback(async () => {
+    try {
+      const response = await fetch("/api/me", { cache: "no-store" });
+      if (!response.ok) {
+        setAuthzState((current) => ({
+          ...current,
+          loading: false,
+          role: null,
+          orgId: null,
+          orgName: null,
+          memberships: []
+        }));
+        return;
+      }
+
+      const payload = (await response.json()) as MePayload;
+      setAuthzState({
+        loading: false,
+        userEmail: typeof payload.user?.email === "string" ? payload.user.email : null,
+        orgId: typeof payload.org?.id === "string" ? payload.org.id : null,
+        orgName: typeof payload.org?.name === "string" ? payload.org.name : null,
+        role: payload.role ?? null,
+        memberships: Array.isArray(payload.memberships) ? payload.memberships : []
+      });
+    } catch {
+      setAuthzState({
+        loading: false,
+        userEmail: null,
+        orgId: null,
+        orgName: null,
+        role: null,
+        memberships: []
+      });
+    }
+  }, []);
+
   useEffect(() => {
     if (status !== "authenticated") {
       setAuthzState({
@@ -182,56 +222,41 @@ export function AppShell({ devMode, children }: AppShellProps) {
       return;
     }
 
-    let cancelled = false;
+    void loadAuthContext();
+  }, [loadAuthContext, status]);
 
-    async function loadAuthContext() {
-      try {
-        const response = await fetch("/api/me", { cache: "no-store" });
-        if (!response.ok) {
-          if (!cancelled) {
-            setAuthzState((current) => ({
-              ...current,
-              loading: false,
-              role: null,
-              orgId: null,
-              orgName: null,
-              memberships: []
-            }));
-          }
-          return;
-        }
-
-        const payload = (await response.json()) as MePayload;
-        if (!cancelled) {
-          setAuthzState({
-            loading: false,
-            userEmail: typeof payload.user?.email === "string" ? payload.user.email : null,
-            orgId: typeof payload.org?.id === "string" ? payload.org.id : null,
-            orgName: typeof payload.org?.name === "string" ? payload.org.name : null,
-            role: payload.role ?? null,
-            memberships: Array.isArray(payload.memberships) ? payload.memberships : []
-          });
-        }
-      } catch {
-        if (!cancelled) {
-          setAuthzState({
-            loading: false,
-            userEmail: null,
-            orgId: null,
-            orgName: null,
-            role: null,
-            memberships: []
-          });
-        }
-      }
+  async function handleDevRoleChange(event: ChangeEvent<HTMLSelectElement>) {
+    const nextRole = event.target.value as Role;
+    if (!authzState.role || nextRole === authzState.role) {
+      return;
     }
 
-    void loadAuthContext();
+    setIsDevRoleSwitching(true);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [status]);
+    try {
+      const response = await fetch("/api/dev/role", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          role: nextRole
+        })
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        console.error("Failed to switch dev role", payload?.error?.message ?? response.statusText);
+      }
+    } catch (error) {
+      console.error("Failed to switch dev role", error);
+    } finally {
+      await loadAuthContext();
+      setIsDevRoleSwitching(false);
+    }
+  }
 
   function renderNavLinks(onNavigate?: () => void) {
     return navItems.map((item) => {
@@ -359,6 +384,31 @@ export function AppShell({ devMode, children }: AppShellProps) {
                   Org: {authzState.orgName ?? "Loading..."}
                 </span>
                 {authzState.role ? <span className="small muted">Role: {authzState.role}</span> : null}
+                {devRoleSwitcherEnabled ? (
+                  <label className="small muted" style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
+                    Dev role
+                    <select
+                      className="input"
+                      value={authzState.role ?? ""}
+                      onChange={handleDevRoleChange}
+                      disabled={isDevRoleSwitching || !authzState.role}
+                      aria-label="Development role switcher"
+                      title="Development role switcher"
+                      style={{ minWidth: 120, height: 34 }}
+                    >
+                      {!authzState.role ? (
+                        <option value="" disabled>
+                          Loading
+                        </option>
+                      ) : null}
+                      {ROLE_OPTIONS.map((role) => (
+                        <option key={role} value={role}>
+                          {role}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
                 {authzState.memberships.length > 1 ? (
                   <label className="small muted" style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
                     Workspace
