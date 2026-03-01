@@ -3,6 +3,7 @@ import { jsonError, toApiErrorResponse } from "@/lib/apiResponse";
 import { isCsvFile } from "@/lib/csv";
 import { importQuestionnaireFromCsv } from "@/lib/questionnaireService";
 import { getRequestContext, RequestContextError } from "@/lib/requestContext";
+import { assertCan, ForbiddenRoleError, RbacAction } from "@/server/rbac";
 
 export async function POST(request: Request) {
   try {
@@ -36,6 +37,7 @@ export async function POST(request: Request) {
     }
 
     const ctx = await getRequestContext(request);
+    assertCan(ctx.role, RbacAction.IMPORT_QUESTIONNAIRES);
     const result = await importQuestionnaireFromCsv({
       organizationId: ctx.orgId,
       file: fileEntry,
@@ -55,7 +57,7 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     console.error("Failed to import questionnaire CSV", error);
-    if (error instanceof RequestContextError) {
+    if (error instanceof RequestContextError || error instanceof ForbiddenRoleError) {
       return toApiErrorResponse(error, "Failed to import questionnaire CSV.");
     }
 

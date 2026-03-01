@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { jsonError, toApiErrorResponse } from "@/lib/apiResponse";
 import { buildCsvPreview, isCsvFile, parseCsvFile } from "@/lib/csv";
 import { getRequestContext, RequestContextError } from "@/lib/requestContext";
+import { assertCan, ForbiddenRoleError, RbacAction } from "@/server/rbac";
 
 export async function POST(request: Request) {
   try {
-    await getRequestContext(request);
+    const ctx = await getRequestContext(request);
+    assertCan(ctx.role, RbacAction.IMPORT_QUESTIONNAIRES);
 
     const formData = await request.formData();
     const fileEntry = formData.get("file");
@@ -37,7 +39,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("Failed to read CSV headers", error);
-    if (error instanceof RequestContextError) {
+    if (error instanceof RequestContextError || error instanceof ForbiddenRoleError) {
       return toApiErrorResponse(error, "Failed to read CSV headers.");
     }
 

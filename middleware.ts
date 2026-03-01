@@ -6,7 +6,8 @@ function isProtectedApiPath(pathname: string): boolean {
     pathname.startsWith("/api/documents") ||
     pathname.startsWith("/api/questionnaires") ||
     pathname.startsWith("/api/questions") ||
-    pathname.startsWith("/api/approved-answers")
+    pathname.startsWith("/api/approved-answers") ||
+    pathname.startsWith("/api/me")
   );
 }
 
@@ -59,6 +60,7 @@ export const config = {
     "/api/documents/:path*",
     "/api/questionnaires/:path*",
     "/api/questions/:path*",
-    "/api/approved-answers/:path*"
+    "/api/approved-answers/:path*",
+    "/api/me"
   ]
 };

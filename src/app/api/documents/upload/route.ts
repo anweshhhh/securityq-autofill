@@ -4,6 +4,7 @@ import { chunkText } from "@/lib/chunker";
 import { extractText, inferMimeType, isSupportedTextFile } from "@/lib/extractText";
 import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/requestContext";
+import { assertCan, RbacAction } from "@/server/rbac";
 
 export const runtime = "nodejs";
 
@@ -74,6 +75,7 @@ export async function POST(request: Request) {
     }
 
     const ctx = await getRequestContext();
+    assertCan(ctx.role, RbacAction.UPLOAD_DOCUMENTS);
     const document = await prisma.document.create({
       data: {
         organizationId: ctx.orgId,

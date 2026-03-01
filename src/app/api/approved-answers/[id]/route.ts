@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { buildQuestionTextMetadata } from "@/lib/questionText";
 import { getRequestContext } from "@/lib/requestContext";
 import { embeddingToVectorLiteral } from "@/lib/retrieval";
+import { assertCan, RbacAction } from "@/server/rbac";
 
 type RouteContext = {
   params: {
@@ -23,6 +24,7 @@ type UpdateApprovedAnswerBody = {
 export async function PATCH(request: Request, context: RouteContext) {
   try {
     const ctx = await getRequestContext(request);
+    assertCan(ctx.role, RbacAction.EDIT_APPROVED_ANSWERS);
     const approvedAnswerId = context.params.id.trim();
 
     if (!approvedAnswerId) {
@@ -149,6 +151,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 export async function DELETE(_request: Request, context: RouteContext) {
   try {
     const ctx = await getRequestContext(_request);
+    assertCan(ctx.role, RbacAction.APPROVE_ANSWERS);
     const approvedAnswerId = context.params.id.trim();
 
     if (!approvedAnswerId) {

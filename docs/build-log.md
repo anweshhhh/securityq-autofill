@@ -6,6 +6,73 @@ Current log of implemented MVP work (concise, execution-focused).
 
 - Phase 2: COMPLETE
 
+## 2026-03-01 - phase4-04 enforce RBAC permissions across API and UI
+
+- Added centralized RBAC map and guard utilities:
+  - `src/server/rbac.ts`
+  - roles: `OWNER`, `ADMIN`, `REVIEWER`, `VIEWER`
+  - action matrix with `can(role, action)` and `assertCan(role, action)`.
+- Extended API error envelope support for role denials:
+  - `src/lib/apiResponse.ts`
+  - role guard failures now return JSON `403` with:
+    - `code: "FORBIDDEN_ROLE"`
+    - `requiredRole`
+    - message `Requires <ROLE> role.`
+- Applied authoritative server role checks (via `getRequestContext()` + `assertCan`) across:
+  - Documents:
+    - `GET /api/documents`
+    - `POST /api/documents/upload`
+    - `POST /api/documents/embed`
+    - `GET/DELETE /api/documents/:id`
+  - Questionnaires:
+    - `GET /api/questionnaires`
+    - `POST /api/questionnaires/import`
+    - `POST /api/questionnaires/headers`
+    - `GET/DELETE /api/questionnaires/:id`
+    - `POST /api/questionnaires/:id/autofill`
+    - `GET /api/questionnaires/:id/export`
+    - `POST /api/questionnaires/:id/approve-reused`
+  - Approvals / review:
+    - `POST /api/approved-answers`
+    - `PATCH/DELETE /api/approved-answers/:id`
+    - `POST /api/questions/:id/review`
+  - Q&A:
+    - `POST /api/questions/answer`
+- Added client authz context endpoint and shell wiring:
+  - new `GET /api/me` (`src/app/api/me/route.ts`) returns `{ user, org, role, memberships }`
+  - `src/components/AppShell.tsx` now loads `/api/me`, exposes role/org via `AppAuthzProvider`, and gates primary nav actions by RBAC.
+- Added UI-side permission gating (non-authoritative UX):
+  - `src/app/documents/page.tsx`
+    - upload/delete actions disabled or hidden unless `ADMIN+`
+  - `src/app/questionnaires/page.tsx`
+    - import/run-autofill/delete gated to `ADMIN+`
+    - export gated to `VIEWER+`
+  - `src/app/questionnaires/[id]/page.tsx`
+    - trust bar actions gated:
+      - run autofill `ADMIN+`
+      - approve/approve-reused `REVIEWER+`
+      - export `VIEWER+`
+    - quick actions gated:
+      - approve/unapprove `REVIEWER+`
+      - edit approved answer `REVIEWER+`
+      - mark needs review/draft `REVIEWER+`
+    - keyboard shortcuts (`A`, `R`, `U`) now respect role permissions.
+- Added deterministic RBAC integration coverage:
+  - `src/app/api/rbac.permissions.integration.test.ts`
+  - assertions:
+    - VIEWER cannot upload documents (`403/FORBIDDEN_ROLE`) and can export (`200`)
+    - REVIEWER can approve answers and cannot import questionnaires (`403/FORBIDDEN_ROLE`)
+    - ADMIN can upload/embed/import/autofill (`201/200/201/200`)
+- Manual verification steps:
+1. Create `viewer@example.com` with `VIEWER` membership in target org.
+2. Create `admin@example.com` with `ADMIN` membership in the same org.
+3. Sign in as viewer and verify UI hides/disables upload/delete/import/autofill/approval controls; export remains available.
+4. Sign in as admin and verify upload/embed/import/autofill controls are visible and functional.
+5. Call restricted endpoints directly as viewer and confirm JSON `403` with `code: "FORBIDDEN_ROLE"` and `requiredRole`.
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+
 ## 2026-02-28 - phase4-03 enforce org scoping across APIs
 
 - Enforced request-context tenant scoping across API routes:

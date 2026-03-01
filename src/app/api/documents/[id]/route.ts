@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { jsonError, toApiErrorResponse } from "@/lib/apiResponse";
 import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/requestContext";
+import { assertCan, RbacAction } from "@/server/rbac";
 
 type RouteContext = {
   params: {
@@ -12,6 +13,7 @@ type RouteContext = {
 export async function GET(_request: Request, context: RouteContext) {
   try {
     const ctx = await getRequestContext();
+    assertCan(ctx.role, RbacAction.VIEW_DOCUMENTS);
     const documentId = context.params.id.trim();
     if (!documentId) {
       return jsonError({
@@ -74,6 +76,7 @@ export async function GET(_request: Request, context: RouteContext) {
 export async function DELETE(_request: Request, context: RouteContext) {
   try {
     const ctx = await getRequestContext();
+    assertCan(ctx.role, RbacAction.DELETE_DOCUMENTS);
     const documentId = context.params.id.trim();
     if (!documentId) {
       return jsonError({

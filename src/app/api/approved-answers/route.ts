@@ -11,6 +11,7 @@ import {
 } from "@/lib/approvalValidation";
 import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/requestContext";
+import { assertCan, RbacAction } from "@/server/rbac";
 
 const NOT_FOUND_ANSWER = "Not found in provided documents.";
 
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
     }
 
     const ctx = await getRequestContext(request);
+    assertCan(ctx.role, RbacAction.APPROVE_ANSWERS);
     const question = await prisma.question.findFirst({
       where: {
         id: questionId,

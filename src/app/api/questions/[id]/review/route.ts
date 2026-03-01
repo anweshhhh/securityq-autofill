@@ -3,6 +3,7 @@ import { ApiRouteError } from "@/lib/approvalValidation";
 import { toApiErrorResponse } from "@/lib/apiResponse";
 import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/requestContext";
+import { assertCan, RbacAction } from "@/server/rbac";
 
 type RouteContext = {
   params: {
@@ -40,6 +41,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const ctx = await getRequestContext(request);
+    assertCan(ctx.role, RbacAction.MARK_NEEDS_REVIEW);
     const question = await prisma.question.findFirst({
       where: {
         id: questionId,

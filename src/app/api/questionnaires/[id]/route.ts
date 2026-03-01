@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { jsonError, toApiErrorResponse } from "@/lib/apiResponse";
 import { deleteQuestionnaire, getQuestionnaireDetails } from "@/lib/questionnaireService";
 import { getRequestContext } from "@/lib/requestContext";
+import { assertCan, RbacAction } from "@/server/rbac";
 
 type RouteContext = {
   params: {
@@ -21,6 +22,7 @@ export async function GET(_request: Request, context: RouteContext) {
     }
 
     const ctx = await getRequestContext(_request);
+    assertCan(ctx.role, RbacAction.VIEW_QUESTIONNAIRES);
     const details = await getQuestionnaireDetails(ctx.orgId, questionnaireId);
 
     if (!details) {
@@ -50,6 +52,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     }
 
     const ctx = await getRequestContext(_request);
+    assertCan(ctx.role, RbacAction.DELETE_QUESTIONNAIRES);
     const deleted = await deleteQuestionnaire(ctx.orgId, questionnaireId);
 
     if (!deleted) {

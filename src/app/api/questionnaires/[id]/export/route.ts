@@ -4,6 +4,7 @@ import { jsonError, toApiErrorResponse } from "@/lib/apiResponse";
 import { buildQuestionnaireExportCsv } from "@/lib/export";
 import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/requestContext";
+import { assertCan, RbacAction } from "@/server/rbac";
 
 type ExportMode = "preferApproved" | "approvedOnly" | "generated";
 
@@ -72,6 +73,7 @@ function parseExportMode(value: string | null): ExportMode {
 export async function GET(_request: Request, context: { params: { id: string } }) {
   try {
     const ctx = await getRequestContext(_request);
+    assertCan(ctx.role, RbacAction.EXPORT);
     const questionnaireId = context.params.id.trim();
     if (!questionnaireId) {
       return jsonError({

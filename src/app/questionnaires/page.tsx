@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useAppAuthz } from "@/components/AppAuthzContext";
 import { ExportModal } from "@/components/ExportModal";
 import { Badge, Button, Card, TextInput, cx } from "@/components/ui";
+import { can, RbacAction } from "@/server/rbac";
 
 type PreviewRow = Record<string, string>;
 
@@ -24,8 +26,33 @@ type AutofillResult = {
   answeredCount: number;
   foundCount: number;
   notFoundCount: number;
-  error?: string;
+  error?: unknown;
 };
+
+type EmbedResult = {
+  embeddedCount?: number;
+  error?: unknown;
+};
+
+function getApiErrorMessage(payload: unknown, fallback: string): string {
+  if (!payload || typeof payload !== "object") {
+    return fallback;
+  }
+
+  const typed = payload as { error?: unknown };
+  if (typeof typed.error === "string" && typed.error.trim()) {
+    return typed.error.trim();
+  }
+
+  if (typed.error && typeof typed.error === "object" && !Array.isArray(typed.error)) {
+    const nested = typed.error as { message?: unknown };
+    if (typeof nested.message === "string" && nested.message.trim()) {
+      return nested.message.trim();
+    }
+  }
+
+  return fallback;
+}
 
 function getMessageTone(message: string): "approved" | "review" | "notfound" {
   const normalized = message.toLowerCase();
@@ -46,6 +73,7 @@ function getMessageTone(message: string): "approved" | "review" | "notfound" {
 }
 
 export default function QuestionnairesPage() {
+  const { role } = useAppAuthz();
   const [questionnaires, setQuestionnaires] = useState<QuestionnaireRow[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -62,6 +90,10 @@ export default function QuestionnairesPage() {
   const [exportTarget, setExportTarget] = useState<{ id: string; name: string } | null>(null);
 
   const previewHeaders = useMemo(() => headers, [headers]);
+  const canImportQuestionnaires = role ? can(role, RbacAction.IMPORT_QUESTIONNAIRES) : false;
+  const canRunAutofill = role ? can(role, RbacAction.RUN_AUTOFILL) : false;
+  const canDeleteQuestionnaires = role ? can(role, RbacAction.DELETE_QUESTIONNAIRES) : false;
+  const canExportQuestionnaires = role ? can(role, RbacAction.EXPORT) : false;
 
   const filteredQuestionnaires = useMemo(() => {
     const lowered = searchText.trim().toLowerCase();
@@ -118,6 +150,11 @@ export default function QuestionnairesPage() {
   }, []);
 
   async function handleFileSelect(file: File | null) {
+    if (!canImportQuestionnaires) {
+      setMessage("You do not have permission to import questionnaires.");
+      return;
+    }
+
     setSelectedFile(file);
     setHeaders([]);
     setPreviewRows([]);
@@ -164,6 +201,10 @@ export default function QuestionnairesPage() {
 
   async function handleImport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canImportQuestionnaires) {
+      setMessage("You do not have permission to import questionnaires.");
+      return;
+    }
 
     if (!selectedFile) {
       setMessage("Select a CSV file first.");
@@ -216,10 +257,25 @@ export default function QuestionnairesPage() {
   }
 
   async function runAutofill(questionnaireId: string) {
+    if (!canRunAutofill) {
+      setMessage("You do not have permission to run autofill.");
+      return;
+    }
+
     setActiveAutofillId(questionnaireId);
     setMessage("");
 
     try {
+      const embedResponse = await fetch("/api/documents/embed", {
+        method: "POST"
+      });
+      const embedPayload = (await embedResponse.json().catch(() => ({}))) as EmbedResult;
+      if (!embedResponse.ok) {
+        throw new Error(
+          `Embedding step failed: ${getApiErrorMessage(embedPayload, "Failed to embed document chunks.")}`
+        );
+      }
+
       const response = await fetch(`/api/questionnaires/${questionnaireId}/autofill`, {
         method: "POST"
       });
@@ -227,11 +283,14 @@ export default function QuestionnairesPage() {
       const payload = (await response.json()) as AutofillResult;
 
       if (!response.ok) {
-        throw new Error(payload.error ?? "Autofill failed");
+        throw new Error(getApiErrorMessage(payload, "Autofill failed"));
       }
 
+      const embeddedCount = Number(embedPayload.embeddedCount ?? 0);
+      const embeddingPrefix =
+        embeddedCount > 0 ? `Embedded ${embeddedCount} pending chunk${embeddedCount === 1 ? "" : "s"}. ` : "";
       setMessage(
-        `Autofill complete: ${payload.answeredCount}/${payload.totalCount} answered, ${payload.notFoundCount} not found.`
+        `${embeddingPrefix}Autofill complete: ${payload.answeredCount}/${payload.totalCount} answered, ${payload.notFoundCount} not found.`
       );
       await fetchQuestionnaires();
     } catch (error) {
@@ -242,6 +301,11 @@ export default function QuestionnairesPage() {
   }
 
   async function deleteQuestionnaire(questionnaireId: string) {
+    if (!canDeleteQuestionnaires) {
+      setMessage("You do not have permission to delete questionnaires.");
+      return;
+    }
+
     if (!window.confirm("Delete this questionnaire?")) {
       return;
     }
@@ -294,6 +358,7 @@ export default function QuestionnairesPage() {
                 className="input"
                 type="file"
                 accept=".csv,text/csv"
+                disabled={!canImportQuestionnaires}
                 onChange={(event) => {
                   const file = event.target.files?.[0] ?? null;
                   void handleFileSelect(file);
@@ -313,7 +378,7 @@ export default function QuestionnairesPage() {
                 className="select"
                 value={questionColumn}
                 onChange={(event) => setQuestionColumn(event.target.value)}
-                disabled={headers.length === 0}
+                disabled={headers.length === 0 || !canImportQuestionnaires}
               >
                 <option value="">Select column</option>
                 {headers.map((header) => (
@@ -330,12 +395,17 @@ export default function QuestionnairesPage() {
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Quarterly vendor review"
+                disabled={!canImportQuestionnaires}
               />
             </div>
           </div>
 
           <div className="toolbar-row">
-            <Button type="submit" variant="primary" disabled={isParsing || isImporting || !selectedFile}>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={isParsing || isImporting || !selectedFile || !canImportQuestionnaires}
+            >
               {isImporting ? "Importing..." : "Create Questionnaire"}
             </Button>
             <Button type="button" variant="secondary" disabled={isLoadingList} onClick={() => void fetchQuestionnaires()}>
@@ -504,7 +574,11 @@ export default function QuestionnairesPage() {
                             type="button"
                             variant="secondary"
                             onClick={() => void runAutofill(questionnaire.id)}
-                            disabled={activeAutofillId === questionnaire.id || activeDeleteId === questionnaire.id}
+                            disabled={
+                              activeAutofillId === questionnaire.id ||
+                              activeDeleteId === questionnaire.id ||
+                              !canRunAutofill
+                            }
                           >
                             {activeAutofillId === questionnaire.id ? "Running..." : "Run Autofill"}
                           </Button>
@@ -518,20 +592,26 @@ export default function QuestionnairesPage() {
                               type="button"
                               className="row-actions-item"
                               onClick={() => setExportTarget({ id: questionnaire.id, name: questionnaire.name })}
-                              disabled={activeAutofillId === questionnaire.id || activeDeleteId === questionnaire.id}
+                              disabled={
+                                activeAutofillId === questionnaire.id ||
+                                activeDeleteId === questionnaire.id ||
+                                !canExportQuestionnaires
+                              }
                               aria-label={`Export questionnaire ${questionnaire.name}`}
                             >
                               Export...
                             </button>
-                            <button
-                              type="button"
-                              className="row-actions-item danger"
-                              onClick={() => void deleteQuestionnaire(questionnaire.id)}
-                              disabled={activeAutofillId === questionnaire.id || activeDeleteId === questionnaire.id}
-                              aria-label={`Delete questionnaire ${questionnaire.name}`}
-                            >
-                              {activeDeleteId === questionnaire.id ? "Deleting..." : "Delete questionnaire"}
-                            </button>
+                            {canDeleteQuestionnaires ? (
+                              <button
+                                type="button"
+                                className="row-actions-item danger"
+                                onClick={() => void deleteQuestionnaire(questionnaire.id)}
+                                disabled={activeAutofillId === questionnaire.id || activeDeleteId === questionnaire.id}
+                                aria-label={`Delete questionnaire ${questionnaire.name}`}
+                              >
+                                {activeDeleteId === questionnaire.id ? "Deleting..." : "Delete questionnaire"}
+                              </button>
+                            ) : null}
                           </div>
                         </details>
                       </div>
@@ -545,7 +625,7 @@ export default function QuestionnairesPage() {
       </Card>
 
       <ExportModal
-        isOpen={Boolean(exportTarget)}
+        isOpen={Boolean(exportTarget) && canExportQuestionnaires}
         questionnaireId={exportTarget?.id ?? null}
         questionnaireName={exportTarget?.name ?? "questionnaire"}
         onClose={() => setExportTarget(null)}

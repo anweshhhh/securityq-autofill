@@ -3,6 +3,7 @@ import { ApiRouteError, extractCitationChunkIds } from "@/lib/approvalValidation
 import { toApiErrorResponse } from "@/lib/apiResponse";
 import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/requestContext";
+import { assertCan, RbacAction } from "@/server/rbac";
 
 const NOT_FOUND_ANSWER = "Not found in provided documents.";
 
@@ -38,6 +39,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const ctx = await getRequestContext(request);
+    assertCan(ctx.role, RbacAction.APPROVE_ANSWERS);
     const questionnaire = await prisma.questionnaire.findFirst({
       where: {
         id: questionnaireId,

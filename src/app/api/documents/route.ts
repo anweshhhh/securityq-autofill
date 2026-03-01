@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { toApiErrorResponse } from "@/lib/apiResponse";
 import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/requestContext";
+import { assertCan, RbacAction } from "@/server/rbac";
 
 export async function GET() {
   try {
     const ctx = await getRequestContext();
+    assertCan(ctx.role, RbacAction.VIEW_DOCUMENTS);
 
     const documents = await prisma.document.findMany({
       where: { organizationId: ctx.orgId },

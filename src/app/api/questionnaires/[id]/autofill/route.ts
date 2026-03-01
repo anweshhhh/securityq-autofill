@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { jsonError, toApiErrorResponse } from "@/lib/apiResponse";
 import { getEmbeddingAvailability, processQuestionnaireAutofillBatch } from "@/lib/questionnaireService";
 import { getRequestContext } from "@/lib/requestContext";
+import { assertCan, RbacAction } from "@/server/rbac";
 
 export async function POST(_request: Request, context: { params: { id: string } }) {
   try {
@@ -23,6 +24,7 @@ export async function POST(_request: Request, context: { params: { id: string } 
 
     const debug = isDevMode && debugRequested;
     const ctx = await getRequestContext(_request);
+    assertCan(ctx.role, RbacAction.RUN_AUTOFILL);
     const availability = await getEmbeddingAvailability(ctx.orgId);
 
     if (availability.total === 0 || availability.embedded === 0) {

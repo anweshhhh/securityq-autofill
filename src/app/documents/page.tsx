@@ -1,18 +1,26 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useAppAuthz } from "@/components/AppAuthzContext";
 import { Badge, Button, Card, TextInput, cx } from "@/components/ui";
+import { can, RbacAction } from "@/server/rbac";
 
 type DocumentRow = {
   id: string;
   name: string;
   displayName: string;
   originalName: string;
+  mimeType: string;
   status: string;
   errorMessage: string | null;
   createdAt: string;
   updatedAt: string;
   chunkCount: number;
+};
+
+type UploadResponsePayload = {
+  document?: { originalName: string; chunkCount: number };
+  error?: string | { message?: string; code?: string };
 };
 
 function toTimeValue(value: string): number {
@@ -61,7 +69,40 @@ function messageTone(message: string): "approved" | "review" | "notfound" {
   return "review";
 }
 
+function extractErrorMessage(errorValue: UploadResponsePayload["error"], fallback: string): string {
+  if (typeof errorValue === "string" && errorValue.trim()) {
+    return errorValue.trim();
+  }
+
+  if (
+    errorValue &&
+    typeof errorValue === "object" &&
+    typeof errorValue.message === "string" &&
+    errorValue.message.trim()
+  ) {
+    return errorValue.message.trim();
+  }
+
+  return fallback;
+}
+
+function documentTypeLabel(document: Pick<DocumentRow, "mimeType" | "originalName">): "PDF" | "MD" | "TXT" {
+  const mimeType = document.mimeType.toLowerCase();
+  const originalName = document.originalName.toLowerCase();
+
+  if (mimeType.includes("pdf") || originalName.endsWith(".pdf")) {
+    return "PDF";
+  }
+
+  if (mimeType.includes("markdown") || originalName.endsWith(".md")) {
+    return "MD";
+  }
+
+  return "TXT";
+}
+
 export default function DocumentsPage() {
+  const { role } = useAppAuthz();
   const [documents, setDocuments] = useState<DocumentRow[]>([]);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -106,6 +147,8 @@ export default function DocumentsPage() {
       );
     });
   }, [searchText, visibleDocuments]);
+  const canUploadDocuments = role ? can(role, RbacAction.UPLOAD_DOCUMENTS) : false;
+  const canDeleteDocuments = role ? can(role, RbacAction.DELETE_DOCUMENTS) : false;
 
   async function fetchDocuments() {
     setIsLoading(true);
@@ -135,8 +178,13 @@ export default function DocumentsPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canUploadDocuments) {
+      setMessage("You do not have permission to upload documents.");
+      return;
+    }
+
     if (!selectedFile) {
-      setMessage("Select a .txt or .md file first.");
+      setMessage("Select a .txt, .md, or .pdf file first.");
       return;
     }
 
@@ -151,14 +199,31 @@ export default function DocumentsPage() {
         method: "POST",
         body: formData
       });
+      const contentType = response.headers.get("content-type") ?? "";
+      if (process.env.NODE_ENV !== "production") {
+        console.info("[documents/upload]", { status: response.status, contentType });
+      }
 
-      const payload = (await response.json()) as {
-        document?: { originalName: string; chunkCount: number };
-        error?: string;
-      };
+      let payload: UploadResponsePayload | null = null;
+      if (contentType.toLowerCase().includes("application/json")) {
+        payload = (await response.json()) as UploadResponsePayload;
+      } else {
+        const rawText = await response.text();
+        const snippet = rawText.replace(/\s+/g, " ").trim().slice(0, 300);
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[documents/upload] non-json response", {
+            status: response.status,
+            contentType,
+            snippet
+          });
+        }
+        throw new Error(
+          `Upload failed with non-JSON response (${response.status}, ${contentType || "unknown"}): ${snippet}`
+        );
+      }
 
       if (!response.ok) {
-        throw new Error(payload.error ?? "Upload failed");
+        throw new Error(extractErrorMessage(payload?.error, "Upload failed"));
       }
 
       setSelectedFile(null);
@@ -175,6 +240,11 @@ export default function DocumentsPage() {
   }
 
   async function deleteDocuments(ids: string[]) {
+    if (!canDeleteDocuments) {
+      setMessage("You do not have permission to delete documents.");
+      return;
+    }
+
     if (ids.length === 0) {
       setMessage("Select at least one document to delete.");
       return;
@@ -234,7 +304,7 @@ export default function DocumentsPage() {
           <div>
             <h2 style={{ marginBottom: 4 }}>Upload Evidence</h2>
             <p className="muted" style={{ margin: 0 }}>
-              Add `.txt` and `.md` evidence files. Upload keeps chunk extraction deterministic.
+              Add `.txt`, `.md`, or `.pdf` evidence files. Upload keeps chunk extraction deterministic.
             </p>
           </div>
           <Badge tone="draft" title="Ingestion pipeline">
@@ -248,7 +318,8 @@ export default function DocumentsPage() {
             <p>Drag-and-drop styling is active. Upload still uses the file selector for deterministic behavior.</p>
             <TextInput
               type="file"
-              accept=".txt,.md,text/plain,text/markdown"
+              accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf"
+              disabled={!canUploadDocuments}
               onChange={(event) => {
                 const file = event.target.files?.[0] ?? null;
                 setSelectedFile(file);
@@ -257,7 +328,7 @@ export default function DocumentsPage() {
           </div>
 
           <div className="toolbar-row">
-            <Button type="submit" variant="primary" disabled={isUploading || !selectedFile}>
+            <Button type="submit" variant="primary" disabled={isUploading || !selectedFile || !canUploadDocuments}>
               {isUploading ? "Uploading..." : "Upload Evidence"}
             </Button>
             <Button
@@ -331,21 +402,23 @@ export default function DocumentsPage() {
               placeholder="Search documents"
               title="Filter document list"
             />
-            <Button
-              type="button"
-              variant="danger"
-              onClick={() => void deleteDocuments(selectedDocumentIds)}
-              disabled={isDeleting || selectedDocumentIds.length === 0}
-            >
-              {isDeleting ? "Deleting..." : "Delete selected"}
-            </Button>
+            {canDeleteDocuments ? (
+              <Button
+                type="button"
+                variant="danger"
+                onClick={() => void deleteDocuments(selectedDocumentIds)}
+                disabled={isDeleting || selectedDocumentIds.length === 0}
+              >
+                {isDeleting ? "Deleting..." : "Delete selected"}
+              </Button>
+            ) : null}
           </div>
         </div>
 
         {!isLoading && documents.length === 0 && searchText.trim().length === 0 ? (
           <div className="empty-state">
             <h3 style={{ marginTop: 0 }}>No evidence documents yet</h3>
-            <p>Upload `.txt` or `.md` files to start the evidence pipeline.</p>
+            <p>Upload `.txt`, `.md`, or `.pdf` files to start the evidence pipeline.</p>
             <a href="#upload" className="btn btn-primary" aria-label="Jump to upload evidence section">
               Upload Evidence
             </a>
@@ -356,29 +429,32 @@ export default function DocumentsPage() {
               <thead>
                 <tr>
                   <th>
-                    <input
-                      type="checkbox"
-                      aria-label="Select all visible documents"
-                      checked={allVisibleSelected}
-                      onChange={(event) => {
-                        if (event.target.checked) {
-                          setSelectedDocumentIds((current) => {
-                            const combined = new Set([...current, ...filteredDocuments.map((document) => document.id)]);
-                            return Array.from(combined);
-                          });
-                          return;
-                        }
+                    {canDeleteDocuments ? (
+                      <input
+                        type="checkbox"
+                        aria-label="Select all visible documents"
+                        checked={allVisibleSelected}
+                        onChange={(event) => {
+                          if (event.target.checked) {
+                            setSelectedDocumentIds((current) => {
+                              const combined = new Set([...current, ...filteredDocuments.map((document) => document.id)]);
+                              return Array.from(combined);
+                            });
+                            return;
+                          }
 
-                        setSelectedDocumentIds((current) =>
-                          current.filter(
-                            (selectedId) => !filteredDocuments.some((document) => document.id === selectedId)
-                          )
-                        );
-                      }}
-                    />
+                          setSelectedDocumentIds((current) =>
+                            current.filter(
+                              (selectedId) => !filteredDocuments.some((document) => document.id === selectedId)
+                            )
+                          );
+                        }}
+                      />
+                    ) : null}
                   </th>
                   <th>Name</th>
                   <th>Original</th>
+                  <th>Type</th>
                   <th>Status</th>
                   <th>Chunk count</th>
                   <th>Updated</th>
@@ -388,39 +464,44 @@ export default function DocumentsPage() {
               <tbody>
                 {isLoading && filteredDocuments.length === 0 ? (
                   <tr>
-                    <td colSpan={7}>Loading documents...</td>
+                    <td colSpan={8}>Loading documents...</td>
                   </tr>
                 ) : null}
 
                 {!isLoading && filteredDocuments.length === 0 ? (
                   <tr>
-                    <td colSpan={7}>No documents match the current search.</td>
+                    <td colSpan={8}>No documents match the current search.</td>
                   </tr>
                 ) : null}
 
                 {filteredDocuments.map((document) => (
                   <tr key={document.id}>
                     <td>
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${document.originalName}`}
-                        checked={selectedDocumentIds.includes(document.id)}
-                        onChange={(event) => {
-                          if (event.target.checked) {
-                            setSelectedDocumentIds((current) => [...current, document.id]);
-                            return;
-                          }
+                      {canDeleteDocuments ? (
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${document.originalName}`}
+                          checked={selectedDocumentIds.includes(document.id)}
+                          onChange={(event) => {
+                            if (event.target.checked) {
+                              setSelectedDocumentIds((current) => [...current, document.id]);
+                              return;
+                            }
 
-                          setSelectedDocumentIds((current) =>
-                            current.filter((selectedId) => selectedId !== document.id)
-                          );
-                        }}
-                      />
+                            setSelectedDocumentIds((current) =>
+                              current.filter((selectedId) => selectedId !== document.id)
+                            );
+                          }}
+                        />
+                      ) : null}
                     </td>
                     <td>
                       <strong>{document.displayName}</strong>
                     </td>
                     <td className="muted">{document.originalName}</td>
+                    <td>
+                      <Badge tone="draft">{documentTypeLabel(document)}</Badge>
+                    </td>
                     <td>
                       <span className={cx("badge", `status-${statusBadge(document.status)}`)}>{document.status}</span>
                       {document.status === "ERROR" && document.errorMessage ? (
@@ -432,15 +513,19 @@ export default function DocumentsPage() {
                     <td>{document.chunkCount}</td>
                     <td className="muted">{new Date(document.updatedAt).toLocaleString()}</td>
                     <td>
-                      <Button
-                        type="button"
-                        variant="danger"
-                        onClick={() => void deleteDocuments([document.id])}
-                        disabled={isDeleting}
-                        aria-label={`Delete document ${document.displayName}`}
-                      >
-                        Delete
-                      </Button>
+                      {canDeleteDocuments ? (
+                        <Button
+                          type="button"
+                          variant="danger"
+                          onClick={() => void deleteDocuments([document.id])}
+                          disabled={isDeleting}
+                          aria-label={`Delete document ${document.displayName}`}
+                        >
+                          Delete
+                        </Button>
+                      ) : (
+                        <span className="small muted">View only</span>
+                      )}
                     </td>
                   </tr>
                 ))}

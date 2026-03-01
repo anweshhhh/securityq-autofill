@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { jsonError, toApiErrorResponse } from "@/lib/apiResponse";
 import { answerQuestion } from "@/server/answerEngine";
 import { getRequestContext } from "@/lib/requestContext";
+import { assertCan, RbacAction } from "@/server/rbac";
 
 export async function POST(request: Request) {
   try {
@@ -22,6 +23,7 @@ export async function POST(request: Request) {
     }
 
     const ctx = await getRequestContext(request);
+    assertCan(ctx.role, RbacAction.VIEW_QUESTIONNAIRES);
     const answer = await answerQuestion({
       orgId: ctx.orgId,
       questionText: question,

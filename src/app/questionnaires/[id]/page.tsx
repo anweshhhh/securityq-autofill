@@ -2,9 +2,11 @@
 
 import { useParams } from "next/navigation";
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useAppAuthz } from "@/components/AppAuthzContext";
 import { ExportModal } from "@/components/ExportModal";
 import { Badge, Button, Card, TextArea, TextInput, cx } from "@/components/ui";
 import { useFocusTrap } from "@/lib/useFocusTrap";
+import { can, RbacAction } from "@/server/rbac";
 
 type Citation = {
   docName: string;
@@ -509,6 +511,7 @@ const QuestionRailItemButton = memo(function QuestionRailItemButton({
 export default function QuestionnaireDetailsPage() {
   const params = useParams<{ id: string }>();
   const questionnaireId = params.id;
+  const { role } = useAppAuthz();
 
   const [data, setData] = useState<QuestionnaireDetailsPayload | null>(null);
   const [message, setMessage] = useState("");
@@ -540,6 +543,11 @@ export default function QuestionnaireDetailsPage() {
   const shortcutsModalRef = useRef<HTMLDivElement | null>(null);
   const documentModalRef = useRef<HTMLDivElement | null>(null);
   const deferredSearchText = useDeferredValue(searchText);
+  const canRunAutofill = role ? can(role, RbacAction.RUN_AUTOFILL) : false;
+  const canApproveAnswers = role ? can(role, RbacAction.APPROVE_ANSWERS) : false;
+  const canEditApprovedAnswers = role ? can(role, RbacAction.EDIT_APPROVED_ANSWERS) : false;
+  const canMarkNeedsReview = role ? can(role, RbacAction.MARK_NEEDS_REVIEW) : false;
+  const canExportQuestionnaire = role ? can(role, RbacAction.EXPORT) : false;
 
   const loadDetails = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -930,6 +938,11 @@ export default function QuestionnaireDetailsPage() {
   );
 
   async function runAutofill() {
+    if (!canRunAutofill) {
+      setMessage("You do not have permission to run autofill.");
+      return;
+    }
+
     setMessage("");
     setIsRunningAutofill(true);
     const runStartedAtMs = Date.now();
@@ -1019,6 +1032,12 @@ export default function QuestionnaireDetailsPage() {
   }
 
   async function approveVisibleQuestions() {
+    if (!canApproveAnswers) {
+      setMessage("You do not have permission to approve answers.");
+      setIsBulkConfirmOpen(false);
+      return;
+    }
+
     if (bulkEligibleQuestions.length === 0) {
       setMessage("No visible questions are eligible for approval.");
       setIsBulkConfirmOpen(false);
@@ -1072,6 +1091,11 @@ export default function QuestionnaireDetailsPage() {
   }
 
   async function approveExactReusedQuestions() {
+    if (!canApproveAnswers) {
+      setMessage("You do not have permission to approve reused answers.");
+      return;
+    }
+
     if (exactReusedEligibleQuestions.length === 0) {
       setMessage("No exact reused questions are eligible for approval.");
       return;
@@ -1111,6 +1135,11 @@ export default function QuestionnaireDetailsPage() {
   }
 
   const approveQuestion = useCallback(async (question: QuestionRow) => {
+    if (!canApproveAnswers) {
+      setMessage("You do not have permission to approve answers.");
+      return;
+    }
+
     setMessage("");
     setActiveQuestionActionId(question.id);
 
@@ -1128,9 +1157,14 @@ export default function QuestionnaireDetailsPage() {
     } finally {
       setActiveQuestionActionId(null);
     }
-  }, [loadDetails, persistApproval]);
+  }, [canApproveAnswers, loadDetails, persistApproval]);
 
   const updateReviewStatus = useCallback(async (questionId: string, reviewStatus: "NEEDS_REVIEW" | "DRAFT") => {
+    if (!canMarkNeedsReview) {
+      setMessage("You do not have permission to change review status.");
+      return;
+    }
+
     setMessage("");
     setActiveQuestionActionId(questionId);
 
@@ -1157,9 +1191,14 @@ export default function QuestionnaireDetailsPage() {
     } finally {
       setActiveQuestionActionId(null);
     }
-  }, [loadDetails]);
+  }, [canMarkNeedsReview, loadDetails]);
 
   const unapprove = useCallback(async (approvedAnswerId: string, questionId: string) => {
+    if (!canApproveAnswers) {
+      setMessage("You do not have permission to remove approvals.");
+      return;
+    }
+
     setMessage("");
     setActiveQuestionActionId(questionId);
 
@@ -1180,9 +1219,14 @@ export default function QuestionnaireDetailsPage() {
     } finally {
       setActiveQuestionActionId(null);
     }
-  }, [loadDetails]);
+  }, [canApproveAnswers, loadDetails]);
 
   function beginEdit(question: QuestionRow) {
+    if (!canEditApprovedAnswers) {
+      setMessage("You do not have permission to edit approved answers.");
+      return;
+    }
+
     if (!question.approvedAnswer) {
       return;
     }
@@ -1197,6 +1241,11 @@ export default function QuestionnaireDetailsPage() {
   }
 
   async function saveEditedApproval(question: QuestionRow) {
+    if (!canEditApprovedAnswers) {
+      setMessage("You do not have permission to edit approved answers.");
+      return;
+    }
+
     if (!question.approvedAnswer) {
       return;
     }
@@ -1442,7 +1491,14 @@ export default function QuestionnaireDetailsPage() {
         return;
       }
 
-      if (key === "a" && selectedQuestion && selectedQuestionApprovalCandidate && !isBulkApproving && !isApprovingReusedExact) {
+      if (
+        key === "a" &&
+        canApproveAnswers &&
+        selectedQuestion &&
+        selectedQuestionApprovalCandidate &&
+        !isBulkApproving &&
+        !isApprovingReusedExact
+      ) {
         event.preventDefault();
         void approveQuestion(selectedQuestion);
         return;
@@ -1450,6 +1506,7 @@ export default function QuestionnaireDetailsPage() {
 
       if (
         key === "r" &&
+        canMarkNeedsReview &&
         selectedQuestion &&
         !isBulkApproving &&
         !isApprovingReusedExact &&
@@ -1460,7 +1517,13 @@ export default function QuestionnaireDetailsPage() {
         return;
       }
 
-      if (key === "u" && selectedQuestion?.approvedAnswer && !isBulkApproving && !isApprovingReusedExact) {
+      if (
+        key === "u" &&
+        canApproveAnswers &&
+        selectedQuestion?.approvedAnswer &&
+        !isBulkApproving &&
+        !isApprovingReusedExact
+      ) {
         event.preventDefault();
         void unapprove(selectedQuestion.approvedAnswer.id, selectedQuestion.id);
         return;
@@ -1482,6 +1545,8 @@ export default function QuestionnaireDetailsPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     approveQuestion,
+    canApproveAnswers,
+    canMarkNeedsReview,
     copyText,
     effectiveAnswer,
     filteredQuestionIds,
@@ -1529,7 +1594,13 @@ export default function QuestionnaireDetailsPage() {
               type="button"
               variant="primary"
               onClick={() => setIsBulkConfirmOpen(true)}
-              disabled={isLoading || isBulkApproving || isApprovingReusedExact || bulkEligibleQuestions.length === 0}
+              disabled={
+                isLoading ||
+                isBulkApproving ||
+                isApprovingReusedExact ||
+                bulkEligibleQuestions.length === 0 ||
+                !canApproveAnswers
+              }
               title="Approve all currently visible eligible questions"
               aria-label="Approve visible eligible questions"
             >
@@ -1544,7 +1615,8 @@ export default function QuestionnaireDetailsPage() {
                 isBulkApproving ||
                 isApprovingReusedExact ||
                 isRunningAutofill ||
-                exactReusedEligibleQuestions.length === 0
+                exactReusedEligibleQuestions.length === 0 ||
+                !canApproveAnswers
               }
               title="Approve only exact-match reused answers with valid citations"
               aria-label="Approve reused exact answers"
@@ -1558,7 +1630,7 @@ export default function QuestionnaireDetailsPage() {
               variant="secondary"
               className="btn-progress"
               onClick={() => void runAutofill()}
-              disabled={isRunningAutofill || isBulkApproving || isApprovingReusedExact}
+              disabled={isRunningAutofill || isBulkApproving || isApprovingReusedExact || !canRunAutofill}
               title="Run autofill for this questionnaire"
               aria-label="Run autofill for questionnaire"
             >
@@ -1579,6 +1651,7 @@ export default function QuestionnaireDetailsPage() {
               type="button"
               variant="ghost"
               onClick={() => setIsExportModalOpen(true)}
+              disabled={!canExportQuestionnaire}
               aria-label="Export questionnaire CSV"
               title="Export questionnaire CSV"
             >
@@ -1804,7 +1877,8 @@ export default function QuestionnaireDetailsPage() {
                       activeQuestionActionId === selectedQuestion.id ||
                       isBulkApproving ||
                       isApprovingReusedExact ||
-                      !selectedQuestionApprovalCandidate
+                      !selectedQuestionApprovalCandidate ||
+                      !canApproveAnswers
                     }
                     aria-label="Approve selected answer"
                   >
@@ -1818,7 +1892,8 @@ export default function QuestionnaireDetailsPage() {
                       activeQuestionActionId === selectedQuestion.id ||
                       isBulkApproving ||
                       isApprovingReusedExact ||
-                      selectedQuestion.reviewStatus === "NEEDS_REVIEW"
+                      selectedQuestion.reviewStatus === "NEEDS_REVIEW" ||
+                      !canMarkNeedsReview
                     }
                     aria-label="Mark selected question as needs review"
                   >
@@ -1832,7 +1907,8 @@ export default function QuestionnaireDetailsPage() {
                       activeQuestionActionId === selectedQuestion.id ||
                       isBulkApproving ||
                       isApprovingReusedExact ||
-                      selectedQuestion.reviewStatus === "DRAFT"
+                      selectedQuestion.reviewStatus === "DRAFT" ||
+                      !canMarkNeedsReview
                     }
                     aria-label="Mark selected question as draft"
                   >
@@ -1850,7 +1926,8 @@ export default function QuestionnaireDetailsPage() {
                       activeQuestionActionId === selectedQuestion.id ||
                       isBulkApproving ||
                       isApprovingReusedExact ||
-                      !selectedQuestion.approvedAnswer
+                      !selectedQuestion.approvedAnswer ||
+                      !canApproveAnswers
                     }
                     aria-label="Remove selected approval"
                   >
@@ -1878,7 +1955,8 @@ export default function QuestionnaireDetailsPage() {
                             disabled={
                               activeQuestionActionId === selectedQuestion.id ||
                               isBulkApproving ||
-                              isApprovingReusedExact
+                              isApprovingReusedExact ||
+                              !canEditApprovedAnswers
                             }
                           >
                             Save approved edit
@@ -1894,7 +1972,12 @@ export default function QuestionnaireDetailsPage() {
                         </div>
                       </>
                     ) : (
-                      <Button type="button" variant="secondary" onClick={() => beginEdit(selectedQuestion)}>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => beginEdit(selectedQuestion)}
+                        disabled={!canEditApprovedAnswers}
+                      >
                         Edit approved answer
                       </Button>
                     )}
@@ -2095,7 +2178,7 @@ export default function QuestionnaireDetailsPage() {
       ) : null}
 
       <ExportModal
-        isOpen={isExportModalOpen}
+        isOpen={isExportModalOpen && canExportQuestionnaire}
         questionnaireId={questionnaireId}
         questionnaireName={data?.questionnaire.name ?? "questionnaire"}
         onClose={() => setIsExportModalOpen(false)}

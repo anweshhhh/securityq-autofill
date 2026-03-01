@@ -85,6 +85,26 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 - `REVIEWER`: review and approval workflow access
 - `VIEWER`: read-only access
 
+### Permissions matrix (Phase 4 PR4)
+
+- Single RBAC source of truth: `src/server/rbac.ts` (`can(role, action)`, `assertCan(role, action)`).
+- Action minima:
+  - `VIEW_DOCUMENTS`: `VIEWER+`
+  - `UPLOAD_DOCUMENTS`: `ADMIN+`
+  - `DELETE_DOCUMENTS`: `ADMIN+`
+  - `EMBED_DOCUMENTS`: `ADMIN+`
+  - `VIEW_QUESTIONNAIRES`: `VIEWER+`
+  - `IMPORT_QUESTIONNAIRES`: `ADMIN+`
+  - `DELETE_QUESTIONNAIRES`: `ADMIN+`
+  - `RUN_AUTOFILL`: `ADMIN+`
+  - `EXPORT`: `VIEWER+`
+  - `APPROVE_ANSWERS`: `REVIEWER+`
+  - `EDIT_APPROVED_ANSWERS`: `REVIEWER+`
+  - `MARK_NEEDS_REVIEW`: `REVIEWER+`
+- Enforcement model:
+  - server API guards are authoritative (all protected routes call `getRequestContext()` + `assertCan(...)`).
+  - UI checks are secondary UX constraints (hide/disable restricted actions in documents/questionnaires views and trust bar/quick actions).
+
 ### Multi-tenant isolation guarantee (Phase 4 PR3)
 
 - All API read/write operations now derive tenant scope from request context:
@@ -101,6 +121,8 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 ### API error policy for scoped resources
 
 - Authentication/context failures return JSON errors with explicit code/message (`401`/`UNAUTHORIZED`).
+- Role denials return JSON `403` with explicit required role:
+  - `{ "error": { "code": "FORBIDDEN_ROLE", "message": "Requires <ROLE> role.", "requiredRole": "<ROLE>" } }`
 - Tenant resource access by ID uses anti-enumeration behavior:
   - out-of-org IDs are treated as not found (`404`/`NOT_FOUND`) rather than exposing cross-org existence.
 - API routes return JSON error envelopes:

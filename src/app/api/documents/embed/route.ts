@@ -4,6 +4,7 @@ import { createEmbedding } from "@/lib/openai";
 import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/requestContext";
 import { embeddingToVectorLiteral } from "@/lib/retrieval";
+import { assertCan, RbacAction } from "@/server/rbac";
 
 type ChunkRow = {
   id: string;
@@ -13,6 +14,7 @@ type ChunkRow = {
 export async function POST() {
   try {
     const ctx = await getRequestContext();
+    assertCan(ctx.role, RbacAction.EMBED_DOCUMENTS);
 
     const chunks = await prisma.$queryRawUnsafe<ChunkRow[]>(
       `

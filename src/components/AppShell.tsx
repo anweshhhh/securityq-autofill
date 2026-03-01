@@ -4,8 +4,10 @@ import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AppAuthzProvider, type AppAuthzState } from "@/components/AppAuthzContext";
 import { Button, TextInput, cx } from "@/components/ui";
 import { useFocusTrap } from "@/lib/useFocusTrap";
+import { can, RbacAction, type Role } from "@/server/rbac";
 
 type AppShellProps = {
   devMode: boolean;
@@ -18,15 +20,21 @@ type NavItem = {
   short: string;
 };
 
-type AuthContextPayload = {
-  context?: {
-    orgName: string;
-    memberships: Array<{
-      orgId: string;
-      orgName: string;
-      role: string;
-    }>;
+type MePayload = {
+  user?: {
+    id?: string;
+    email?: string | null;
   };
+  org?: {
+    id?: string;
+    name?: string;
+  };
+  role?: Role;
+  memberships?: Array<{
+    orgId: string;
+    orgName: string;
+    role: Role;
+  }>;
 };
 
 function getPageHeader(pathname: string): { title: string; subtitle: string } {
@@ -71,8 +79,11 @@ function getPageHeader(pathname: string): { title: string; subtitle: string } {
   };
 }
 
-function getPrimaryAction(pathname: string): { href: string; label: string } {
+function getPrimaryAction(pathname: string, role: Role | null): { href: string; label: string } | null {
   if (pathname.startsWith("/documents")) {
+    if (!role || !can(role, RbacAction.UPLOAD_DOCUMENTS)) {
+      return null;
+    }
     return {
       href: "/documents#upload",
       label: "Upload Evidence"
@@ -81,7 +92,7 @@ function getPrimaryAction(pathname: string): { href: string; label: string } {
 
   if (pathname.startsWith("/questionnaires/")) {
     const questionnaireId = pathname.split("/")[2];
-    if (questionnaireId) {
+    if (questionnaireId && role && can(role, RbacAction.EXPORT)) {
       return {
         href: `/api/questionnaires/${questionnaireId}/export`,
         label: "Export CSV"
@@ -90,6 +101,9 @@ function getPrimaryAction(pathname: string): { href: string; label: string } {
   }
 
   if (pathname === "/questionnaires") {
+    if (!role || !can(role, RbacAction.IMPORT_QUESTIONNAIRES)) {
+      return null;
+    }
     return {
       href: "/questionnaires#import",
       label: "Import Questionnaire"
@@ -120,7 +134,14 @@ function isActiveRoute(pathname: string, href: string): boolean {
 export function AppShell({ devMode, children }: AppShellProps) {
   const pathname = usePathname();
   const { data: session, status } = useSession();
-  const [authContext, setAuthContext] = useState<AuthContextPayload["context"] | null>(null);
+  const [authzState, setAuthzState] = useState<AppAuthzState>({
+    loading: true,
+    userEmail: null,
+    orgId: null,
+    orgName: null,
+    role: null,
+    memberships: []
+  });
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const mobileSidebarRef = useRef<HTMLElement | null>(null);
@@ -140,7 +161,7 @@ export function AppShell({ devMode, children }: AppShellProps) {
   }, [devMode]);
 
   const pageHeader = getPageHeader(pathname);
-  const primaryAction = getPrimaryAction(pathname);
+  const primaryAction = getPrimaryAction(pathname, authzState.role);
 
   useFocusTrap({
     active: isMobileSidebarOpen,
@@ -150,7 +171,14 @@ export function AppShell({ devMode, children }: AppShellProps) {
 
   useEffect(() => {
     if (status !== "authenticated") {
-      setAuthContext(null);
+      setAuthzState({
+        loading: false,
+        userEmail: null,
+        orgId: null,
+        orgName: null,
+        role: null,
+        memberships: []
+      });
       return;
     }
 
@@ -158,21 +186,42 @@ export function AppShell({ devMode, children }: AppShellProps) {
 
     async function loadAuthContext() {
       try {
-        const response = await fetch("/api/auth/context", { cache: "no-store" });
+        const response = await fetch("/api/me", { cache: "no-store" });
         if (!response.ok) {
           if (!cancelled) {
-            setAuthContext(null);
+            setAuthzState((current) => ({
+              ...current,
+              loading: false,
+              role: null,
+              orgId: null,
+              orgName: null,
+              memberships: []
+            }));
           }
           return;
         }
 
-        const payload = (await response.json()) as AuthContextPayload;
+        const payload = (await response.json()) as MePayload;
         if (!cancelled) {
-          setAuthContext(payload.context ?? null);
+          setAuthzState({
+            loading: false,
+            userEmail: typeof payload.user?.email === "string" ? payload.user.email : null,
+            orgId: typeof payload.org?.id === "string" ? payload.org.id : null,
+            orgName: typeof payload.org?.name === "string" ? payload.org.name : null,
+            role: payload.role ?? null,
+            memberships: Array.isArray(payload.memberships) ? payload.memberships : []
+          });
         }
       } catch {
         if (!cancelled) {
-          setAuthContext(null);
+          setAuthzState({
+            loading: false,
+            userEmail: null,
+            orgId: null,
+            orgName: null,
+            role: null,
+            memberships: []
+          });
         }
       }
     }
@@ -298,27 +347,30 @@ export function AppShell({ devMode, children }: AppShellProps) {
                 aria-label="Global search (coming soon)"
               />
             </div>
-            <Link href={primaryAction.href} className="btn btn-primary" aria-label={primaryAction.label}>
-              {primaryAction.label}
-            </Link>
+            {primaryAction ? (
+              <Link href={primaryAction.href} className="btn btn-primary" aria-label={primaryAction.label}>
+                {primaryAction.label}
+              </Link>
+            ) : null}
             {status === "authenticated" ? (
               <div className="toolbar-row compact">
-                <span className="small muted">{session.user?.email ?? "Signed in"}</span>
+                <span className="small muted">{session.user?.email ?? authzState.userEmail ?? "Signed in"}</span>
                 <span className="small muted">
-                  Org: {authContext?.orgName ?? "Loading..."}
+                  Org: {authzState.orgName ?? "Loading..."}
                 </span>
-                {authContext && authContext.memberships.length > 1 ? (
+                {authzState.role ? <span className="small muted">Role: {authzState.role}</span> : null}
+                {authzState.memberships.length > 1 ? (
                   <label className="small muted" style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
                     Workspace
                     <select
                       className="input"
                       disabled
-                      value={authContext.orgName}
+                      value={authzState.orgName ?? ""}
                       aria-label="Organization switcher (coming soon)"
                       title="Organization switcher (coming soon)"
                       style={{ minWidth: 180, height: 34 }}
                     >
-                      {authContext.memberships.map((membership) => (
+                      {authzState.memberships.map((membership) => (
                         <option key={membership.orgId} value={membership.orgName}>
                           {membership.orgName}
                         </option>
@@ -350,7 +402,9 @@ export function AppShell({ devMode, children }: AppShellProps) {
             <p>{pageHeader.subtitle}</p>
           </header>
 
-          <div className="canvas-inner">{children}</div>
+          <AppAuthzProvider value={authzState}>
+            <div className="canvas-inner">{children}</div>
+          </AppAuthzProvider>
         </main>
       </div>
     </div>
