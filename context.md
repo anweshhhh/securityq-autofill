@@ -382,10 +382,11 @@ Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now expl
 - Dark shell + light workbench rule:
   - dark chrome for top nav, sidebar, header band, and app frame
   - light canvas for cards, tables, answer bodies, and evidence snippets
-- Theme tokens (defined in `src/app/globals.css`):
+- Theme tokens (defined in `src/app/globals.css` + `src/app/ui-refine.css`):
   - shell/canvas/surfaces: `--bg-shell`, `--bg-canvas`, `--surface`, `--border`
   - typography: `--text`, `--muted-text`
   - brand: `--brand`, `--brand-foreground`
+  - spacing/radius/shadow: `--space-1..7`, `--radius-sm/md/lg`, `--shadow-soft`, `--shadow-pop`
   - status palette:
     - `--status-approved` (green)
     - `--status-review` (amber)
@@ -393,7 +394,14 @@ Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now expl
     - `--status-notfound` (red)
 - Layout conventions:
   - App shell component: `src/components/AppShell.tsx`
-  - desktop sidebar width ~260px, collapsible to ~56px
+  - primary sidebar nav is intentionally minimal:
+    - `Documents`
+    - `Questionnaires`
+    - `Members`
+  - secondary routes are grouped into top-nav overflow (`More`) to reduce persistent nav clutter:
+    - `Home`
+    - `Ask` (DEV only)
+  - desktop sidebar width ~248px, collapsible to ~64px
   - mobile sidebar is a drawer overlay
   - gradients are restricted to chrome/empty-state surfaces (not long-text tables/snippets)
 - Accessibility rules:
@@ -411,6 +419,10 @@ Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now expl
     - Trust Bar progress indicator has an accessible name and value text (`aria-label`/`aria-labelledby` + `aria-valuetext`)
 - Component conventions:
   - primitives in `src/components/ui.tsx` (`Button`, `Badge`, `Card`, `TextInput`, `TextArea`)
+  - shared primitives and shells are standardized via `src/app/ui-refine.css` to enforce:
+    - consistent spacing scale (`4/8/12/16/20/24/32`)
+    - consistent radii/borders/shadows across cards, buttons, inputs, tables
+    - reduced one-off inline style overrides in text-heavy workbench surfaces
   - questionnaire details page is a review workbench:
     - left question rail (search + status filters)
     - main answer panel (expand/collapse + actions)
@@ -427,10 +439,12 @@ Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now expl
     - approved answer is primary when present, with a read-only generated-vs-approved comparison toggle
     - review-velocity layer on `/questionnaires/[id]`:
       - sticky Trust Bar with review status counts + approved progress
+      - trust-bar action hierarchy is consistent (`Run Autofill` primary, approval actions secondary, export/shortcuts tertiary)
       - bulk action rule: `Approve Visible` is scoped to current filter/search and only approves rows with non-NOT_FOUND answers, non-empty citations, and non-approved status
       - keyboard shortcuts with help modal (`?`, `J/K`, `A`, `R`, `U`, `C`, `E`) disabled while typing in form fields
       - loading skeletons shown for rail/main/evidence while questionnaire details are fetching
       - `Run Autofill` uses live progress UI in-button (`answered/total`) and polls questionnaire details during active runs so rail/answer/evidence refresh incrementally
+      - in-button autofill progress now exposes `progressbar` semantics (`aria-label`, `aria-valuenow`, `aria-valuetext`)
     - evidence panel conventions:
       - citation chips show doc name only (ellipsized) with compact per-row actions (`Copy reference`, `Open document`)
       - snippet viewer highlights key question terms client-side and supports compact toolbar copy actions (`Copy citation IDs`, `Copy selected snippet`, optional evidence pack copy)
