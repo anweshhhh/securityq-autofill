@@ -1589,41 +1589,10 @@ export default function QuestionnaireDetailsPage() {
               Review velocity controls and approval coverage snapshot.
             </p>
           </div>
-          <div className="trust-actions">
+          <div className="toolbar-row">
             <Button
               type="button"
               variant="primary"
-              className="btn-progress"
-              onClick={() => void runAutofill()}
-              disabled={isRunningAutofill || isBulkApproving || isApprovingReusedExact || !canRunAutofill}
-              title="Run autofill for this questionnaire"
-              aria-label="Run autofill for questionnaire"
-            >
-              {isRunningAutofill ? (
-                <span
-                  className="btn-progress-content"
-                  aria-live="polite"
-                  role="progressbar"
-                  aria-label="Autofill progress"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={autofillProgressPercent}
-                  aria-valuetext={`${autofillProgress?.answeredCount ?? 0} of ${autofillProgress?.totalCount ?? 0} answered`}
-                >
-                  <span className="btn-progress-track" aria-hidden="true">
-                    <span className="btn-progress-fill" style={{ width: `${autofillProgressPercent}%` }} />
-                  </span>
-                  <span className="btn-progress-label">
-                    Running {autofillProgress?.answeredCount ?? 0}/{autofillProgress?.totalCount ?? 0}
-                  </span>
-                </span>
-              ) : (
-                "Run Autofill"
-              )}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
               onClick={() => setIsBulkConfirmOpen(true)}
               disabled={
                 isLoading ||
@@ -1655,6 +1624,28 @@ export default function QuestionnaireDetailsPage() {
               {isApprovingReusedExact
                 ? "Approving reused..."
                 : `Approve Reused (Exact) (${exactReusedEligibleQuestions.length})`}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              className="btn-progress"
+              onClick={() => void runAutofill()}
+              disabled={isRunningAutofill || isBulkApproving || isApprovingReusedExact || !canRunAutofill}
+              title="Run autofill for this questionnaire"
+              aria-label="Run autofill for questionnaire"
+            >
+              {isRunningAutofill ? (
+                <span className="btn-progress-content" aria-live="polite">
+                  <span className="btn-progress-track" aria-hidden="true">
+                    <span className="btn-progress-fill" style={{ width: `${autofillProgressPercent}%` }} />
+                  </span>
+                  <span className="btn-progress-label">
+                    Running {autofillProgress?.answeredCount ?? 0}/{autofillProgress?.totalCount ?? 0}
+                  </span>
+                </span>
+              ) : (
+                "Run Autofill"
+              )}
             </Button>
             <Button
               type="button"
@@ -1756,15 +1747,7 @@ export default function QuestionnaireDetailsPage() {
         <Card className="sticky-panel" data-testid="question-rail-panel">
           <div className="card-title-row">
             <h3 style={{ margin: 0 }}>Questions</h3>
-            <Badge tone="draft">
-              {filteredQuestionIds.length}/{statusCounts.ALL} visible
-            </Badge>
-          </div>
-
-          <div className="question-rail-metrics">
-            <Badge tone="approved">Approved {statusCounts.APPROVED}</Badge>
-            <Badge tone="review">Needs review {statusCounts.NEEDS_REVIEW}</Badge>
-            <Badge tone="notfound">Not found {statusCounts.NOT_FOUND}</Badge>
+            <Badge tone="draft">{filteredQuestionIds.length} visible</Badge>
           </div>
 
           <TextInput
@@ -1841,7 +1824,7 @@ export default function QuestionnaireDetailsPage() {
                   <h3 style={{ margin: 0 }}>
                     {selectedQuestion.approvedAnswer && !showingGeneratedComparison ? "Approved Answer" : "Generated Draft"}
                   </h3>
-                  <div className="toolbar-row compact answer-toolbar">
+                  <div className="toolbar-row" style={{ flexWrap: "nowrap", gap: 8 }}>
                     {selectedQuestion.approvedAnswer ? (
                       <Button
                         type="button"
@@ -1885,7 +1868,7 @@ export default function QuestionnaireDetailsPage() {
                 <div className="card-title-row">
                   <h3 style={{ margin: 0 }}>Quick actions</h3>
                 </div>
-                <div className="toolbar-row quick-actions-toolbar">
+                <div className="toolbar-row">
                   <Button
                     type="button"
                     variant="primary"
@@ -1918,7 +1901,7 @@ export default function QuestionnaireDetailsPage() {
                   </Button>
                   <Button
                     type="button"
-                    variant="secondary"
+                    variant="ghost"
                     onClick={() => void updateReviewStatus(selectedQuestion.id, "DRAFT")}
                     disabled={
                       activeQuestionActionId === selectedQuestion.id ||
