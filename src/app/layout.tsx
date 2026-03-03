@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./ui-refine.css";
 import { AppShell } from "@/components/AppShell";
 import { AuthSessionProvider } from "@/components/AuthSessionProvider";
 

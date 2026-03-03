@@ -178,23 +178,26 @@ export function AppShell({ devMode, children }: AppShellProps) {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const mobileSidebarRef = useRef<HTMLElement | null>(null);
 
-  const navItems: NavItem[] = useMemo(() => {
+  const primaryNavItems: NavItem[] = useMemo(() => {
     const items: NavItem[] = [
-      { href: "/", label: "Home", short: "H" },
       { href: "/documents", label: "Documents", short: "D" },
       { href: "/questionnaires", label: "Questionnaires", short: "Q" }
     ];
 
-    if (authzState.role && can(authzState.role, RbacAction.INVITE_MEMBERS)) {
+    if (authzState.role && can(authzState.role, RbacAction.VIEW_MEMBERS)) {
       items.push({ href: "/settings/members", label: "Members", short: "M" });
     }
 
+    return items;
+  }, [authzState.role]);
+
+  const secondaryNavItems: NavItem[] = useMemo(() => {
+    const items: NavItem[] = [{ href: "/", label: "Home", short: "H" }];
     if (devMode) {
       items.push({ href: "/ask", label: "Ask", short: "A" });
     }
-
     return items;
-  }, [authzState.role, devMode]);
+  }, [devMode]);
 
   const pageHeader = getPageHeader(pathname);
   const primaryAction = getPrimaryAction(pathname, authzState.role);
@@ -291,7 +294,7 @@ export function AppShell({ devMode, children }: AppShellProps) {
   }
 
   function renderNavLinks(onNavigate?: () => void) {
-    return navItems.map((item) => {
+    return primaryNavItems.map((item) => {
       const active = isActiveRoute(pathname, item.href);
       return (
         <Link
@@ -308,13 +311,27 @@ export function AppShell({ devMode, children }: AppShellProps) {
     });
   }
 
+  function renderSecondaryLinks(onNavigate?: () => void) {
+    return secondaryNavItems.map((item) => (
+      <Link
+        key={item.href}
+        href={item.href}
+        className="row-actions-item"
+        onClick={onNavigate}
+        aria-label={item.label}
+      >
+        {item.label}
+      </Link>
+    ));
+  }
+
   return (
     <div className="app-shell">
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
 
-      <nav
+      <aside
         className={cx("shell-sidebar", isSidebarCollapsed && "collapsed")}
         data-testid="app-sidebar"
         aria-label="Sidebar"
@@ -335,10 +352,10 @@ export function AppShell({ devMode, children }: AppShellProps) {
             {isSidebarCollapsed ? ">" : "<"}
           </Button>
         </div>
-        <div className="sidebar-nav" data-testid="app-sidebar-nav" aria-label="Sidebar links">
+        <nav className="sidebar-nav" data-testid="app-sidebar-nav" aria-label="Sidebar links">
           {renderNavLinks()}
-        </div>
-      </nav>
+        </nav>
+      </aside>
 
       {isMobileSidebarOpen ? (
         <>
@@ -408,6 +425,14 @@ export function AppShell({ devMode, children }: AppShellProps) {
               <Link href={primaryAction.href} className="btn btn-primary" aria-label={primaryAction.label}>
                 {primaryAction.label}
               </Link>
+            ) : null}
+            {secondaryNavItems.length > 0 ? (
+              <details className="row-actions-menu top-nav-overflow">
+                <summary className="btn btn-shell row-actions-trigger" aria-label="Open secondary navigation">
+                  More
+                </summary>
+                <div className="row-actions-dropdown">{renderSecondaryLinks()}</div>
+              </details>
             ) : null}
             {status === "authenticated" ? (
               <div className="toolbar-row compact">
