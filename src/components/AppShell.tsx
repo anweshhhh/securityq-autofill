@@ -300,7 +300,6 @@ export function AppShell({ devMode, children }: AppShellProps) {
         <Link
           key={item.href}
           href={item.href}
-          prefetch={false}
           className={cx("sidebar-link", active && "active")}
           onClick={onNavigate}
           aria-label={item.label}
@@ -317,7 +316,6 @@ export function AppShell({ devMode, children }: AppShellProps) {
       <Link
         key={item.href}
         href={item.href}
-        prefetch={false}
         className="row-actions-item"
         onClick={onNavigate}
         aria-label={item.label}
@@ -424,12 +422,7 @@ export function AppShell({ devMode, children }: AppShellProps) {
               />
             </div>
             {primaryAction ? (
-              <Link
-                href={primaryAction.href}
-                prefetch={false}
-                className="btn btn-primary"
-                aria-label={primaryAction.label}
-              >
+              <Link href={primaryAction.href} className="btn btn-primary" aria-label={primaryAction.label}>
                 {primaryAction.label}
               </Link>
             ) : null}
@@ -503,7 +496,7 @@ export function AppShell({ devMode, children }: AppShellProps) {
                 </Button>
               </div>
             ) : (
-              <Link href="/login" prefetch={false} className="btn btn-secondary" aria-label="Sign in">
+              <Link href="/login" className="btn btn-secondary" aria-label="Sign in">
                 Sign in
               </Link>
             )}
