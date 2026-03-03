@@ -50,4 +50,14 @@ describe("auth middleware", () => {
 
     expect(response.headers.get("x-middleware-next")).toBe("1");
   });
+
+  it("protects the settings members page", async () => {
+    getTokenMock.mockResolvedValue(null);
+
+    const request = new NextRequest("http://localhost:3000/settings/members");
+    const response = await middleware(request);
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toContain("/login?callbackUrl=%2Fsettings%2Fmembers");
+  });
 });

@@ -58,9 +58,10 @@ Core promise: answers are generated only from uploaded evidence and always inclu
   - `auth()` in `src/auth.ts`
   - `getServerAuthSession()` + `getCurrentUser()` in `src/lib/authSession.ts`
 - Route protection:
-  - middleware guards `/documents`, `/questionnaires`, and `/ask` (including nested paths)
+  - middleware guards `/documents`, `/questionnaires`, `/settings`, and `/ask` (including nested paths)
   - unauthenticated page access redirects to `/login?callbackUrl=...`
   - protected API paths return JSON `401`:
+    - `/api/org/*`
     - `/api/documents/*`
     - `/api/questionnaires/*`
     - `/api/questions/*`
@@ -85,6 +86,34 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 - `REVIEWER`: review and approval workflow access
 - `VIEWER`: read-only access
 
+### Organization invites + members (Phase 4 PR5)
+
+- Prisma model: `OrganizationInvite` with org scope, invited role, secure token, expiry, and audit fields.
+- Invitable roles are link-scoped and exclude owner escalation:
+  - `ADMIN`
+  - `REVIEWER`
+  - `VIEWER`
+- Invite creation:
+  - `POST /api/org/invites` (RBAC `ADMIN+`)
+  - creates a tokenized invite valid for 7 days.
+  - delivery behavior:
+    - non-production: logs `INVITE LINK (dev): <url>` to server console
+    - production: sends email via nodemailer when `EMAIL_SERVER` and `EMAIL_FROM` are configured
+- Invite acceptance:
+  - `POST /api/org/invites/accept` (authenticated user required)
+  - validates token is unused and unexpired
+  - enforces invited-email match with authenticated user email
+  - creates membership when absent; if already a member, existing role is retained
+  - marks invite `usedAt` and updates `User.lastUsedOrganizationId` to invited org
+- Members listing and management:
+  - `GET /api/org/members` (RBAC `VIEWER+`) returns active-org members
+  - `PATCH /api/org/members/:userId` (RBAC `OWNER`) updates role with last-owner demotion safety
+- UI:
+  - `/settings/members` shows member table and invite form
+  - invite form hidden in read-only mode for `REVIEWER`/`VIEWER`
+  - sidebar Members link is shown only for `ADMIN+`
+  - `/accept-invite` handles token acceptance (redirects unauthenticated users to login callback flow)
+
 ### Permissions matrix (Phase 4 PR4)
 
 - Single RBAC source of truth: `src/server/rbac.ts` (`can(role, action)`, `assertCan(role, action)`).
@@ -93,6 +122,9 @@ Core promise: answers are generated only from uploaded evidence and always inclu
   - `UPLOAD_DOCUMENTS`: `ADMIN+`
   - `DELETE_DOCUMENTS`: `ADMIN+`
   - `EMBED_DOCUMENTS`: `ADMIN+`
+  - `VIEW_MEMBERS`: `VIEWER+`
+  - `INVITE_MEMBERS`: `ADMIN+`
+  - `UPDATE_MEMBER_ROLE`: `OWNER`
   - `VIEW_QUESTIONNAIRES`: `VIEWER+`
   - `IMPORT_QUESTIONNAIRES`: `ADMIN+`
   - `DELETE_QUESTIONNAIRES`: `ADMIN+`
@@ -429,10 +461,16 @@ Pages:
 - `/documents`
 - `/questionnaires`
 - `/questionnaires/[id]`
+- `/settings/members`
+- `/accept-invite`
 - `/ask` (DEV_MODE-gated)
 
 API:
 - `POST /api/dev/role` (DEV tools; `DEV_MODE=true` and non-production only)
+- `GET /api/org/members`
+- `PATCH /api/org/members/:userId`
+- `POST /api/org/invites`
+- `POST /api/org/invites/accept`
 - `GET /api/documents`
 - `DELETE /api/documents/:id`
 - `POST /api/documents/upload`
@@ -473,7 +511,7 @@ Export UX (client):
 
 ## 6) Database schema state
 
-- Core models: `Organization`, `Document`, `DocumentChunk`, `Questionnaire`, `Question`, `ApprovedAnswer`
+- Core models: `Organization`, `Membership`, `OrganizationInvite`, `Document`, `DocumentChunk`, `Questionnaire`, `Question`, `ApprovedAnswer`
 - Prior cleanup retained:
   - removed questionnaire run-state/archive persistence fields from `Questionnaire`
   - removed `Question.lastRerunAt`
@@ -519,6 +557,13 @@ Use `.env.example` as source of truth.
   - endpoint: `POST /api/dev/role` with `{ role }`
   - scope: updates `Membership.role` only for current authenticated `{ userId, activeOrgId }`
   - safety: requires existing active-org membership; disabled in production code paths
+
+### Invite/auth env notes
+
+- Invite links are built from `APP_URL`, falling back to `NEXTAUTH_URL`/`AUTH_URL`, then `http://localhost:3000`.
+- Invite email delivery in production requires:
+  - `EMAIL_SERVER`
+  - `EMAIL_FROM`
 
 ## 9) Tests (MVP Contracts)
 

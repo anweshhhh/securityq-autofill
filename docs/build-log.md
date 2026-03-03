@@ -6,6 +6,65 @@ Current log of implemented MVP work (concise, execution-focused).
 
 - Phase 2: COMPLETE
 
+## 2026-03-03 - phase4-05 org invites + members management
+
+- Added Prisma invite model and migration:
+  - enum `InviteRole` (`ADMIN | REVIEWER | VIEWER`)
+  - model `OrganizationInvite` with:
+    - `organizationId`, `email` (stored lowercase), `role`, `token`, `expiresAt`, `usedAt`, `createdByUserId`, timestamps
+  - indexes/constraints:
+    - unique `token`
+    - index `(organizationId, email)`
+  - migration: `prisma/migrations/20260303013000_phase4_org_invites_members/migration.sql`
+- Added invite helpers in `src/lib/orgInvites.ts`:
+  - secure token generation
+  - invite expiry calculation (7 days)
+  - invite URL builder (`<APP_URL>/accept-invite?token=...`)
+  - delivery behavior:
+    - non-production: logs `INVITE LINK (dev): <url>`
+    - production: sends email via nodemailer when `EMAIL_SERVER` and `EMAIL_FROM` are configured
+- Extended RBAC actions in `src/server/rbac.ts`:
+  - `VIEW_MEMBERS` => `VIEWER+`
+  - `INVITE_MEMBERS` => `ADMIN+`
+  - `UPDATE_MEMBER_ROLE` => `OWNER`
+- Added API routes:
+  - `GET /api/org/members` (`VIEWER+`): returns active-org members with `{ userId, email, role, joinedAt }`
+  - `POST /api/org/invites` (`ADMIN+`): validates `{ email, role }`, creates invite, sends/logs invite link, returns invite metadata
+  - `POST /api/org/invites/accept` (authenticated): validates token, enforces invited-email match, creates membership when absent, marks invite used, switches active org
+  - `PATCH /api/org/members/:userId` (`OWNER`): updates member role and blocks demoting the last `OWNER`
+- Added members/invite UI:
+  - new page `/settings/members`:
+    - members table (`Email`, `Role`, `Joined`)
+    - invite form (`email`, `role`, `Send invite`) for `ADMIN+`
+    - read-only mode for `REVIEWER`/`VIEWER`
+    - success banner includes dev hint to check server console for invite link
+  - sidebar nav now shows `Members` only for `ADMIN+`
+- Added invite accept page:
+  - new `/accept-invite`:
+    - if unauthenticated: redirects to `/login?callbackUrl=/accept-invite?token=...`
+    - if authenticated: posts token to accept endpoint, then redirects to `/questionnaires`
+- Updated middleware protection:
+  - added `/settings/*` and `/api/org/*` to protected paths/matcher
+- Added deterministic integration tests:
+  - `src/app/api/org/invites.members.integration.test.ts`
+  - coverage:
+    - OWNER can create invite
+    - different authenticated user can accept invite from another active org
+    - membership creation + invite `usedAt` marking
+    - token cannot be reused
+    - expired token is rejected
+    - cross-org members listing remains scoped to active org
+    - `VIEWER` cannot create invites (`403/FORBIDDEN_ROLE`)
+- Manual verification notes:
+1. Sign in as `owner@...`, open `/settings/members`, send invites for `reviewer@...` and `viewer@...`.
+2. In development, copy invite link from server log `INVITE LINK (dev): <url>`.
+3. Open invite link in browser for each target account, complete sign-in, and accept invite.
+4. Verify reviewer/viewer land in workspace and role-specific UI permissions apply (`REVIEWER`/`VIEWER` read-only on members page).
+5. Verify `VIEWER` cannot call `POST /api/org/invites` (expect `403` with `FORBIDDEN_ROLE`).
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+
 ## 2026-03-01 - phase4-test-roles-01 dev role switcher for RBAC testing
 
 - Added DEV-only role switch endpoint:

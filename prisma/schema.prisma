@@ -36,12 +36,19 @@ enum MembershipRole {
   VIEWER
 }
 
+enum InviteRole {
+  ADMIN
+  REVIEWER
+  VIEWER
+}
+
 model Organization {
   id              String            @id @default(cuid())
   name            String
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   memberships     Membership[]
+  invites         OrganizationInvite[]
   lastUsedByUsers User[]            @relation("UserLastUsedOrganization")
   documents       Document[]
   questionnaires  Questionnaire[]
@@ -57,6 +64,7 @@ model User {
   lastUsedOrganizationId String?
   lastUsedOrganization   Organization? @relation("UserLastUsedOrganization", fields: [lastUsedOrganizationId], references: [id], onDelete: SetNull)
   memberships            Membership[]
+  createdOrganizationInvites OrganizationInvite[] @relation("OrganizationInviteCreatedBy")
   accounts               Account[]
   sessions               Session[]
   createdAt              DateTime      @default(now())
@@ -74,6 +82,22 @@ model Membership {
 
   @@unique([userId, organizationId])
   @@index([organizationId])
+}
+
+model OrganizationInvite {
+  id              String     @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email           String
+  role            InviteRole
+  token           String     @unique
+  expiresAt       DateTime
+  usedAt          DateTime?
+  createdAt       DateTime   @default(now())
+  createdByUserId String
+  createdByUser   User       @relation("OrganizationInviteCreatedBy", fields: [createdByUserId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, email])
 }
 
 model Account {

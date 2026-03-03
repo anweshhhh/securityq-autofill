@@ -75,6 +75,20 @@ function getPageHeader(pathname: string): { title: string; subtitle: string } {
     };
   }
 
+  if (pathname.startsWith("/settings/members")) {
+    return {
+      title: "Members",
+      subtitle: "Manage workspace members and role-scoped access."
+    };
+  }
+
+  if (pathname.startsWith("/accept-invite")) {
+    return {
+      title: "Organization Invite",
+      subtitle: "Review and accept your workspace invitation."
+    };
+  }
+
   return {
     title: "SecurityQ Autofill",
     subtitle: "Evidence-first questionnaire workflows."
@@ -119,6 +133,20 @@ function getPrimaryAction(pathname: string, role: Role | null): { href: string; 
     };
   }
 
+  if (pathname.startsWith("/settings/members")) {
+    if (!role || !can(role, RbacAction.INVITE_MEMBERS)) {
+      return null;
+    }
+    return {
+      href: "/settings/members#invite-member",
+      label: "Send Invite"
+    };
+  }
+
+  if (pathname.startsWith("/accept-invite")) {
+    return null;
+  }
+
   return {
     href: "/questionnaires",
     label: "Open Questionnaires"
@@ -157,12 +185,16 @@ export function AppShell({ devMode, children }: AppShellProps) {
       { href: "/questionnaires", label: "Questionnaires", short: "Q" }
     ];
 
+    if (authzState.role && can(authzState.role, RbacAction.INVITE_MEMBERS)) {
+      items.push({ href: "/settings/members", label: "Members", short: "M" });
+    }
+
     if (devMode) {
       items.push({ href: "/ask", label: "Ask", short: "A" });
     }
 
     return items;
-  }, [devMode]);
+  }, [authzState.role, devMode]);
 
   const pageHeader = getPageHeader(pathname);
   const primaryAction = getPrimaryAction(pathname, authzState.role);
