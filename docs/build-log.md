@@ -1210,3 +1210,10 @@ Current log of implemented MVP work (concise, execution-focused).
 - Scope notes:
   - no backend/API/DB changes
   - drawer open-on-select behavior unchanged
+
+## 2026-03-04 - ui-dirB-metrics-02-single-clickable-filter-row
+
+- Simplified Direction B metrics strip on `/questionnaires/[id]`:
+  - removed duplicate display-only status counter row
+  - kept a single clickable filter row with counts (`All`, `Draft`, `Approved`, `Needs review`, `Not found`, `Reused`)
+  - preserved filter logic and search/progress placement

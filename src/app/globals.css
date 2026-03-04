@@ -807,6 +807,7 @@ textarea {
 
 .queue-metrics-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
@@ -815,11 +816,13 @@ textarea {
 
 .queue-filter-row {
   flex: 1;
+  min-width: 0;
 }
 
 .queue-search-wrap {
   width: min(360px, 100%);
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .sticky-panel {

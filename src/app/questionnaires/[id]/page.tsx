@@ -1785,13 +1785,6 @@ export default function QuestionnaireDetailsPage() {
       </Card>
 
       <Card className="trust-bar queue-metrics-strip">
-        <div className="trust-bar-metrics queue-metrics-top">
-          <Badge tone="approved">Approved {statusCounts.APPROVED}</Badge>
-          <Badge tone="review">Needs review {statusCounts.NEEDS_REVIEW}</Badge>
-          <Badge tone="draft">Draft {statusCounts.DRAFT}</Badge>
-          <Badge tone="notfound">Not found {statusCounts.NOT_FOUND}</Badge>
-          <Badge tone="draft">Reused {statusCounts.REUSED}</Badge>
-        </div>
         <div className="queue-metrics-controls">
           <nav className="toolbar-row queue-filter-row" aria-label="Queue filters">
             {FILTER_OPTIONS.map(({ key, label }) => (
@@ -1804,7 +1797,7 @@ export default function QuestionnaireDetailsPage() {
                 aria-label={`Filter questions by ${label.toLowerCase()}`}
                 aria-pressed={filter === key}
               >
-                {label}
+                {label} ({statusCounts[key]})
               </button>
             ))}
           </nav>
