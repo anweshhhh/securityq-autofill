@@ -418,10 +418,9 @@ Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now expl
     - Trust Bar progress indicator has an accessible name and value text (`aria-label`/`aria-labelledby` + `aria-valuetext`)
 - Component conventions:
   - primitives in `src/components/ui.tsx` (`Button`, `Badge`, `Card`, `TextInput`, `TextArea`)
-  - questionnaire details page is a review workbench:
-    - left question rail (search + status filters)
-    - main answer panel (expand/collapse + actions)
-    - right evidence panel (citation chips + snippet viewer + copy actions)
+  - questionnaire details page is a queue-first review workbench:
+    - queue rail is always-visible primary surface
+    - contextual details open in a right drawer (desktop) / bottom sheet (mobile)
   - UX polish conventions:
     - contextual feedback uses `message-banner` (`success` / `error`) instead of status badges for user actions
     - list pages support lightweight local search where row volume grows (`/documents`, `/questionnaires`)
@@ -432,7 +431,7 @@ Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now expl
     - `/questionnaires/[id]` uses normalized question state (`questionsById` + ordered IDs) and supports `Not found` filter/count alongside review statuses
     - approval actions are server-persisted and reconciled after each mutation (`approve`, `needs review/draft`, `unapprove`, `edit approved`)
     - approved answer is primary when present, with a read-only generated-vs-approved comparison toggle
-    - Direction B PR1 queue-first layer on `/questionnaires/[id]`:
+    - Direction B queue-first on `/questionnaires/[id]`:
       - top bar uses exactly one primary CTA (state-driven: `Run Autofill` -> `Approve Reused (Exact)` -> `Export`, with permission fallback)
       - secondary/destructive actions moved under `More` overflow (including `Approve Visible`, `Refresh`, `Delete questionnaire`)
       - sticky metrics strip includes counts (`Approved`, `Needs review`, `Draft`, `Not found`, `Reused`), approved progress, filters, and queue search
@@ -440,14 +439,24 @@ Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now expl
       - single-row deterministic selection:
         - initial load selects first visible queue row
         - filter/search keeps current selection when visible; otherwise first visible row; `null` when no rows
-      - PR1 keyboard baseline:
+      - keyboard baseline:
         - `ArrowUp` / `ArrowDown` move selection
         - `Enter` toggles answer expand/collapse
+    - Direction B PR2 contextual drawer/sheet on `/questionnaires/[id]`:
+      - row click both selects and opens contextual panel
+      - desktop drawer + mobile bottom sheet with half/full states
+      - tabs: `Answer`, `Evidence`, `References`
+      - drawer action area carries review actions (`Approve`, `Needs review`, `Unapprove`, `Edit approved`) with RBAC-aware disabled/hidden behavior
+      - drawer focus behavior:
+        - focus trap while open
+        - `Esc` closes drawer
+        - closing returns focus to previously interacted queue row
+      - duplicate top-nav export CTA is removed for this route; export remains in page header/overflow only
       - loading skeletons shown for rail/main/evidence while questionnaire details are fetching
       - `Run Autofill` uses live progress UI in-button (`answered/total`) and polls questionnaire details during active runs so rail/answer/evidence refresh incrementally
-    - evidence panel conventions:
+    - evidence conventions in contextual tabs:
       - citation chips show doc name only (ellipsized) with compact per-row actions (`Copy reference`, `Open document`)
-      - snippet viewer highlights key question terms client-side and supports compact toolbar copy actions (`Copy citation IDs`, `Copy selected snippet`, optional evidence pack copy)
+      - snippet viewer highlights key question terms client-side and supports compact copy actions (`Copy selected snippet`, references copy in `References` tab)
       - evidence text remains on light surfaces in bounded scroll containers with preserved line breaks
       - per-citation row layout is two-zone (`chip label` + `compact action icons`) to avoid text-button clipping in narrow side panels
       - per-citation action controls are compact icon buttons with tooltip titles and explicit `aria-label`s
@@ -465,7 +474,6 @@ Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now expl
     - performance guardrails:
       - question rail uses deferred search + memoized preview rows for larger questionnaires
       - rail renders preview text only; full answer/evidence rendering stays scoped to selected question panel
-    - question rail and evidence panel on `/questionnaires/[id]` use sticky panels for faster review loops
     - long question/answer/snippet text stays on light surfaces with bounded scroll containers
 
 ## 5) API Surface

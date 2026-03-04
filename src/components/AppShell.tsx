@@ -107,13 +107,7 @@ function getPrimaryAction(pathname: string, role: Role | null): { href: string; 
   }
 
   if (pathname.startsWith("/questionnaires/")) {
-    const questionnaireId = pathname.split("/")[2];
-    if (questionnaireId && role && can(role, RbacAction.EXPORT)) {
-      return {
-        href: `/api/questionnaires/${questionnaireId}/export`,
-        label: "Export CSV"
-      };
-    }
+    return null;
   }
 
   if (pathname === "/questionnaires") {

@@ -879,6 +879,117 @@ textarea {
   letter-spacing: 0.03em;
 }
 
+.context-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 115;
+}
+
+.context-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: rgba(2, 6, 23, 0.52);
+}
+
+.context-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(460px, 100vw);
+  background: #ffffff;
+  border-left: 1px solid #d6e0f2;
+  box-shadow: -16px 0 34px rgba(15, 23, 42, 0.22);
+  display: flex;
+  flex-direction: column;
+}
+
+.context-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid #e3ebf8;
+}
+
+.context-mobile-toggle {
+  display: none;
+}
+
+.context-tablist {
+  display: flex;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #e3ebf8;
+}
+
+.context-tab {
+  border: 1px solid #c9d7ee;
+  border-radius: 999px;
+  background: #f8fbff;
+  color: #1f2a3d;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.context-tab.active {
+  border-color: #8f98e6;
+  background: #edf0ff;
+}
+
+.context-tab:focus-visible {
+  outline: 2px solid rgba(91, 95, 217, 0.42);
+  outline-offset: 2px;
+}
+
+.context-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 14px;
+}
+
+.context-section-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.context-reference-list {
+  display: grid;
+  gap: 8px;
+}
+
+.context-reference-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid #d9e3f4;
+  border-radius: 10px;
+  background: #fbfdff;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.context-panel-actions {
+  border-top: 1px solid #e3ebf8;
+  padding: 12px 14px 14px;
+  display: grid;
+  gap: 10px;
+  background: #fcfdff;
+}
+
+.context-edit-area {
+  display: grid;
+  gap: 8px;
+}
+
 .workbench-question-text {
   font-size: 16px;
   line-height: 1.55;
@@ -1424,6 +1535,28 @@ textarea {
 
   .queue-search-wrap {
     width: 100%;
+  }
+
+  .context-panel {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: min(64vh, 640px);
+    border-left: 0;
+    border-top: 1px solid #d6e0f2;
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+    box-shadow: 0 -12px 28px rgba(15, 23, 42, 0.24);
+  }
+
+  .context-panel.sheet-expanded {
+    height: min(92vh, 920px);
+  }
+
+  .context-mobile-toggle {
+    display: inline-flex;
   }
 
   .trust-progress {

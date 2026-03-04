@@ -115,6 +115,8 @@ type DocumentDetailsPayload = {
   error?: unknown;
 };
 
+type DrawerTab = "ANSWER" | "EVIDENCE" | "REFERENCES";
+
 const NOT_FOUND_ANSWER = "Not found in provided documents.";
 const FILTER_OPTIONS: Array<{ key: QuestionFilter; label: string }> = [
   { key: "ALL", label: "All" },
@@ -451,17 +453,6 @@ function toQuestionPreview(questionText: string): string {
   return normalized;
 }
 
-function CopyIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M9 9.5C9 8.12 10.12 7 11.5 7H19.5C20.88 7 22 8.12 22 9.5V17.5C22 18.88 20.88 20 19.5 20H11.5C10.12 20 9 18.88 9 17.5V9.5ZM11.5 8.5C10.95 8.5 10.5 8.95 10.5 9.5V17.5C10.5 18.05 10.95 18.5 11.5 18.5H19.5C20.05 18.5 20.5 18.05 20.5 17.5V9.5C20.5 8.95 20.05 8.5 19.5 8.5H11.5ZM2 6.5C2 5.12 3.12 4 4.5 4H13.5V5.5H4.5C3.95 5.5 3.5 5.95 3.5 6.5V15.5C3.5 16.05 3.95 16.5 4.5 16.5H8V18H4.5C3.12 18 2 16.88 2 15.5V6.5Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
-
 function OpenDocIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -473,42 +464,24 @@ function OpenDocIcon() {
   );
 }
 
-function SnippetIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M4 5.5C4 4.12 5.12 3 6.5 3H17.5C18.88 3 20 4.12 20 5.5V14.5C20 15.88 18.88 17 17.5 17H9.62L5.53 20.77C5.09 21.17 4.4 20.86 4.4 20.26V17C4.17 16.96 3.95 16.88 3.75 16.75C3.28 16.44 3 15.92 3 15.36V5.5H4ZM6.5 4.5C5.95 4.5 5.5 4.95 5.5 5.5V14.5C5.5 15.05 5.95 15.5 6.5 15.5H9.92L18.5 15.5C19.05 15.5 19.5 15.05 19.5 14.5V5.5C19.5 4.95 19.05 4.5 18.5 4.5H6.5ZM8 8.25H17V9.75H8V8.25ZM8 11.25H14.5V12.75H8V11.25Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
-
-function EvidencePackIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M5.5 3H14.5L19 7.5V19C19 20.1 18.1 21 17 21H5.5C4.4 21 3.5 20.1 3.5 19V5C3.5 3.9 4.4 3 5.5 3ZM14 4.5V8H17.5L14 4.5ZM5.5 4.5C5.23 4.5 5 4.73 5 5V19C5 19.27 5.23 19.5 5.5 19.5H17C17.27 19.5 17.5 19.27 17.5 19V9.5H13.5C12.95 9.5 12.5 9.05 12.5 8.5V4.5H5.5ZM7 12H15V13.5H7V12ZM7 15H13V16.5H7V15Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
-
 const QuestionRailItemButton = memo(function QuestionRailItemButton({
   item,
   active,
-  onSelect
+  onSelect,
+  onRegisterRef
 }: {
   item: QuestionRailItem;
   active: boolean;
-  onSelect: (questionId: string) => void;
+  onSelect: (questionId: string, trigger?: HTMLButtonElement | null) => void;
+  onRegisterRef: (questionId: string, node: HTMLButtonElement | null) => void;
 }) {
   return (
     <button
       type="button"
       className={cx("question-list-item queue-row", active && "active")}
-      onClick={() => onSelect(item.id)}
+      onClick={(event) => onSelect(item.id, event.currentTarget)}
+      ref={(node) => onRegisterRef(item.id, node)}
+      data-question-row-id={item.id}
       title={`Row ${item.rowIndex + 1}`}
       aria-label={`Select question row ${item.rowIndex + 1}`}
       role="option"
@@ -551,6 +524,10 @@ export default function QuestionnaireDetailsPage() {
   const [filter, setFilter] = useState<QuestionFilter>("ALL");
   const [searchText, setSearchText] = useState("");
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
+  const [isContextOpen, setIsContextOpen] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>("ANSWER");
+  const [isMobileSheetExpanded, setIsMobileSheetExpanded] = useState(false);
+  const [lastInteractedRowId, setLastInteractedRowId] = useState<string | null>(null);
   const [activeQuestionActionId, setActiveQuestionActionId] = useState<string | null>(null);
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
   const [editAnswerText, setEditAnswerText] = useState("");
@@ -569,7 +546,8 @@ export default function QuestionnaireDetailsPage() {
   const [documentModalTitle, setDocumentModalTitle] = useState("");
   const [documentModalText, setDocumentModalText] = useState("");
   const [documentModalError, setDocumentModalError] = useState("");
-  const evidencePanelRef = useRef<HTMLDivElement | null>(null);
+  const contextDrawerRef = useRef<HTMLDivElement | null>(null);
+  const queueRowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const bulkModalRef = useRef<HTMLDivElement | null>(null);
   const documentModalRef = useRef<HTMLDivElement | null>(null);
   const deferredSearchText = useDeferredValue(searchText);
@@ -741,7 +719,9 @@ export default function QuestionnaireDetailsPage() {
         return current;
       }
 
-      return filteredQuestionIds[0];
+      const nextId = filteredQuestionIds[0];
+      setLastInteractedRowId(nextId);
+      return nextId;
     });
   }, [filteredQuestionIds]);
 
@@ -750,9 +730,41 @@ export default function QuestionnaireDetailsPage() {
     [questionsById, selectedQuestionId]
   );
 
-  const handleSelectQuestion = useCallback((questionId: string) => {
+  const closeContextDrawer = useCallback(() => {
+    setIsContextOpen(false);
+    setIsMobileSheetExpanded(false);
+
+    const focusTargetId = lastInteractedRowId ?? selectedQuestionId;
+    if (!focusTargetId) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      queueRowRefs.current[focusTargetId]?.focus();
+    });
+  }, [lastInteractedRowId, selectedQuestionId]);
+
+  const handleSelectQuestion = useCallback((questionId: string, trigger?: HTMLButtonElement | null) => {
     setSelectedQuestionId(questionId);
+    setIsContextOpen(true);
+    setDrawerTab("ANSWER");
+    setLastInteractedRowId(questionId);
+
+    if (trigger) {
+      queueRowRefs.current[questionId] = trigger;
+    }
   }, []);
+
+  const registerQueueRowRef = useCallback((questionId: string, node: HTMLButtonElement | null) => {
+    queueRowRefs.current[questionId] = node;
+  }, []);
+
+  useEffect(() => {
+    if (!selectedQuestionId) {
+      setIsContextOpen(false);
+      setIsMobileSheetExpanded(false);
+    }
+  }, [selectedQuestionId]);
 
   const moveSelection = useCallback(
     (direction: -1 | 1) => {
@@ -762,16 +774,22 @@ export default function QuestionnaireDetailsPage() {
 
       setSelectedQuestionId((current) => {
         if (!current) {
-          return filteredQuestionIds[0];
+          const firstId = filteredQuestionIds[0];
+          setLastInteractedRowId(firstId);
+          return firstId;
         }
 
         const currentIndex = filteredQuestionIds.indexOf(current);
         if (currentIndex < 0) {
-          return filteredQuestionIds[0];
+          const firstId = filteredQuestionIds[0];
+          setLastInteractedRowId(firstId);
+          return firstId;
         }
 
         const nextIndex = Math.max(0, Math.min(filteredQuestionIds.length - 1, currentIndex + direction));
-        return filteredQuestionIds[nextIndex];
+        const nextId = filteredQuestionIds[nextIndex];
+        setLastInteractedRowId(nextId);
+        return nextId;
       });
     },
     [filteredQuestionIds]
@@ -872,7 +890,7 @@ export default function QuestionnaireDetailsPage() {
   }, [evidenceItems]);
 
   useEffect(() => {
-    setIsAnswerExpanded(false);
+    setIsAnswerExpanded(true);
     setShowGeneratedDraft(false);
     setEditingQuestionId(null);
     setEditAnswerText("");
@@ -1447,6 +1465,12 @@ export default function QuestionnaireDetailsPage() {
     onEscape: closeDocumentModal
   });
 
+  useFocusTrap({
+    active: isContextOpen && Boolean(selectedQuestion),
+    containerRef: contextDrawerRef,
+    onEscape: closeContextDrawer
+  });
+
   const activeEvidence = evidenceItems.find((item) => item.chunkId === activeEvidenceChunkId) ?? null;
   const generatedAnswerRaw = (selectedQuestion?.answer ?? "").trim();
   const approvedAnswerRaw = (selectedQuestion?.approvedAnswer?.answerText ?? "").trim();
@@ -1460,22 +1484,24 @@ export default function QuestionnaireDetailsPage() {
     [evidenceItems]
   );
   const citationReferenceText = useMemo(() => citationReferenceRows.join("\n"), [citationReferenceRows]);
-  const selectedCitationReference = activeEvidence ? `${activeEvidence.docName}#${activeEvidence.chunkId}` : "";
-  const evidencePackText = useMemo(() => {
-    const lines = [
-      "Answer:",
-      effectiveAnswer,
-      "",
-      "Citations:",
-      citationReferenceText || "None"
-    ];
-
-    if (activeEvidence?.snippet) {
-      lines.push("", `Selected citation: ${selectedCitationReference}`, "Selected snippet:", activeEvidence.snippet);
-    }
-
-    return lines.join("\n");
-  }, [activeEvidence?.snippet, citationReferenceText, effectiveAnswer, selectedCitationReference]);
+  const selectedQuestionCitationCount = selectedQuestion ? getQueueCitationCount(selectedQuestion) : 0;
+  const activeEvidenceDocumentId = activeEvidence
+    ? documentIdByName[activeEvidence.docName.trim().toLowerCase()] ?? null
+    : null;
+  const isMessageError = useMemo(() => {
+    const normalized = message.toLowerCase();
+    return normalized.includes("fail") || normalized.includes("error") || normalized.includes("unable");
+  }, [message]);
+  const isMessageSuccess = useMemo(() => {
+    const normalized = message.toLowerCase();
+    return (
+      normalized.includes("approved") ||
+      normalized.includes("updated") ||
+      normalized.includes("marked") ||
+      normalized.includes("removed") ||
+      normalized.includes("complete")
+    );
+  }, [message]);
   const selectedQuestionApprovalCandidate = selectedQuestion ? getApprovalCandidate(selectedQuestion) : null;
   const hasMissingVisibleAnswers = useMemo(
     () => visibleQuestions.some((question) => (question.answer ?? "").trim().length === 0),
@@ -1576,11 +1602,21 @@ export default function QuestionnaireDetailsPage() {
         if (isBulkConfirmOpen) {
           event.preventDefault();
           setIsBulkConfirmOpen(false);
+          return;
+        }
+        if (isContextOpen) {
+          event.preventDefault();
+          closeContextDrawer();
+          return;
         }
         return;
       }
 
       if (isBulkConfirmOpen || isDocumentModalOpen) {
+        return;
+      }
+
+      if (isContextOpen) {
         return;
       }
 
@@ -1609,7 +1645,9 @@ export default function QuestionnaireDetailsPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     closeDocumentModal,
+    closeContextDrawer,
     isBulkConfirmOpen,
+    isContextOpen,
     isDocumentModalOpen,
     moveSelection,
     selectedQuestion,
@@ -1802,17 +1840,7 @@ export default function QuestionnaireDetailsPage() {
         <div
           className={cx(
             "message-banner",
-            message.toLowerCase().includes("fail") ||
-              message.toLowerCase().includes("error") ||
-              message.toLowerCase().includes("unable")
-              ? "error"
-              : message.toLowerCase().includes("approved") ||
-                  message.toLowerCase().includes("updated") ||
-                  message.toLowerCase().includes("marked") ||
-                  message.toLowerCase().includes("removed") ||
-                  message.toLowerCase().includes("complete")
-                ? "success"
-                : ""
+            isMessageError ? "error" : isMessageSuccess ? "success" : ""
           )}
           role="status"
           aria-live="polite"
@@ -1865,6 +1893,7 @@ export default function QuestionnaireDetailsPage() {
                   item={item}
                   active={selectedQuestionId === item.id}
                   onSelect={handleSelectQuestion}
+                  onRegisterRef={registerQueueRowRef}
                 />
               ))
             )}
@@ -1872,11 +1901,102 @@ export default function QuestionnaireDetailsPage() {
         </Card>
 
         <Card data-testid="answer-main-panel">
-          {selectedQuestion ? (
-            <>
-              <div className="card-title-row">
-                <div>
-                  <h3 style={{ marginBottom: 6 }}>Question</h3>
+          <h3 style={{ marginTop: 0 }}>Context Drawer</h3>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            Select a queue row to open Answer, Evidence, and References in the contextual drawer.
+          </p>
+        </Card>
+
+        <Card className="workbench-evidence" data-testid="evidence-panel">
+          <h3 style={{ marginTop: 0 }}>Evidence View</h3>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            Evidence details now live inside the drawer tabs to keep the queue primary.
+          </p>
+        </Card>
+        </div>
+      )}
+
+      {isContextOpen && selectedQuestion ? (
+        <div className="context-overlay">
+          <button
+            type="button"
+            className="context-backdrop"
+            onClick={closeContextDrawer}
+            aria-label="Close question context drawer"
+          />
+          <div
+            className={cx("context-panel", isMobileSheetExpanded && "sheet-expanded")}
+            ref={contextDrawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="context-drawer-title"
+            tabIndex={-1}
+          >
+            <div className="context-panel-header">
+              <div>
+                <h3 id="context-drawer-title" style={{ margin: "0 0 4px" }}>
+                  Question {selectedQuestion.rowIndex + 1}
+                </h3>
+                <p className="small muted" style={{ margin: 0 }}>
+                  Context review
+                </p>
+              </div>
+              <div className="toolbar-row compact">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="context-mobile-toggle"
+                  onClick={() => setIsMobileSheetExpanded((value) => !value)}
+                  title={isMobileSheetExpanded ? "Collapse sheet" : "Expand sheet"}
+                >
+                  {isMobileSheetExpanded ? "Half" : "Full"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="icon-btn"
+                  onClick={closeContextDrawer}
+                  aria-label="Close drawer"
+                  title="Close"
+                >
+                  X
+                </Button>
+              </div>
+            </div>
+
+            <div className="context-tablist" role="tablist" aria-label="Question context tabs">
+              <button
+                type="button"
+                role="tab"
+                className={cx("context-tab", drawerTab === "ANSWER" && "active")}
+                aria-selected={drawerTab === "ANSWER"}
+                onClick={() => setDrawerTab("ANSWER")}
+              >
+                Answer
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className={cx("context-tab", drawerTab === "EVIDENCE" && "active")}
+                aria-selected={drawerTab === "EVIDENCE"}
+                onClick={() => setDrawerTab("EVIDENCE")}
+              >
+                Evidence
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className={cx("context-tab", drawerTab === "REFERENCES" && "active")}
+                aria-selected={drawerTab === "REFERENCES"}
+                onClick={() => setDrawerTab("REFERENCES")}
+              >
+                References
+              </button>
+            </div>
+
+            <div className="context-panel-body">
+              {drawerTab === "ANSWER" ? (
+                <div className="context-section-stack">
                   <div className="toolbar-row compact">
                     <Badge tone={statusTone(selectedQuestion.reviewStatus)} title={statusLabel(selectedQuestion.reviewStatus)}>
                       {statusLabel(selectedQuestion.reviewStatus)}
@@ -1886,295 +2006,265 @@ export default function QuestionnaireDetailsPage() {
                         {getReuseBadgeLabel(selectedQuestion.reuseMatchType)}
                       </Badge>
                     ) : null}
+                    <Badge tone="draft">
+                      {selectedQuestionCitationCount} citation{selectedQuestionCitationCount === 1 ? "" : "s"}
+                    </Badge>
                   </div>
-                </div>
-                <span className="small muted">Row {selectedQuestion.rowIndex + 1}</span>
-              </div>
 
-              <Card className="card-muted">
-                <p className="workbench-question-text" style={{ margin: 0 }}>
-                  {selectedQuestion.text || "No question text available."}
-                </p>
-                {selectedQuestion.reuseMatchType ? (
-                  <p className="small muted" style={{ margin: "8px 0 0" }}>
-                    {getReuseBadgeLabel(selectedQuestion.reuseMatchType)}
-                    {selectedQuestion.reusedAt ? ` at ${new Date(selectedQuestion.reusedAt).toLocaleString()}` : ""}
-                  </p>
-                ) : null}
-              </Card>
+                  <Card className="card-muted">
+                    <p className="workbench-question-text" style={{ margin: 0 }}>
+                      {selectedQuestion.text || "No question text available."}
+                    </p>
+                  </Card>
 
-              <Card style={{ marginTop: 12 }}>
-                <div className="card-title-row">
-                  <h3 style={{ margin: 0 }}>
-                    {selectedQuestion.approvedAnswer && !showingGeneratedComparison ? "Approved Answer" : "Generated Draft"}
-                  </h3>
-                  <div className="toolbar-row" style={{ flexWrap: "nowrap", gap: 8 }}>
-                    {selectedQuestion.approvedAnswer ? (
+                  <div className="card-title-row">
+                    <h4 style={{ margin: 0 }}>
+                      {selectedQuestion.approvedAnswer && !showingGeneratedComparison ? "Approved Answer" : "Generated Draft"}
+                    </h4>
+                    <div className="toolbar-row compact">
+                      {selectedQuestion.approvedAnswer ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => setShowGeneratedDraft((value) => !value)}
+                          title={showingGeneratedComparison ? "Show approved answer" : "Show generated draft"}
+                        >
+                          {showingGeneratedComparison ? "Show Approved" : "Show Generated"}
+                        </Button>
+                      ) : null}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => setIsAnswerExpanded((value) => !value)}
+                        title={isAnswerExpanded ? "Collapse answer" : "Expand answer"}
+                      >
+                        {isAnswerExpanded ? "Collapse" : "Expand"}
+                      </Button>
                       <Button
                         type="button"
                         variant="secondary"
-                        onClick={() => setShowGeneratedDraft((value) => !value)}
-                        title={showingGeneratedComparison ? "Show approved answer" : "Show generated draft"}
+                        onClick={() => void copyText(effectiveAnswer, "Answer copied.")}
+                        title="Copy answer text"
                       >
-                        {showingGeneratedComparison ? "Show Approved" : "Show Generated"}
+                        Copy answer
                       </Button>
-                    ) : null}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => setIsAnswerExpanded((value) => !value)}
-                      title={isAnswerExpanded ? "Collapse answer" : "Expand answer"}
-                    >
-                      {isAnswerExpanded ? "Collapse" : "Expand"}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => void copyText(effectiveAnswer, "Answer copied.")}
-                      title="Copy answer text"
-                    >
-                      Copy answer
-                    </Button>
+                    </div>
                   </div>
+                  <div className={isAnswerExpanded ? "answer-scroll" : "answer-preview"}>{effectiveAnswer}</div>
                 </div>
+              ) : null}
 
-                <div className={isAnswerExpanded ? "answer-scroll" : "answer-preview"}>{effectiveAnswer}</div>
-                {selectedQuestion.approvedAnswer ? (
-                  <p className="small muted" style={{ marginTop: 10 }}>
-                    {showingGeneratedComparison ? "Comparing with generated draft. " : "Showing approved answer. "}
-                    Approved override ({selectedQuestion.approvedAnswer.source.toLowerCase()}) updated{" "}
-                    {new Date(selectedQuestion.approvedAnswer.updatedAt).toLocaleString()}.
-                  </p>
-                ) : null}
-              </Card>
-
-              <Card style={{ marginTop: 12 }}>
-                <div className="card-title-row">
-                  <h3 style={{ margin: 0 }}>Quick actions</h3>
-                </div>
-                <div className="toolbar-row">
-                  <Button
-                    type="button"
-                    variant="primary"
-                    onClick={() => void approveQuestion(selectedQuestion)}
-                    disabled={
-                      activeQuestionActionId === selectedQuestion.id ||
-                      isBulkApproving ||
-                      isApprovingReusedExact ||
-                      !selectedQuestionApprovalCandidate ||
-                      !canApproveAnswers
-                    }
-                    aria-label="Approve selected answer"
-                  >
-                    {activeQuestionActionId === selectedQuestion.id ? "Working..." : "Approve"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => void updateReviewStatus(selectedQuestion.id, "NEEDS_REVIEW")}
-                    disabled={
-                      activeQuestionActionId === selectedQuestion.id ||
-                      isBulkApproving ||
-                      isApprovingReusedExact ||
-                      selectedQuestion.reviewStatus === "NEEDS_REVIEW" ||
-                      !canMarkNeedsReview
-                    }
-                    aria-label="Mark selected question as needs review"
-                  >
-                    Mark Needs Review
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => void updateReviewStatus(selectedQuestion.id, "DRAFT")}
-                    disabled={
-                      activeQuestionActionId === selectedQuestion.id ||
-                      isBulkApproving ||
-                      isApprovingReusedExact ||
-                      selectedQuestion.reviewStatus === "DRAFT" ||
-                      !canMarkNeedsReview
-                    }
-                    aria-label="Mark selected question as draft"
-                  >
-                    Mark Draft
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="danger"
-                    onClick={() => {
-                      if (selectedQuestion.approvedAnswer) {
-                        void unapprove(selectedQuestion.approvedAnswer.id, selectedQuestion.id);
-                      }
-                    }}
-                    disabled={
-                      activeQuestionActionId === selectedQuestion.id ||
-                      isBulkApproving ||
-                      isApprovingReusedExact ||
-                      !selectedQuestion.approvedAnswer ||
-                      !canApproveAnswers
-                    }
-                    aria-label="Remove selected approval"
-                  >
-                    Unapprove
-                  </Button>
-                </div>
-
-                {selectedQuestion.approvedAnswer ? (
-                  <div style={{ marginTop: 12 }}>
-                    {editingQuestionId === selectedQuestion.id ? (
-                      <>
-                        <TextArea
-                          rows={5}
-                          value={editAnswerText}
-                          onChange={(event) => setEditAnswerText(event.target.value)}
-                        />
-                        <p className="small muted" style={{ margin: "10px 0 6px" }}>
-                          Citations are preserved from the current approved answer.
-                        </p>
-                        <div className="toolbar-row" style={{ marginTop: 10 }}>
-                          <Button
-                            type="button"
-                            variant="primary"
-                            onClick={() => void saveEditedApproval(selectedQuestion)}
-                            disabled={
-                              activeQuestionActionId === selectedQuestion.id ||
-                              isBulkApproving ||
-                              isApprovingReusedExact ||
-                              !canEditApprovedAnswers
-                            }
-                          >
-                            Save approved edit
-                          </Button>
+              {drawerTab === "EVIDENCE" ? (
+                <div className="context-section-stack">
+                  {evidenceItems.length === 0 ? (
+                    <div className="muted small">No citations available for the current question.</div>
+                  ) : (
+                    <>
+                      <div className="evidence-chip-list">
+                        {evidenceItems.map((item) => {
+                          const citationReference = `${item.docName}#${item.chunkId}`;
+                          const itemDocumentId = documentIdByName[item.docName.trim().toLowerCase()] ?? null;
+                          return (
+                            <div
+                              key={item.chunkId}
+                              className={cx("evidence-chip-item", item.chunkId === activeEvidenceChunkId && "active")}
+                            >
+                              <button
+                                type="button"
+                                className={cx(
+                                  "chip evidence-chip-trigger has-tooltip",
+                                  item.chunkId === activeEvidenceChunkId && "active"
+                                )}
+                                onClick={() => setActiveEvidenceChunkId(item.chunkId)}
+                                title={citationReference}
+                                data-tooltip={citationReference}
+                                aria-label={`Select evidence from ${citationReference}`}
+                              >
+                                <span className="evidence-chip-doc">{item.docName}</span>
+                              </button>
+                              <div className="evidence-chip-actions">
+                                {itemDocumentId ? (
+                                  <button
+                                    type="button"
+                                    className="mini-chip-icon-action has-tooltip"
+                                    onClick={() => void openDocumentModal(item.docName)}
+                                    title="Open document"
+                                    data-tooltip="Open document"
+                                    aria-label={`Open source document ${item.docName}`}
+                                  >
+                                    <OpenDocIcon />
+                                    <span className="sr-only">Open document</span>
+                                  </button>
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="toolbar-row compact">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => void copyText(activeEvidence?.snippet ?? "", "Selected snippet copied.")}
+                          disabled={!activeEvidence?.snippet}
+                        >
+                          Copy snippet
+                        </Button>
+                        {activeEvidenceDocumentId ? (
                           <Button
                             type="button"
                             variant="ghost"
-                            onClick={cancelEdit}
-                            disabled={isBulkApproving || isApprovingReusedExact}
+                            onClick={() => void openDocumentModal(activeEvidence?.docName ?? "")}
                           >
-                            Cancel
+                            Open document
+                          </Button>
+                        ) : null}
+                      </div>
+                      <div className="snippet-scroll">
+                        {activeEvidence ? highlightedSnippetParts : "Select a citation chip to view snippet text."}
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : null}
+
+              {drawerTab === "REFERENCES" ? (
+                <div className="context-section-stack">
+                  <div className="toolbar-row">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => void copyText(citationReferenceText, "Citation references copied.")}
+                      disabled={citationReferenceRows.length === 0}
+                    >
+                      Copy all refs
+                    </Button>
+                  </div>
+                  {citationReferenceRows.length === 0 ? (
+                    <div className="muted small">No references available for the current question.</div>
+                  ) : (
+                    <div className="context-reference-list">
+                      {citationReferenceRows.map((reference) => (
+                        <div key={reference} className="context-reference-item">
+                          <span>{reference}</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => void copyText(reference, "Citation reference copied.")}
+                          >
+                            Copy ref
                           </Button>
                         </div>
-                      </>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() => beginEdit(selectedQuestion)}
-                        disabled={!canEditApprovedAnswers}
-                      >
-                        Edit approved answer
-                      </Button>
-                    )}
-                  </div>
-                ) : null}
-              </Card>
-            </>
-          ) : (
-            <div className="muted">No question selected. Adjust filters or search to continue review.</div>
-          )}
-        </Card>
-
-        <Card className="workbench-evidence sticky-panel" data-testid="evidence-panel">
-          <div ref={evidencePanelRef} tabIndex={0} className="focus-target" role="region" aria-label="Evidence panel">
-            <div className="evidence-header">
-              <h3 style={{ margin: 0 }}>Evidence ({evidenceItems.length})</h3>
-              <div className="evidence-toolbar">
-                <button
-                  type="button"
-                  className="evidence-copy-refs-btn"
-                  onClick={() => void copyText(citationReferenceText, "Citation references copied.")}
-                  disabled={citationReferenceRows.length === 0}
-                  title="Copy refs"
-                  aria-label="Copy refs"
-                >
-                  Copy refs
-                </button>
-                <button
-                  type="button"
-                  className="mini-chip-icon-action has-tooltip tooltip-below"
-                  onClick={() => void copyText(activeEvidence?.snippet ?? "", "Selected snippet copied.")}
-                  disabled={!activeEvidence?.snippet}
-                  title="Copy selected snippet"
-                  data-tooltip="Copy selected snippet"
-                  aria-label="Copy selected snippet"
-                >
-                  <SnippetIcon />
-                  <span className="sr-only">Copy selected snippet</span>
-                </button>
-                <button
-                  type="button"
-                  className="mini-chip-icon-action has-tooltip tooltip-below"
-                  onClick={() => void copyText(evidencePackText, "Evidence pack copied.")}
-                  disabled={citationReferenceRows.length === 0}
-                  title="Copy evidence pack"
-                  data-tooltip="Copy evidence pack"
-                  aria-label="Copy evidence pack"
-                >
-                  <EvidencePackIcon />
-                  <span className="sr-only">Copy evidence pack</span>
-                </button>
-              </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
 
-            {evidenceItems.length === 0 ? (
-              <div className="muted small">No citations available for the current question.</div>
-            ) : (
-              <>
-                <div className="evidence-chip-list">
-                  {evidenceItems.map((item) => {
-                    const citationReference = `${item.docName}#${item.chunkId}`;
-                    return (
-                      <div
-                        key={item.chunkId}
-                        className={cx("evidence-chip-item", item.chunkId === activeEvidenceChunkId && "active")}
-                      >
-                        <button
-                          type="button"
-                          className={cx("chip evidence-chip-trigger has-tooltip", item.chunkId === activeEvidenceChunkId && "active")}
-                          onClick={() => setActiveEvidenceChunkId(item.chunkId)}
-                          title={citationReference}
-                          data-tooltip={citationReference}
-                          aria-label={`Select evidence from ${citationReference}`}
-                        >
-                          <span className="evidence-chip-doc">{item.docName}</span>
-                        </button>
-                        <div className="evidence-chip-actions">
-                          <button
-                            type="button"
-                            className="mini-chip-icon-action has-tooltip"
-                            onClick={() => void copyText(citationReference, "Citation reference copied.")}
-                            title="Copy reference"
-                            data-tooltip={`Copy ref (${citationReference})`}
-                            aria-label={`Copy citation reference ${citationReference}`}
-                          >
-                            <CopyIcon />
-                            <span className="sr-only">Copy reference</span>
-                          </button>
-                          <button
-                            type="button"
-                            className="mini-chip-icon-action has-tooltip"
-                            onClick={() => void openDocumentModal(item.docName)}
-                            title="Open document"
-                            data-tooltip="Open document"
-                            aria-label={`Open source document ${item.docName}`}
-                          >
-                            <OpenDocIcon />
-                            <span className="sr-only">Open document</span>
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+            <div className="context-panel-actions">
+              {isMessageError ? (
+                <div className="message-banner error" role="status" aria-live="polite">
+                  {message}
                 </div>
-                <div className="snippet-scroll" style={{ marginTop: 8 }}>
-                  {activeEvidence ? highlightedSnippetParts : "Select a citation chip to view snippet text."}
+              ) : null}
+              {isNotFoundAnswer(selectedQuestion.answer) ? (
+                <p className="small muted" style={{ margin: 0 }}>
+                  Approve is disabled because this question is currently marked as not found.
+                </p>
+              ) : null}
+              <div className="toolbar-row">
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={() => void approveQuestion(selectedQuestion)}
+                  disabled={
+                    activeQuestionActionId === selectedQuestion.id ||
+                    isBulkApproving ||
+                    isApprovingReusedExact ||
+                    !selectedQuestionApprovalCandidate ||
+                    !canApproveAnswers
+                  }
+                  aria-label="Approve selected answer"
+                >
+                  {activeQuestionActionId === selectedQuestion.id ? "Working..." : "Approve"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void updateReviewStatus(selectedQuestion.id, "NEEDS_REVIEW")}
+                  disabled={
+                    activeQuestionActionId === selectedQuestion.id ||
+                    isBulkApproving ||
+                    isApprovingReusedExact ||
+                    selectedQuestion.reviewStatus === "NEEDS_REVIEW" ||
+                    !canMarkNeedsReview
+                  }
+                  aria-label="Mark selected question as needs review"
+                >
+                  Needs review
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  onClick={() => {
+                    if (selectedQuestion.approvedAnswer) {
+                      void unapprove(selectedQuestion.approvedAnswer.id, selectedQuestion.id);
+                    }
+                  }}
+                  disabled={
+                    activeQuestionActionId === selectedQuestion.id ||
+                    isBulkApproving ||
+                    isApprovingReusedExact ||
+                    !selectedQuestion.approvedAnswer ||
+                    !canApproveAnswers
+                  }
+                  aria-label="Remove selected approval"
+                >
+                  Unapprove
+                </Button>
+                {selectedQuestion.approvedAnswer && editingQuestionId !== selectedQuestion.id ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => beginEdit(selectedQuestion)}
+                    disabled={!canEditApprovedAnswers}
+                  >
+                    Edit approved
+                  </Button>
+                ) : null}
+              </div>
+
+              {selectedQuestion.approvedAnswer && editingQuestionId === selectedQuestion.id ? (
+                <div className="context-edit-area">
+                  <TextArea rows={5} value={editAnswerText} onChange={(event) => setEditAnswerText(event.target.value)} />
+                  <p className="small muted" style={{ margin: "8px 0 0" }}>
+                    Citations are preserved from the current approved answer.
+                  </p>
+                  <div className="toolbar-row">
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onClick={() => void saveEditedApproval(selectedQuestion)}
+                      disabled={
+                        activeQuestionActionId === selectedQuestion.id ||
+                        isBulkApproving ||
+                        isApprovingReusedExact ||
+                        !canEditApprovedAnswers
+                      }
+                    >
+                      Save approved edit
+                    </Button>
+                    <Button type="button" variant="ghost" onClick={cancelEdit} disabled={isBulkApproving || isApprovingReusedExact}>
+                      Cancel
+                    </Button>
+                  </div>
                 </div>
-              </>
-            )}
+              ) : null}
+            </div>
           </div>
-        </Card>
         </div>
-      )}
+      ) : null}
 
       {isBulkConfirmOpen ? (
         <div className="overlay-modal" role="dialog" aria-modal="true" aria-label="Confirm bulk approval">

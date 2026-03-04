@@ -44,6 +44,40 @@ Current log of implemented MVP work (concise, execution-focused).
   - PR2: drawer / mobile bottom sheet / tabbed details surface
   - PR3: auto-advance behavior + full shortcut contract/help modal
 
+## 2026-03-04 - ui-dirB-03-pr2-b2-drawer-and-mobile-sheet
+
+- Implemented Direction B PR2/B2 on `/questionnaires/[id]` (UI only; no backend/API/DB changes):
+  - replaced always-visible details/evidence panels with contextual surface:
+    - desktop: right-side drawer
+    - mobile: bottom sheet with half/full toggle
+  - queue interaction updated:
+    - clicking a queue row now selects row and opens drawer by default
+  - drawer accessibility/focus behavior:
+    - `role="dialog"` + `aria-modal="true"`
+    - focus trap while open
+    - `Esc` closes drawer
+    - close returns focus to the previously interacted queue row
+  - drawer tabs implemented:
+    - `Answer`: full question + answer context + copy answer + status/reuse/citation badges
+    - `Evidence`: citation chips + snippet viewer + copy snippet + conditional open-document actions
+    - `References`: `DocName#ChunkId` list + per-row copy + `Copy all refs`
+  - drawer action area implemented (permission-aware states):
+    - `Approve`
+    - `Needs review`
+    - `Unapprove`
+    - `Edit approved`
+  - error message-banner now appears inside drawer action area for failed actions
+  - removed duplicate route-level export CTA in global top-nav (`AppShell`) so this route has a single obvious export entry point in page header/overflow
+- Audit + validation notes:
+  - `npm test` => PASS
+  - `npm run build` => PASS
+  - UI audit artifacts:
+    - `artifacts/ui-audit/2026-03-04T22-22-10-835Z/pr2-b2/`
+  - unauthenticated audit run still reports protected-route `401` console/network failures; axe serious/critical is `0/0`
+- Next rollout status:
+  - PR3 next: auto-advance + full keyboard shortcut contract/help modal
+  - PR4 deferred in this turn (performance hardening and final acceptance-gate cleanup)
+
 ## 2026-03-03 - phase4-05 org invites + members management
 
 - Added Prisma invite model and migration:
