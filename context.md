@@ -49,10 +49,10 @@ Core promise: answers are generated only from uploaded evidence and always inclu
   - runtime explicitly Node (`runtime="nodejs"`) because magic-link delivery uses Node email transport.
 - Auth config:
   - `src/auth.ts`
-  - production: sends email via SMTP using `EMAIL_SERVER` + `EMAIL_FROM`
+  - production: sends email via shared server utility (`src/server/email.ts`) and requires `EMAIL_SERVER` + `EMAIL_FROM`
   - development: `sendVerificationRequest` never attempts SMTP and logs:
     - `MAGIC LINK (dev): <url>`
-    - verification token is still persisted in DB via adapter flow
+  - verification token is still persisted in DB via adapter flow
   - diagnostics: `sendVerificationRequest` wraps failures and logs real errors to server console in non-production
 - Session and user helpers:
   - `auth()` in `src/auth.ts`
@@ -98,7 +98,14 @@ Core promise: answers are generated only from uploaded evidence and always inclu
   - creates a tokenized invite valid for 7 days.
   - delivery behavior:
     - non-production: logs `INVITE LINK (dev): <url>` to server console
-    - production: sends email via nodemailer when `EMAIL_SERVER` and `EMAIL_FROM` are configured
+    - production: requires SMTP env and returns typed JSON errors on delivery issues:
+      - `EMAIL_NOT_CONFIGURED`
+      - `EMAIL_SEND_FAILED`
+    - invite records are persisted even when production email delivery fails
+    - API may return `inviteUrl` for manual sharing when:
+      - non-production
+      - `DEV_MODE=true`
+      - or `ALLOW_INVITE_LINK_COPY=true` (ADMIN/OWNER only)
 - Invite acceptance:
   - `POST /api/org/invites/accept` (authenticated user required)
   - validates token is unused and unexpired
@@ -561,9 +568,12 @@ Use `.env.example` as source of truth.
 ### Invite/auth env notes
 
 - Invite links are built from `APP_URL`, falling back to `NEXTAUTH_URL`/`AUTH_URL`, then `http://localhost:3000`.
-- Invite email delivery in production requires:
-  - `EMAIL_SERVER`
-  - `EMAIL_FROM`
+- Email delivery policy (`src/server/email.ts`):
+  - non-production: magic links/invite links are logged to server console
+  - production: `EMAIL_SERVER` + `EMAIL_FROM` are mandatory
+  - production missing config throws `EMAIL_NOT_CONFIGURED`
+  - production SMTP send failure throws `EMAIL_SEND_FAILED`
+- Invite endpoint keeps created invite records even if production email send fails, and returns JSON error payloads.
 
 ## 9) Tests (MVP Contracts)
 

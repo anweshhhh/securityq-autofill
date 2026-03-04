@@ -273,6 +273,76 @@ describe.sequential("org invites + members management", () => {
     expect(inviteeUser?.lastUsedOrganizationId).toBe(seeded.orgAId);
   });
 
+  it("returns JSON EMAIL_NOT_CONFIGURED in production when SMTP is missing", async () => {
+    if (!seeded) {
+      throw new Error("Missing seeded state.");
+    }
+
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalEmailServer = process.env.EMAIL_SERVER;
+    const originalEmailFrom = process.env.EMAIL_FROM;
+
+    process.env.NODE_ENV = "production";
+    delete process.env.EMAIL_SERVER;
+    delete process.env.EMAIL_FROM;
+
+    try {
+      const createResponse = await createInviteRoute(
+        new Request("http://localhost/api/org/invites", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            email: seeded.inviteeEmail,
+            role: "VIEWER"
+          })
+        })
+      );
+
+      expect(createResponse.status).toBe(500);
+      expect(createResponse.headers.get("content-type")).toContain("application/json");
+
+      const payload = (await createResponse.json()) as {
+        inviteId?: string;
+        error?: {
+          code?: string;
+          message?: string;
+        };
+      };
+
+      expect(payload.error?.code).toBe("EMAIL_NOT_CONFIGURED");
+      expect(payload.inviteId).toBeTruthy();
+
+      const persistedInvite = await prisma.organizationInvite.findUnique({
+        where: {
+          id: payload.inviteId
+        },
+        select: {
+          id: true,
+          organizationId: true,
+          usedAt: true
+        }
+      });
+
+      expect(persistedInvite?.id).toBe(payload.inviteId);
+      expect(persistedInvite?.organizationId).toBe(seeded.orgAId);
+      expect(persistedInvite?.usedAt).toBeNull();
+    } finally {
+      process.env.NODE_ENV = originalNodeEnv;
+      if (originalEmailServer === undefined) {
+        delete process.env.EMAIL_SERVER;
+      } else {
+        process.env.EMAIL_SERVER = originalEmailServer;
+      }
+      if (originalEmailFrom === undefined) {
+        delete process.env.EMAIL_FROM;
+      } else {
+        process.env.EMAIL_FROM = originalEmailFrom;
+      }
+    }
+  });
+
   it("rejects reused and expired invite tokens", async () => {
     if (!seeded) {
       throw new Error("Missing seeded state.");

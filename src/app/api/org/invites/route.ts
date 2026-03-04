@@ -3,7 +3,6 @@ import { jsonError, toApiErrorResponse } from "@/lib/apiResponse";
 import {
   buildInviteUrl,
   createInviteToken,
-  deliverOrganizationInvite,
   getInviteExpiryDate,
   normalizeInviteEmail,
   parseInviteRole
@@ -11,6 +10,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/requestContext";
 import { assertCan, RbacAction } from "@/server/rbac";
+import { EmailDeliveryError, sendInviteEmail } from "@/server/email";
 
 type CreateInviteBody = {
   email?: unknown;
@@ -18,6 +18,22 @@ type CreateInviteBody = {
 };
 
 export const runtime = "nodejs";
+
+function isTruthyEnvFlag(value: string | undefined): boolean {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on";
+}
+
+function shouldIncludeInviteUrl(role: string): boolean {
+  if (process.env.NODE_ENV !== "production" || isTruthyEnvFlag(process.env.DEV_MODE)) {
+    return true;
+  }
+
+  return (
+    isTruthyEnvFlag(process.env.ALLOW_INVITE_LINK_COPY) &&
+    (role === "OWNER" || role === "ADMIN")
+  );
+}
 
 export async function POST(request: Request) {
   try {
@@ -44,25 +60,15 @@ export async function POST(request: Request) {
       });
     }
 
-    const [organization, inviter] = await Promise.all([
-      prisma.organization.findUnique({
-        where: {
-          id: ctx.orgId
-        },
-        select: {
-          id: true,
-          name: true
-        }
-      }),
-      prisma.user.findUnique({
-        where: {
-          id: ctx.userId
-        },
-        select: {
-          email: true
-        }
-      })
-    ]);
+    const organization = await prisma.organization.findUnique({
+      where: {
+        id: ctx.orgId
+      },
+      select: {
+        id: true,
+        name: true
+      }
+    });
 
     if (!organization) {
       return jsonError({
@@ -92,19 +98,36 @@ export async function POST(request: Request) {
     });
 
     const inviteUrl = buildInviteUrl(invite.token);
-    await deliverOrganizationInvite({
-      inviteeEmail: invite.email,
-      inviteRole: invite.role,
-      organizationName: organization.name,
-      inviteUrl,
-      invitedByEmail: inviter?.email ?? null
-    });
+    const includeInviteUrl = shouldIncludeInviteUrl(ctx.role);
+
+    try {
+      await sendInviteEmail(invite.email, inviteUrl, organization.name, invite.role);
+    } catch (error) {
+      if (error instanceof EmailDeliveryError) {
+        return NextResponse.json(
+          {
+            inviteId: invite.id,
+            email: invite.email,
+            role: invite.role,
+            expiresAt: invite.expiresAt,
+            ...(includeInviteUrl ? { inviteUrl } : {}),
+            error: {
+              code: error.code,
+              message: error.message
+            }
+          },
+          { status: error.status }
+        );
+      }
+      throw error;
+    }
 
     return NextResponse.json({
       inviteId: invite.id,
       email: invite.email,
       role: invite.role,
-      expiresAt: invite.expiresAt
+      expiresAt: invite.expiresAt,
+      ...(includeInviteUrl ? { inviteUrl } : {})
     });
   } catch (error) {
     console.error("Failed to create organization invite", error);

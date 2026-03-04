@@ -1,11 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { InviteRole, MembershipRole } from "@prisma/client";
-import { createTransport } from "nodemailer";
 
-const isProduction = process.env.NODE_ENV === "production";
 const DEFAULT_APP_URL = "http://localhost:3000";
-const INVITE_EMAIL_SERVER = process.env.EMAIL_SERVER ?? "";
-const INVITE_EMAIL_FROM = process.env.EMAIL_FROM ?? "";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -64,40 +60,4 @@ export function buildInviteUrl(token: string): string {
 
 export function inviteRoleToMembershipRole(role: InviteRole): MembershipRole {
   return role as MembershipRole;
-}
-
-export type InviteDeliveryResult = "logged_dev" | "sent_email" | "skipped_email_not_configured";
-
-export async function deliverOrganizationInvite(params: {
-  inviteeEmail: string;
-  inviteRole: InviteRole;
-  organizationName: string;
-  inviteUrl: string;
-  invitedByEmail?: string | null;
-}): Promise<InviteDeliveryResult> {
-  if (!isProduction) {
-    console.info(`INVITE LINK (dev): ${params.inviteUrl}`);
-    return "logged_dev";
-  }
-
-  if (!INVITE_EMAIL_SERVER || !INVITE_EMAIL_FROM) {
-    console.warn("[org-invites] EMAIL_SERVER/EMAIL_FROM missing; invite email delivery skipped.");
-    return "skipped_email_not_configured";
-  }
-
-  const transport = createTransport(INVITE_EMAIL_SERVER);
-  const invitedByLine = params.invitedByEmail ? `Invited by: ${params.invitedByEmail}\n\n` : "";
-  const inviteRoleLabel = params.inviteRole.toLowerCase();
-
-  await transport.sendMail({
-    to: params.inviteeEmail,
-    from: INVITE_EMAIL_FROM,
-    subject: `SecurityQ invite: ${params.organizationName}`,
-    text: `You were invited to join ${params.organizationName} as ${inviteRoleLabel}.\n\n${invitedByLine}Accept invite: ${params.inviteUrl}\n`,
-    html: `<p>You were invited to join <strong>${params.organizationName}</strong> as <strong>${inviteRoleLabel}</strong>.</p>${
-      params.invitedByEmail ? `<p>Invited by: ${params.invitedByEmail}</p>` : ""
-    }<p><a href="${params.inviteUrl}">Accept invite</a></p>`
-  });
-
-  return "sent_email";
 }

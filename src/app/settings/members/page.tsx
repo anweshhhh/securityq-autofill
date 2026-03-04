@@ -24,7 +24,9 @@ type InviteRole = "ADMIN" | "REVIEWER" | "VIEWER";
 type InviteResponse = {
   inviteId?: string;
   expiresAt?: string;
+  inviteUrl?: string;
   error?: {
+    code?: string;
     message?: string;
   };
 };
@@ -59,6 +61,7 @@ export default function MembersSettingsPage() {
   const [isSendingInvite, setIsSendingInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<InviteRole>("VIEWER");
+  const [inviteUrl, setInviteUrl] = useState("");
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error">("success");
 
@@ -122,6 +125,7 @@ export default function MembersSettingsPage() {
 
     setIsSendingInvite(true);
     setMessage("");
+    setInviteUrl("");
 
     try {
       const response = await fetch("/api/org/invites", {
@@ -136,15 +140,28 @@ export default function MembersSettingsPage() {
       });
 
       const payload = (await response.json().catch(() => null)) as InviteResponse | null;
+      const returnedInviteUrl = typeof payload?.inviteUrl === "string" ? payload.inviteUrl : "";
+      setInviteUrl(returnedInviteUrl);
 
       if (!response.ok) {
+        if (payload?.inviteId && payload?.error?.code) {
+          setMessage(
+            `Invite created, but email delivery failed (${payload.error.code}). ${
+              payload.error.message ?? "Check SMTP configuration."
+            }`
+          );
+          setMessageType("error");
+          return;
+        }
+
         throw new Error(payload?.error?.message ?? "Failed to create invite.");
       }
 
       setInviteEmail("");
       setInviteRole("VIEWER");
       const devHint = process.env.NODE_ENV !== "production" ? " Check server console for invite link." : "";
-      setMessage(`Invite created.${devHint}`);
+      const copyHint = returnedInviteUrl ? " Use the copy button below to share the link." : "";
+      setMessage(`Invite created.${devHint}${copyHint}`);
       setMessageType("success");
       await loadMembers();
     } catch (error) {
@@ -172,6 +189,35 @@ export default function MembersSettingsPage() {
     <div className="page-stack">
       {message ? (
         <div className={cx("message-banner", messageType === "error" ? "error" : "success")}>{message}</div>
+      ) : null}
+      {inviteUrl ? (
+        <Card>
+          <div className="card-title-row">
+            <div>
+              <h2 style={{ marginBottom: 4 }}>Invite Link</h2>
+              <p className="muted" style={{ margin: 0 }}>
+                Share this link directly when email delivery is unavailable.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(inviteUrl);
+                  setMessage("Invite link copied.");
+                  setMessageType("success");
+                } catch {
+                  setMessage("Could not copy invite link. Copy it manually.");
+                  setMessageType("error");
+                }
+              }}
+            >
+              Copy invite link
+            </Button>
+          </div>
+          <TextInput type="text" value={inviteUrl} readOnly aria-label="Invite link" />
+        </Card>
       ) : null}
 
       {canInviteMembers ? (

@@ -1086,3 +1086,45 @@ Current log of implemented MVP work (concise, execution-focused).
 
 - `npm test` => PASS
 - `npm run build` => PASS
+
+## 2026-03-03 - phase4-qa-audit
+
+- Added Phase 4 audit report: `docs/phase4-audit.md`
+- Audited against commit: `ec8f5a5`
+- Verification executed:
+  - `npm test` => PASS (`20` passed, `1` skipped files; `48` passed, `1` skipped tests)
+  - `npm run build` => PASS (with expected Next.js dynamic server usage warnings for auth-protected APIs)
+  - `npm run ui:audit` on `/login`, `/documents`, `/questionnaires`, `/questionnaires/:id`
+- Added minimal verification test coverage for invite delivery mode behavior:
+  - `src/lib/orgInvites.delivery.test.ts`
+- See `docs/phase4-audit.md` for PR-by-PR verdicts, route-level evidence, manual smoke checklist, and remaining risks.
+
+## 2026-03-04 - phase4-01-prod-hardening-email-invites
+
+- Added centralized server-only email utility:
+  - `src/server/email.ts`
+  - functions: `sendMagicLinkEmail`, `sendInviteEmail`
+  - production policy:
+    - requires `EMAIL_SERVER` + `EMAIL_FROM`
+    - typed failures: `EMAIL_NOT_CONFIGURED`, `EMAIL_SEND_FAILED`
+  - non-production policy:
+    - logs magic and invite links to server console
+- Updated auth and invite flow to use shared email utility:
+  - `src/auth.ts`
+  - `src/app/api/org/invites/route.ts`
+- Invite API hardening:
+  - invite is persisted before email send attempt
+  - production email failure now returns JSON `500` with typed error code/message (no HTML)
+  - response can include `inviteUrl` for manual copy in allowed modes (non-prod / `DEV_MODE=true` / `ALLOW_INVITE_LINK_COPY=true` with ADMIN/OWNER)
+- Members UI update:
+  - `src/app/settings/members/page.tsx`
+  - shows "Copy invite link" control when API returns `inviteUrl`
+- Added/updated tests:
+  - `src/app/api/org/invites.members.integration.test.ts`
+    - production + missing SMTP env returns JSON `500` `EMAIL_NOT_CONFIGURED` and still persists invite
+  - `src/server/email.test.ts`
+- Documentation update:
+  - `context.md` updated with Phase 4.1 email sending policy
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS
