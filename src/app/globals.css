@@ -399,6 +399,39 @@ textarea {
   border-color: rgba(255, 255, 255, 0.34);
 }
 
+.btn-progress {
+  min-width: 188px;
+}
+
+.btn-progress-content {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 20px;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.btn-progress-track {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.08);
+}
+
+.btn-progress-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(91, 95, 217, 0.28) 0%, rgba(63, 71, 186, 0.36) 100%);
+  transition: width 180ms ease;
+}
+
+.btn-progress-label {
+  position: relative;
+  z-index: 1;
+}
+
 .icon-btn {
   width: 34px;
   min-width: 34px;
@@ -745,6 +778,44 @@ textarea {
   gap: 14px;
 }
 
+.queue-topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.queue-topbar-actions {
+  justify-content: flex-end;
+}
+
+.queue-metrics-strip {
+  position: sticky;
+  top: 14px;
+  z-index: 12;
+}
+
+.queue-metrics-top {
+  margin-bottom: 10px;
+}
+
+.queue-metrics-controls {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.queue-filter-row {
+  flex: 1;
+}
+
+.queue-search-wrap {
+  width: min(360px, 100%);
+  flex-shrink: 0;
+}
+
 .sticky-panel {
   position: sticky;
   top: 14px;
@@ -777,6 +848,35 @@ textarea {
 .question-list-item:hover {
   border-color: #b5c4e2;
   background: #f7faff;
+}
+
+.queue-row {
+  display: grid;
+  gap: 8px;
+}
+
+.queue-row-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.queue-row-preview {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: #1f2a3d;
+  line-height: 1.45;
+}
+
+.queue-row-open {
+  font-size: 11px;
+  font-weight: 700;
+  color: #52607a;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .workbench-question-text {
@@ -969,6 +1069,12 @@ textarea {
   box-shadow: 0 8px 16px rgba(15, 23, 42, 0.16);
   pointer-events: none;
   z-index: 20;
+}
+
+.has-tooltip.tooltip-below:hover::after,
+.has-tooltip.tooltip-below:focus-visible::after {
+  top: calc(100% + 6px);
+  bottom: auto;
 }
 
 @media (max-width: 960px) {
@@ -1305,9 +1411,19 @@ textarea {
     padding: 12px 14px;
   }
 
-  .trust-bar-header {
+  .trust-bar-header,
+  .queue-topbar,
+  .queue-metrics-controls {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .queue-topbar-actions {
+    justify-content: flex-start;
+  }
+
+  .queue-search-wrap {
+    width: 100%;
   }
 
   .trust-progress {

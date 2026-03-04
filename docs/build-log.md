@@ -14,6 +14,36 @@ Current log of implemented MVP work (concise, execution-focused).
   - Rollout plan: [docs/ui-direction-b-plan.md](./ui-direction-b-plan.md)
 - Build-log note: Locked Direction B spec + acceptance + plan.
 
+## 2026-03-04 - ui-dirB-02-pr1-b1-queue-foundation
+
+- Implemented Direction B PR1/B1 on `/questionnaires/[id]` (UI only; no backend/API/DB changes):
+  - queue-first top bar now uses a single primary CTA (state-driven among `Run Autofill`, `Approve Reused (Exact)`, `Export`, fallback `Refresh`)
+  - top-level overflow menu added for secondary actions (`Run Autofill`, `Approve Reused (Exact)`, `Export...`, `Approve Visible`, `Refresh`, `Delete questionnaire`)
+  - sticky metrics strip now includes:
+    - counts: `Approved`, `Needs review`, `Draft`, `Not found`, `Reused`
+    - approved progress bar with percent text
+    - filters: `All`, `Draft`, `Approved`, `Needs review`, `Not found`, `Reused`
+    - queue search (`Search question text or answer preview`)
+  - queue rows are preview-only and compact:
+    - status pill + row id
+    - 2-line question preview
+    - reuse badge + citation count + compact `Open` affordance
+  - single-row deterministic selection preserved:
+    - initial load selects first visible row
+    - filter/search keeps selection if still visible, otherwise selects first visible or clears
+  - temporary details pane retained (main/evidence panels) with existing approve/review/unapprove/edit/export behavior unchanged
+  - keyboard baseline for PR1 implemented:
+    - `ArrowDown` / `ArrowUp` move queue selection
+    - `Enter` toggles answer expand/collapse (guarded to avoid interactive controls)
+- Accessibility and audit notes:
+  - fixed listbox semantics for empty queue state (`role="option"` placeholder) to remove critical axe issue
+  - UI audit artifacts saved under:
+    - `artifacts/ui-audit/2026-03-04T03-07-03-149Z/pr1-b1/`
+  - current audit run is unauthenticated, so protected-route API calls return `401` and produce console/network failures; axe serious/critical is `0/0`
+- Explicitly deferred (per rollout plan):
+  - PR2: drawer / mobile bottom sheet / tabbed details surface
+  - PR3: auto-advance behavior + full shortcut contract/help modal
+
 ## 2026-03-03 - phase4-05 org invites + members management
 
 - Added Prisma invite model and migration:

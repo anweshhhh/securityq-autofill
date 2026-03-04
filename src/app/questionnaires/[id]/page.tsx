@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useAppAuthz } from "@/components/AppAuthzContext";
 import { ExportModal } from "@/components/ExportModal";
@@ -53,7 +53,7 @@ type QuestionnaireDetailsPayload = {
   error?: string;
 };
 
-type QuestionFilter = "ALL" | "DRAFT" | "APPROVED" | "NEEDS_REVIEW" | "NOT_FOUND";
+type QuestionFilter = "ALL" | "DRAFT" | "APPROVED" | "NEEDS_REVIEW" | "NOT_FOUND" | "REUSED";
 type StatusCounts = Record<QuestionFilter, number>;
 
 type EvidenceItem = {
@@ -69,6 +69,7 @@ type QuestionRailItem = {
   reviewStatus: QuestionRow["reviewStatus"];
   notFound: boolean;
   reuseMatchType: QuestionRow["reuseMatchType"];
+  citationCount: number;
 };
 
 type AutofillPayload = {
@@ -120,7 +121,8 @@ const FILTER_OPTIONS: Array<{ key: QuestionFilter; label: string }> = [
   { key: "DRAFT", label: "Draft" },
   { key: "APPROVED", label: "Approved" },
   { key: "NEEDS_REVIEW", label: "Needs review" },
-  { key: "NOT_FOUND", label: "Not found" }
+  { key: "NOT_FOUND", label: "Not found" },
+  { key: "REUSED", label: "Reused" }
 ];
 
 const QUESTION_TERM_STOPWORDS = new Set([
@@ -386,6 +388,14 @@ function extractCitationChunkIds(question: QuestionRow): string[] {
   );
 }
 
+function getQueueCitationCount(question: QuestionRow): number {
+  if (question.approvedAnswer && question.approvedAnswer.citationChunkIds.length > 0) {
+    return question.approvedAnswer.citationChunkIds.filter((chunkId) => chunkId.trim().length > 0).length;
+  }
+
+  return extractCitationChunkIds(question).length;
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -417,6 +427,19 @@ function isEditableTarget(target: EventTarget | null): boolean {
     tagName === "SELECT" ||
     target.closest("[contenteditable='true']") !== null
   );
+}
+
+function isClickLikeTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  const tagName = target.tagName.toUpperCase();
+  if (tagName === "BUTTON" || tagName === "A" || tagName === "SUMMARY") {
+    return true;
+  }
+
+  return target.closest("button, a, summary, [role='button'], [role='menuitem']") !== null;
 }
 
 function toQuestionPreview(questionText: string): string {
@@ -484,32 +507,41 @@ const QuestionRailItemButton = memo(function QuestionRailItemButton({
   return (
     <button
       type="button"
-      className={cx("question-list-item", active && "active")}
+      className={cx("question-list-item queue-row", active && "active")}
       onClick={() => onSelect(item.id)}
       title={`Row ${item.rowIndex + 1}`}
       aria-label={`Select question row ${item.rowIndex + 1}`}
+      role="option"
+      aria-selected={active}
     >
-      <div className="card-title-row" style={{ marginBottom: 8 }}>
-        <span className="small muted">Row {item.rowIndex + 1}</span>
+      <div className="queue-row-head">
         <div className="toolbar-row compact">
+          <span className="small muted">Row {item.rowIndex + 1}</span>
           <Badge tone={statusTone(item.reviewStatus)} title={statusLabel(item.reviewStatus)}>
             {statusLabel(item.reviewStatus)}
           </Badge>
+        </div>
+        <div className="toolbar-row compact">
           {item.reuseMatchType ? (
             <Badge tone={getReuseBadgeTone(item.reuseMatchType) ?? "draft"}>
               {getReuseBadgeLabel(item.reuseMatchType)}
             </Badge>
           ) : null}
           {item.notFound ? <Badge tone="notfound">Not found</Badge> : null}
+          <Badge tone="draft">{item.citationCount} citation{item.citationCount === 1 ? "" : "s"}</Badge>
         </div>
       </div>
-      <div className="question-preview-text">{item.textPreview}</div>
+      <div className="queue-row-preview">{item.textPreview}</div>
+      <div className="queue-row-open" aria-hidden="true">
+        Open
+      </div>
     </button>
   );
 });
 
 export default function QuestionnaireDetailsPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const questionnaireId = params.id;
   const { role } = useAppAuthz();
 
@@ -531,7 +563,6 @@ export default function QuestionnaireDetailsPage() {
   const [isBulkConfirmOpen, setIsBulkConfirmOpen] = useState(false);
   const [isBulkApproving, setIsBulkApproving] = useState(false);
   const [isApprovingReusedExact, setIsApprovingReusedExact] = useState(false);
-  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [documentIdByName, setDocumentIdByName] = useState<Record<string, string>>({});
   const [isDocumentModalOpen, setIsDocumentModalOpen] = useState(false);
   const [isDocumentLoading, setIsDocumentLoading] = useState(false);
@@ -540,7 +571,6 @@ export default function QuestionnaireDetailsPage() {
   const [documentModalError, setDocumentModalError] = useState("");
   const evidencePanelRef = useRef<HTMLDivElement | null>(null);
   const bulkModalRef = useRef<HTMLDivElement | null>(null);
-  const shortcutsModalRef = useRef<HTMLDivElement | null>(null);
   const documentModalRef = useRef<HTMLDivElement | null>(null);
   const deferredSearchText = useDeferredValue(searchText);
   const canRunAutofill = role ? can(role, RbacAction.RUN_AUTOFILL) : false;
@@ -548,6 +578,7 @@ export default function QuestionnaireDetailsPage() {
   const canEditApprovedAnswers = role ? can(role, RbacAction.EDIT_APPROVED_ANSWERS) : false;
   const canMarkNeedsReview = role ? can(role, RbacAction.MARK_NEEDS_REVIEW) : false;
   const canExportQuestionnaire = role ? can(role, RbacAction.EXPORT) : false;
+  const canDeleteQuestionnaire = role ? can(role, RbacAction.DELETE_QUESTIONNAIRES) : false;
 
   const loadDetails = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -650,7 +681,11 @@ export default function QuestionnaireDetailsPage() {
         return false;
       }
 
-      if (filter !== "ALL" && filter !== "NOT_FOUND" && question.reviewStatus !== filter) {
+      if (filter === "REUSED" && !question.reuseMatchType) {
+        return false;
+      }
+
+      if (filter !== "ALL" && filter !== "NOT_FOUND" && filter !== "REUSED" && question.reviewStatus !== filter) {
         return false;
       }
 
@@ -672,7 +707,8 @@ export default function QuestionnaireDetailsPage() {
       DRAFT: 0,
       APPROVED: 0,
       NEEDS_REVIEW: 0,
-      NOT_FOUND: 0
+      NOT_FOUND: 0,
+      REUSED: 0
     };
 
     for (const questionId of questionOrder) {
@@ -685,6 +721,9 @@ export default function QuestionnaireDetailsPage() {
       counts[question.reviewStatus] += 1;
       if (isNotFoundAnswer(question.answer)) {
         counts.NOT_FOUND += 1;
+      }
+      if (question.reuseMatchType) {
+        counts.REUSED += 1;
       }
     }
 
@@ -715,6 +754,29 @@ export default function QuestionnaireDetailsPage() {
     setSelectedQuestionId(questionId);
   }, []);
 
+  const moveSelection = useCallback(
+    (direction: -1 | 1) => {
+      if (filteredQuestionIds.length === 0) {
+        return;
+      }
+
+      setSelectedQuestionId((current) => {
+        if (!current) {
+          return filteredQuestionIds[0];
+        }
+
+        const currentIndex = filteredQuestionIds.indexOf(current);
+        if (currentIndex < 0) {
+          return filteredQuestionIds[0];
+        }
+
+        const nextIndex = Math.max(0, Math.min(filteredQuestionIds.length - 1, currentIndex + direction));
+        return filteredQuestionIds[nextIndex];
+      });
+    },
+    [filteredQuestionIds]
+  );
+
   const railItems = useMemo<QuestionRailItem[]>(() => {
     return filteredQuestionIds
       .map((questionId) => {
@@ -729,7 +791,8 @@ export default function QuestionnaireDetailsPage() {
           textPreview: toQuestionPreview(question.text),
           reviewStatus: question.reviewStatus,
           notFound: isNotFoundAnswer(question.answer),
-          reuseMatchType: question.reuseMatchType
+          reuseMatchType: question.reuseMatchType,
+          citationCount: getQueueCitationCount(question)
         };
       })
       .filter((item): item is QuestionRailItem => Boolean(item));
@@ -1343,16 +1406,39 @@ export default function QuestionnaireDetailsPage() {
     setDocumentModalText("");
   }, []);
 
+  const deleteQuestionnaire = useCallback(async () => {
+    if (!canDeleteQuestionnaire) {
+      setMessage("You do not have permission to delete questionnaires.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete "${data?.questionnaire.name ?? "this questionnaire"}"? This action cannot be undone.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setMessage("");
+    try {
+      const response = await fetch(`/api/questionnaires/${questionnaireId}`, {
+        method: "DELETE"
+      });
+      const payload = (await response.json().catch(() => ({}))) as unknown;
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(payload, "Failed to delete questionnaire."));
+      }
+
+      router.push("/questionnaires");
+    } catch (error) {
+      setMessage(`Delete failed: ${error instanceof Error ? error.message : "Unknown error."}`);
+    }
+  }, [canDeleteQuestionnaire, data?.questionnaire.name, questionnaireId, router]);
+
   useFocusTrap({
     active: isBulkConfirmOpen,
     containerRef: bulkModalRef,
     onEscape: () => setIsBulkConfirmOpen(false)
-  });
-
-  useFocusTrap({
-    active: isShortcutsOpen,
-    containerRef: shortcutsModalRef,
-    onEscape: () => setIsShortcutsOpen(false)
   });
 
   useFocusTrap({
@@ -1391,6 +1477,65 @@ export default function QuestionnaireDetailsPage() {
     return lines.join("\n");
   }, [activeEvidence?.snippet, citationReferenceText, effectiveAnswer, selectedCitationReference]);
   const selectedQuestionApprovalCandidate = selectedQuestion ? getApprovalCandidate(selectedQuestion) : null;
+  const hasMissingVisibleAnswers = useMemo(
+    () => visibleQuestions.some((question) => (question.answer ?? "").trim().length === 0),
+    [visibleQuestions]
+  );
+  const shouldShowRunAutofillPrimary = useMemo(
+    () => (data?.questionnaire.answeredCount ?? 0) === 0 || hasMissingVisibleAnswers,
+    [data?.questionnaire.answeredCount, hasMissingVisibleAnswers]
+  );
+  const primaryAction = useMemo(() => {
+    if (shouldShowRunAutofillPrimary && canRunAutofill) {
+      return {
+        key: "run-autofill" as const,
+        label: isRunningAutofill ? "Running Autofill..." : "Run Autofill",
+        disabled: isRunningAutofill || isBulkApproving || isApprovingReusedExact
+      };
+    }
+
+    if (!shouldShowRunAutofillPrimary && canApproveAnswers && exactReusedEligibleQuestions.length > 0) {
+      return {
+        key: "approve-reused" as const,
+        label: isApprovingReusedExact
+          ? "Approving reused..."
+          : `Approve Reused (Exact) (${exactReusedEligibleQuestions.length})`,
+        disabled: isLoading || isRunningAutofill || isBulkApproving || isApprovingReusedExact
+      };
+    }
+
+    if (canExportQuestionnaire) {
+      return {
+        key: "export" as const,
+        label: "Export",
+        disabled: false
+      };
+    }
+
+    if (canRunAutofill) {
+      return {
+        key: "run-autofill" as const,
+        label: isRunningAutofill ? "Running Autofill..." : "Run Autofill",
+        disabled: isRunningAutofill || isBulkApproving || isApprovingReusedExact
+      };
+    }
+
+    return {
+      key: "refresh" as const,
+      label: isLoading ? "Refreshing..." : "Refresh",
+      disabled: isLoading
+    };
+  }, [
+    canApproveAnswers,
+    canExportQuestionnaire,
+    canRunAutofill,
+    exactReusedEligibleQuestions.length,
+    isApprovingReusedExact,
+    isBulkApproving,
+    isLoading,
+    isRunningAutofill,
+    shouldShowRunAutofillPrimary
+  ]);
   const questionKeyTerms = useMemo(
     () => getQuestionKeyTerms(selectedQuestion?.text ?? ""),
     [selectedQuestion?.text]
@@ -1422,219 +1567,92 @@ export default function QuestionnaireDetailsPage() {
         return;
       }
 
-      const key = event.key.toLowerCase();
-
-      if (key === "escape") {
+      if (event.key === "Escape") {
+        if (isDocumentModalOpen) {
+          event.preventDefault();
+          closeDocumentModal();
+          return;
+        }
         if (isBulkConfirmOpen) {
           event.preventDefault();
           setIsBulkConfirmOpen(false);
         }
-        if (isShortcutsOpen) {
-          event.preventDefault();
-          setIsShortcutsOpen(false);
-        }
-        if (isDocumentModalOpen) {
-          event.preventDefault();
-          closeDocumentModal();
-        }
-      }
-
-      if (isBulkConfirmOpen || isShortcutsOpen || isDocumentModalOpen) {
         return;
       }
 
-      if (event.key === "?") {
-        event.preventDefault();
-        setIsShortcutsOpen(true);
+      if (isBulkConfirmOpen || isDocumentModalOpen) {
         return;
       }
 
-      if (key === "j") {
+      if (event.key === "ArrowDown") {
         event.preventDefault();
-        if (filteredQuestionIds.length === 0) {
+        moveSelection(1);
+        return;
+      }
+
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        moveSelection(-1);
+        return;
+      }
+
+      if (event.key === "Enter" && selectedQuestion) {
+        if (isClickLikeTarget(event.target)) {
           return;
         }
-
-        setSelectedQuestionId((current) => {
-          if (!current) {
-            return filteredQuestionIds[0];
-          }
-
-          const currentIndex = filteredQuestionIds.indexOf(current);
-          if (currentIndex < 0) {
-            return filteredQuestionIds[0];
-          }
-
-          return filteredQuestionIds[Math.min(currentIndex + 1, filteredQuestionIds.length - 1)];
-        });
-        return;
-      }
-
-      if (key === "k") {
         event.preventDefault();
-        if (filteredQuestionIds.length === 0) {
-          return;
-        }
-
-        setSelectedQuestionId((current) => {
-          if (!current) {
-            return filteredQuestionIds[0];
-          }
-
-          const currentIndex = filteredQuestionIds.indexOf(current);
-          if (currentIndex < 0) {
-            return filteredQuestionIds[0];
-          }
-
-          return filteredQuestionIds[Math.max(currentIndex - 1, 0)];
-        });
-        return;
-      }
-
-      if (
-        key === "a" &&
-        canApproveAnswers &&
-        selectedQuestion &&
-        selectedQuestionApprovalCandidate &&
-        !isBulkApproving &&
-        !isApprovingReusedExact
-      ) {
-        event.preventDefault();
-        void approveQuestion(selectedQuestion);
-        return;
-      }
-
-      if (
-        key === "r" &&
-        canMarkNeedsReview &&
-        selectedQuestion &&
-        !isBulkApproving &&
-        !isApprovingReusedExact &&
-        selectedQuestion.reviewStatus !== "NEEDS_REVIEW"
-      ) {
-        event.preventDefault();
-        void updateReviewStatus(selectedQuestion.id, "NEEDS_REVIEW");
-        return;
-      }
-
-      if (
-        key === "u" &&
-        canApproveAnswers &&
-        selectedQuestion?.approvedAnswer &&
-        !isBulkApproving &&
-        !isApprovingReusedExact
-      ) {
-        event.preventDefault();
-        void unapprove(selectedQuestion.approvedAnswer.id, selectedQuestion.id);
-        return;
-      }
-
-      if (key === "c") {
-        event.preventDefault();
-        void copyText(effectiveAnswer, "Answer copied.");
-        return;
-      }
-
-      if (key === "e") {
-        event.preventDefault();
-        evidencePanelRef.current?.focus();
+        setIsAnswerExpanded((value) => !value);
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
-    approveQuestion,
-    canApproveAnswers,
-    canMarkNeedsReview,
-    copyText,
-    effectiveAnswer,
-    filteredQuestionIds,
-    isBulkConfirmOpen,
-    isBulkApproving,
-    isApprovingReusedExact,
-    isDocumentModalOpen,
-    isShortcutsOpen,
-    selectedQuestion,
-    selectedQuestionApprovalCandidate,
     closeDocumentModal,
-    unapprove,
-    updateReviewStatus
+    isBulkConfirmOpen,
+    isDocumentModalOpen,
+    moveSelection,
+    selectedQuestion,
   ]);
 
   return (
     <div className="page-stack">
       <Card>
-        <div className="card-title-row">
+        <header className="queue-topbar" aria-label="Review queue header">
           <div>
-            <h2 style={{ marginBottom: 4 }}>{data?.questionnaire.name ?? "Questionnaire"}</h2>
+            <h2 style={{ margin: 0 }}>Review Queue</h2>
             <p className="muted" style={{ margin: 0 }}>
+              <strong>{data?.questionnaire.name ?? "Questionnaire"}</strong>
+            </p>
+            <p className="small muted" style={{ margin: "4px 0 0" }}>
               Source: {data?.questionnaire.sourceFileName ?? "n/a"} | Question column:{" "}
               {data?.questionnaire.questionColumn ?? "n/a"}
             </p>
           </div>
-          <div className="toolbar-row">
-            <Button type="button" variant="ghost" onClick={() => void loadDetails()} disabled={isLoading}>
-              {isLoading ? "Refreshing..." : "Refresh"}
-            </Button>
-          </div>
-        </div>
-      </Card>
-
-      <Card className="trust-bar">
-        <div className="trust-bar-header">
-          <div>
-            <h3 style={{ margin: 0 }}>Trust Bar</h3>
-            <p className="small muted" style={{ margin: "4px 0 0" }}>
-              Review velocity controls and approval coverage snapshot.
-            </p>
-          </div>
-          <div className="toolbar-row">
+          <div className="toolbar-row queue-topbar-actions">
             <Button
               type="button"
               variant="primary"
-              onClick={() => setIsBulkConfirmOpen(true)}
-              disabled={
-                isLoading ||
-                isBulkApproving ||
-                isApprovingReusedExact ||
-                bulkEligibleQuestions.length === 0 ||
-                !canApproveAnswers
-              }
-              title="Approve all currently visible eligible questions"
-              aria-label="Approve visible eligible questions"
+              onClick={() => {
+                if (primaryAction.key === "run-autofill") {
+                  void runAutofill();
+                  return;
+                }
+                if (primaryAction.key === "approve-reused") {
+                  void approveExactReusedQuestions();
+                  return;
+                }
+                if (primaryAction.key === "export") {
+                  setIsExportModalOpen(true);
+                  return;
+                }
+                void loadDetails();
+              }}
+              disabled={primaryAction.disabled}
+              aria-label={primaryAction.label}
+              title={primaryAction.label}
             >
-              {isBulkApproving ? "Approving..." : `Approve Visible (${bulkEligibleQuestions.length})`}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => void approveExactReusedQuestions()}
-              disabled={
-                isLoading ||
-                isBulkApproving ||
-                isApprovingReusedExact ||
-                isRunningAutofill ||
-                exactReusedEligibleQuestions.length === 0 ||
-                !canApproveAnswers
-              }
-              title="Approve only exact-match reused answers with valid citations"
-              aria-label="Approve reused exact answers"
-            >
-              {isApprovingReusedExact
-                ? "Approving reused..."
-                : `Approve Reused (Exact) (${exactReusedEligibleQuestions.length})`}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              className="btn-progress"
-              onClick={() => void runAutofill()}
-              disabled={isRunningAutofill || isBulkApproving || isApprovingReusedExact || !canRunAutofill}
-              title="Run autofill for this questionnaire"
-              aria-label="Run autofill for questionnaire"
-            >
-              {isRunningAutofill ? (
+              {primaryAction.key === "run-autofill" && isRunningAutofill ? (
                 <span className="btn-progress-content" aria-live="polite">
                   <span className="btn-progress-track" aria-hidden="true">
                     <span className="btn-progress-fill" style={{ width: `${autofillProgressPercent}%` }} />
@@ -1644,54 +1662,139 @@ export default function QuestionnaireDetailsPage() {
                   </span>
                 </span>
               ) : (
-                "Run Autofill"
+                primaryAction.label
               )}
             </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setIsExportModalOpen(true)}
-              disabled={!canExportQuestionnaire}
-              aria-label="Export questionnaire CSV"
-              title="Export questionnaire CSV"
-            >
-              Export
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              className="icon-btn"
-              onClick={() => setIsShortcutsOpen(true)}
-              aria-label="Show keyboard shortcuts"
-              title="Keyboard shortcuts (?)"
-            >
-              ?
-            </Button>
+
+            <details className="row-actions-menu topbar-more">
+              <summary className="btn btn-ghost row-actions-trigger" aria-label="Open queue actions menu">
+                More
+              </summary>
+              <div className="row-actions-dropdown" role="menu" aria-label="Queue actions">
+                {primaryAction.key !== "run-autofill" && canRunAutofill ? (
+                  <button
+                    type="button"
+                    className="row-actions-item"
+                    onClick={() => void runAutofill()}
+                    disabled={isRunningAutofill || isBulkApproving || isApprovingReusedExact}
+                  >
+                    {isRunningAutofill ? "Running Autofill..." : "Run Autofill"}
+                  </button>
+                ) : null}
+
+                {primaryAction.key !== "approve-reused" && canApproveAnswers ? (
+                  <button
+                    type="button"
+                    className="row-actions-item"
+                    onClick={() => void approveExactReusedQuestions()}
+                    disabled={
+                      isLoading ||
+                      isBulkApproving ||
+                      isApprovingReusedExact ||
+                      isRunningAutofill ||
+                      exactReusedEligibleQuestions.length === 0
+                    }
+                  >
+                    Approve Reused (Exact) ({exactReusedEligibleQuestions.length})
+                  </button>
+                ) : null}
+
+                {primaryAction.key !== "export" && canExportQuestionnaire ? (
+                  <button
+                    type="button"
+                    className="row-actions-item"
+                    onClick={() => setIsExportModalOpen(true)}
+                  >
+                    Export...
+                  </button>
+                ) : null}
+
+                <button
+                  type="button"
+                  className="row-actions-item"
+                  onClick={() => setIsBulkConfirmOpen(true)}
+                  disabled={
+                    isLoading ||
+                    isBulkApproving ||
+                    isApprovingReusedExact ||
+                    bulkEligibleQuestions.length === 0 ||
+                    !canApproveAnswers
+                  }
+                >
+                  Approve Visible ({bulkEligibleQuestions.length})
+                </button>
+
+                {primaryAction.key !== "refresh" ? (
+                  <button
+                    type="button"
+                    className="row-actions-item"
+                    onClick={() => void loadDetails()}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? "Refreshing..." : "Refresh"}
+                  </button>
+                ) : null}
+
+                {canDeleteQuestionnaire ? (
+                  <button type="button" className="row-actions-item danger" onClick={() => void deleteQuestionnaire()}>
+                    Delete questionnaire
+                  </button>
+                ) : null}
+              </div>
+            </details>
           </div>
-        </div>
-        <div className="trust-bar-metrics">
+        </header>
+      </Card>
+
+      <Card className="trust-bar queue-metrics-strip">
+        <div className="trust-bar-metrics queue-metrics-top">
           <Badge tone="approved">Approved {statusCounts.APPROVED}</Badge>
           <Badge tone="review">Needs review {statusCounts.NEEDS_REVIEW}</Badge>
           <Badge tone="draft">Draft {statusCounts.DRAFT}</Badge>
           <Badge tone="notfound">Not found {statusCounts.NOT_FOUND}</Badge>
-            <div className="trust-progress">
-            <div className="small muted" id="approved-progress-label">
-              Approved progress
-            </div>
-            <div
-              className="trust-progress-track"
-              role="progressbar"
-              aria-label="Approved progress"
-              aria-labelledby="approved-progress-label"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={approvedProgress}
-              aria-valuetext={`${approvedProgress}% approved`}
-            >
-              <div className="trust-progress-fill" style={{ width: `${approvedProgress}%` }} />
-            </div>
-            <div className="small">{approvedProgress}% approved</div>
+          <Badge tone="draft">Reused {statusCounts.REUSED}</Badge>
+        </div>
+        <div className="queue-metrics-controls">
+          <nav className="toolbar-row queue-filter-row" aria-label="Queue filters">
+            {FILTER_OPTIONS.map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                className={cx("chip", filter === key && "active")}
+                onClick={() => setFilter(key)}
+                title={`Filter by ${label.toLowerCase()}`}
+                aria-label={`Filter questions by ${label.toLowerCase()}`}
+              >
+                {label} ({statusCounts[key]})
+              </button>
+            ))}
+          </nav>
+          <div className="queue-search-wrap">
+            <TextInput
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              placeholder="Search question text or answer preview"
+              aria-label="Search question text or answer preview"
+            />
           </div>
+        </div>
+        <div className="trust-progress">
+          <div className="small muted" id="approved-progress-label">
+            Approved progress
+          </div>
+          <div
+            className="trust-progress-track"
+            role="progressbar"
+            aria-label="Approved progress"
+            aria-labelledby="approved-progress-label"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={approvedProgress}
+            aria-valuetext={`${approvedProgress}% approved`}
+          >
+            <div className="trust-progress-fill" style={{ width: `${approvedProgress}%` }} />
+          </div>
+          <div className="small">{approvedProgress}% approved</div>
         </div>
       </Card>
 
@@ -1746,34 +1849,15 @@ export default function QuestionnaireDetailsPage() {
         <div className="workbench-grid" data-testid="questionnaire-workbench">
         <Card className="sticky-panel" data-testid="question-rail-panel">
           <div className="card-title-row">
-            <h3 style={{ margin: 0 }}>Questions</h3>
+            <h3 style={{ margin: 0 }}>Queue</h3>
             <Badge tone="draft">{filteredQuestionIds.length} visible</Badge>
           </div>
 
-          <TextInput
-            value={searchText}
-            onChange={(event) => setSearchText(event.target.value)}
-            placeholder="Search question text or answer"
-          />
-
-          <div className="toolbar-row" style={{ marginTop: 10 }}>
-            {FILTER_OPTIONS.map(({ key, label }) => (
-              <button
-                key={key}
-                type="button"
-                className={cx("chip", filter === key && "active")}
-                onClick={() => setFilter(key)}
-                title={`Filter by ${label.toLowerCase()}`}
-                aria-label={`Filter questions by ${label.toLowerCase()}`}
-              >
-                {label} ({statusCounts[key]})
-              </button>
-            ))}
-          </div>
-
-          <div className="question-list" style={{ marginTop: 12 }}>
+          <div className="question-list" style={{ marginTop: 12 }} role="listbox" aria-label="Question queue">
             {railItems.length === 0 ? (
-              <div className="muted small">No questions match the current filters.</div>
+              <div className="muted small" role="option" aria-disabled="true" aria-selected="false">
+                No questions match the current filters.
+              </div>
             ) : (
               railItems.map((item) => (
                 <QuestionRailItemButton
@@ -1986,7 +2070,7 @@ export default function QuestionnaireDetailsPage() {
               </Card>
             </>
           ) : (
-            <div className="muted">Select a question from the left panel.</div>
+            <div className="muted">No question selected. Adjust filters or search to continue review.</div>
           )}
         </Card>
 
@@ -2118,30 +2202,6 @@ export default function QuestionnaireDetailsPage() {
                 disabled={isBulkApproving || isApprovingReusedExact}
               >
                 Cancel
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {isShortcutsOpen ? (
-        <div className="overlay-modal" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
-          <div className="overlay-modal-card" ref={shortcutsModalRef} tabIndex={-1}>
-            <h3 style={{ marginTop: 0 }}>Keyboard Shortcuts</h3>
-            <div className="shortcut-grid">
-              <div><kbd>J</kbd> Next question</div>
-              <div><kbd>K</kbd> Previous question</div>
-              <div><kbd>A</kbd> Approve selected</div>
-              <div><kbd>R</kbd> Mark needs review</div>
-              <div><kbd>U</kbd> Unapprove selected</div>
-              <div><kbd>C</kbd> Copy answer</div>
-              <div><kbd>E</kbd> Focus evidence panel</div>
-              <div><kbd>?</kbd> Open shortcuts</div>
-            </div>
-            <p className="small muted">Shortcuts are ignored while typing in inputs/text areas.</p>
-            <div className="toolbar-row">
-              <Button type="button" variant="primary" onClick={() => setIsShortcutsOpen(false)}>
-                Close
               </Button>
             </div>
           </div>

@@ -432,10 +432,17 @@ Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now expl
     - `/questionnaires/[id]` uses normalized question state (`questionsById` + ordered IDs) and supports `Not found` filter/count alongside review statuses
     - approval actions are server-persisted and reconciled after each mutation (`approve`, `needs review/draft`, `unapprove`, `edit approved`)
     - approved answer is primary when present, with a read-only generated-vs-approved comparison toggle
-    - review-velocity layer on `/questionnaires/[id]`:
-      - sticky Trust Bar with review status counts + approved progress
-      - bulk action rule: `Approve Visible` is scoped to current filter/search and only approves rows with non-NOT_FOUND answers, non-empty citations, and non-approved status
-      - keyboard shortcuts with help modal (`?`, `J/K`, `A`, `R`, `U`, `C`, `E`) disabled while typing in form fields
+    - Direction B PR1 queue-first layer on `/questionnaires/[id]`:
+      - top bar uses exactly one primary CTA (state-driven: `Run Autofill` -> `Approve Reused (Exact)` -> `Export`, with permission fallback)
+      - secondary/destructive actions moved under `More` overflow (including `Approve Visible`, `Refresh`, `Delete questionnaire`)
+      - sticky metrics strip includes counts (`Approved`, `Needs review`, `Draft`, `Not found`, `Reused`), approved progress, filters, and queue search
+      - queue list rows are preview-only (`status`, 2-line question preview, optional reuse badge, citations count) with no heavy inline actions
+      - single-row deterministic selection:
+        - initial load selects first visible queue row
+        - filter/search keeps current selection when visible; otherwise first visible row; `null` when no rows
+      - PR1 keyboard baseline:
+        - `ArrowUp` / `ArrowDown` move selection
+        - `Enter` toggles answer expand/collapse
       - loading skeletons shown for rail/main/evidence while questionnaire details are fetching
       - `Run Autofill` uses live progress UI in-button (`answered/total`) and polls questionnaire details during active runs so rail/answer/evidence refresh incrementally
     - evidence panel conventions:
