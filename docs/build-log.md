@@ -6,6 +6,14 @@ Current log of implemented MVP work (concise, execution-focused).
 
 - Phase 2: COMPLETE
 
+## 2026-03-04 - ui-dirB-01 lock Direction B spec
+
+- Locked Direction B implementation docs (no UI/backend code changes):
+  - Spec: [docs/ui-direction-b-spec.md](./ui-direction-b-spec.md)
+  - Acceptance: [docs/ui-direction-b-acceptance.md](./ui-direction-b-acceptance.md)
+  - Rollout plan: [docs/ui-direction-b-plan.md](./ui-direction-b-plan.md)
+- Build-log note: Locked Direction B spec + acceptance + plan.
+
 ## 2026-03-03 - phase4-05 org invites + members management
 
 - Added Prisma invite model and migration:
