@@ -1802,8 +1802,9 @@ export default function QuestionnaireDetailsPage() {
                 onClick={() => setFilter(key)}
                 title={`Filter by ${label.toLowerCase()}`}
                 aria-label={`Filter questions by ${label.toLowerCase()}`}
+                aria-pressed={filter === key}
               >
-                {label} ({statusCounts[key]})
+                {label}
               </button>
             ))}
           </nav>
