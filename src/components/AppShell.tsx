@@ -42,8 +42,8 @@ const ROLE_OPTIONS: Role[] = ["OWNER", "ADMIN", "REVIEWER", "VIEWER"];
 function getPageHeader(pathname: string): { title: string; subtitle: string } {
   if (pathname === "/") {
     return {
-      title: "Trust and Consistency Workspace",
-      subtitle: "Evidence-first autofill for security questionnaires."
+      title: "Workspace",
+      subtitle: "Evidence-first questionnaire automation."
     };
   }
 
@@ -96,6 +96,10 @@ function getPageHeader(pathname: string): { title: string; subtitle: string } {
 }
 
 function getPrimaryAction(pathname: string, role: Role | null): { href: string; label: string } | null {
+  if (pathname === "/") {
+    return null;
+  }
+
   if (pathname.startsWith("/documents")) {
     if (!role || !can(role, RbacAction.UPLOAD_DOCUMENTS)) {
       return null;
@@ -192,6 +196,7 @@ export function AppShell({ devMode, children }: AppShellProps) {
 
   const pageHeader = getPageHeader(pathname);
   const primaryAction = getPrimaryAction(pathname, authzState.role);
+  const showTopNavSearch = pathname !== "/";
 
   useFocusTrap({
     active: isMobileSidebarOpen,
@@ -390,14 +395,16 @@ export function AppShell({ devMode, children }: AppShellProps) {
               <span className="top-nav-sep">|</span>
               <span>{pageHeader.title}</span>
             </div>
-            <div className="top-nav-search">
-              <TextInput
-                type="search"
-                readOnly
-                placeholder="Search questionnaires, evidence, citations (coming soon)"
-                aria-label="Global search (coming soon)"
-              />
-            </div>
+            {showTopNavSearch ? (
+              <div className="top-nav-search">
+                <TextInput
+                  type="search"
+                  readOnly
+                  placeholder="Search questionnaires, evidence, citations (coming soon)"
+                  aria-label="Global search (coming soon)"
+                />
+              </div>
+            ) : null}
             {primaryAction ? (
               <Link href={primaryAction.href} className="btn btn-primary" aria-label={primaryAction.label}>
                 {primaryAction.label}

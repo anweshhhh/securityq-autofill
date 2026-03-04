@@ -1217,3 +1217,16 @@ Current log of implemented MVP work (concise, execution-focused).
   - removed duplicate display-only status counter row
   - kept a single clickable filter row with counts (`All`, `Draft`, `Approved`, `Needs review`, `Not found`, `Reused`)
   - preserved filter logic and search/progress placement
+
+## 2026-03-04 - ui-home-01-dashboard-launchpad
+
+- Refactored Home (`/`) into a workflow-first dashboard launchpad:
+  - removed marketing-heavy hero treatment in favor of an operational layout
+  - added slim workspace header with single primary CTA (`Open Questionnaires`)
+  - added quick actions (continue review/import/documents/invite role-gated)
+  - added operational snapshot cards backed by real endpoint data only
+  - added recent questionnaires list with `Open` + optional `Run Autofill`
+  - kept first-run onboarding steps conditional on true-empty state (0 docs + 0 questionnaires)
+- Shell cleanup on Home route:
+  - removed duplicate top-nav primary CTA on `/`
+  - hid non-functional global search input on `/`

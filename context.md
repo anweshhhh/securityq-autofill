@@ -487,6 +487,14 @@ Pages:
 - `/accept-invite`
 - `/ask` (DEV_MODE-gated)
 
+Home route (`/`) behavior:
+- workflow-first dashboard launchpad (no marketing hero)
+- single primary CTA: `Open Questionnaires`
+- quick actions: continue review/import/manage documents/invite (invite is RBAC-gated)
+- operational snapshot renders only endpoint-backed metrics (no fabricated numbers)
+- recent questionnaires panel uses `GET /api/questionnaires` with row actions (`Open`, optional `Run Autofill`)
+- first-run onboarding steps are shown only when both documents and questionnaires are truly empty
+
 API:
 - `POST /api/dev/role` (DEV tools; `DEV_MODE=true` and non-production only)
 - `GET /api/org/members`
