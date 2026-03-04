@@ -1849,72 +1849,57 @@ export default function QuestionnaireDetailsPage() {
         </div>
       ) : null}
 
-      {showLoadingSkeletons ? (
-        <div className="workbench-grid">
-          <Card className="sticky-panel">
-            <div className="skeleton-line skeleton-title" />
-            <div className="skeleton-line" />
-            <div className="skeleton-list">
-              {Array.from({ length: 8 }).map((_, index) => (
-                <div key={`rail-skeleton-${index}`} className="skeleton-block" />
-              ))}
-            </div>
-          </Card>
-          <Card>
-            <div className="skeleton-line skeleton-title" />
-            <div className="skeleton-line" />
-            <div className="skeleton-line" />
-            <div className="skeleton-block skeleton-answer" />
-            <div className="skeleton-block skeleton-answer" />
-          </Card>
-          <Card className="sticky-panel">
-            <div className="skeleton-line skeleton-title" />
-            <div className="skeleton-block skeleton-answer" />
-            <div className="skeleton-block skeleton-answer" />
-          </Card>
-        </div>
-      ) : (
-        <div className="workbench-grid" data-testid="questionnaire-workbench">
-        <Card className="sticky-panel" data-testid="question-rail-panel">
-          <div className="card-title-row">
-            <h3 style={{ margin: 0 }}>Queue</h3>
-            <Badge tone="draft">{filteredQuestionIds.length} visible</Badge>
-          </div>
-
-          <div className="question-list" style={{ marginTop: 12 }} role="listbox" aria-label="Question queue">
-            {railItems.length === 0 ? (
-              <div className="muted small" role="option" aria-disabled="true" aria-selected="false">
-                No questions match the current filters.
-              </div>
+      <div className="queue-primary-layout" data-testid="questionnaire-workbench">
+        <div data-testid="answer-main-panel">
+          <div data-testid="evidence-panel">
+            {showLoadingSkeletons ? (
+              <Card>
+                <div className="skeleton-line skeleton-title" />
+                <div className="skeleton-line" />
+                <div className="skeleton-list">
+                  {Array.from({ length: 8 }).map((_, index) => (
+                    <div key={`rail-skeleton-${index}`} className="skeleton-block" />
+                  ))}
+                </div>
+              </Card>
             ) : (
-              railItems.map((item) => (
-                <QuestionRailItemButton
-                  key={item.id}
-                  item={item}
-                  active={selectedQuestionId === item.id}
-                  onSelect={handleSelectQuestion}
-                  onRegisterRef={registerQueueRowRef}
-                />
-              ))
+              <Card data-testid="question-rail-panel">
+                <div className="card-title-row">
+                  <h3 style={{ margin: 0 }}>Queue</h3>
+                  <Badge tone="draft">{filteredQuestionIds.length} visible</Badge>
+                </div>
+
+                {!selectedQuestion && railItems.length > 0 ? (
+                  <div className="queue-selection-hint" role="status" aria-live="polite">
+                    <span className="queue-selection-hint-icon" aria-hidden="true">
+                      i
+                    </span>
+                    Select a question to review
+                  </div>
+                ) : null}
+
+                <div className="question-list" style={{ marginTop: 12 }} role="listbox" aria-label="Question queue">
+                  {railItems.length === 0 ? (
+                    <div className="muted small" role="option" aria-disabled="true" aria-selected="false">
+                      No questions match the current filters.
+                    </div>
+                  ) : (
+                    railItems.map((item) => (
+                      <QuestionRailItemButton
+                        key={item.id}
+                        item={item}
+                        active={selectedQuestionId === item.id}
+                        onSelect={handleSelectQuestion}
+                        onRegisterRef={registerQueueRowRef}
+                      />
+                    ))
+                  )}
+                </div>
+              </Card>
             )}
           </div>
-        </Card>
-
-        <Card data-testid="answer-main-panel">
-          <h3 style={{ marginTop: 0 }}>Context Drawer</h3>
-          <p className="muted" style={{ marginBottom: 0 }}>
-            Select a queue row to open Answer, Evidence, and References in the contextual drawer.
-          </p>
-        </Card>
-
-        <Card className="workbench-evidence" data-testid="evidence-panel">
-          <h3 style={{ marginTop: 0 }}>Evidence View</h3>
-          <p className="muted" style={{ marginBottom: 0 }}>
-            Evidence details now live inside the drawer tabs to keep the queue primary.
-          </p>
-        </Card>
         </div>
-      )}
+      </div>
 
       {isContextOpen && selectedQuestion ? (
         <div className="context-overlay">

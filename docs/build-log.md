@@ -1200,3 +1200,13 @@ Current log of implemented MVP work (concise, execution-focused).
 - Validation:
   - `npm test` => PASS
   - `npm run build` => PASS
+
+## 2026-03-04 - ui-dirB-04-pr2-remove-blank-panels
+
+- Direction B PR2 cleanup on `/questionnaires/[id]`:
+  - removed the placeholder-only `Context Drawer` and `Evidence View` in-page cards
+  - queue is now the sole primary canvas section under the metrics strip (drawer remains contextual overlay/sheet)
+  - added a compact queue hint when no row is selected: "Select a question to review"
+- Scope notes:
+  - no backend/API/DB changes
+  - drawer open-on-select behavior unchanged
