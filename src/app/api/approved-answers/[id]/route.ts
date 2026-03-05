@@ -6,6 +6,10 @@ import { prisma } from "@/lib/prisma";
 import { buildQuestionTextMetadata } from "@/lib/questionText";
 import { getRequestContext } from "@/lib/requestContext";
 import { embeddingToVectorLiteral } from "@/lib/retrieval";
+import {
+  normalizeApprovalAnswerAndCitations,
+  syncApprovedAnswerEvidenceSnapshots
+} from "@/server/approvedAnswers/evidenceSnapshots";
 import { assertCan, RbacAction } from "@/server/rbac";
 
 type RouteContext = {
@@ -64,9 +68,9 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     const payload = (await request.json().catch(() => null)) as UpdateApprovedAnswerBody | null;
-    const answerText =
+    const answerTextCandidate =
       typeof payload?.answerText === "string" ? payload.answerText.trim() : existing.answerText;
-    const citationChunkIds =
+    const citationChunkIdsCandidate =
       payload?.citationChunkIds !== undefined
         ? normalizeCitationChunkIds(payload.citationChunkIds)
         : existing.citationChunkIds;
@@ -74,26 +78,17 @@ export async function PATCH(request: Request, context: RouteContext) {
     const approvedBy =
       typeof payload?.approvedBy === "string" ? payload.approvedBy.trim() || "system" : (existing.approvedBy ?? "system");
 
-    if (!answerText) {
-      throw new ApiRouteError({
-        status: 400,
-        code: "VALIDATION_ERROR",
-        message: "answerText must be non-empty."
-      });
-    }
-
-    if (citationChunkIds.length === 0) {
-      throw new ApiRouteError({
-        status: 400,
-        code: "VALIDATION_ERROR",
-        message: "citationChunkIds must be non-empty."
-      });
-    }
-
-    await assertChunkOwnership({
-      organizationId: ctx.orgId,
-      chunkIds: citationChunkIds
+    const normalizedApproval = normalizeApprovalAnswerAndCitations({
+      answerText: answerTextCandidate,
+      citationChunkIds: citationChunkIdsCandidate
     });
+
+    if (normalizedApproval.citationChunkIds.length > 0) {
+      await assertChunkOwnership({
+        organizationId: ctx.orgId,
+        chunkIds: normalizedApproval.citationChunkIds
+      });
+    }
     const questionMetadata = buildQuestionTextMetadata(existing.question.text);
     const questionEmbedding = await createEmbedding(existing.question.text);
 
@@ -105,8 +100,8 @@ export async function PATCH(request: Request, context: RouteContext) {
         data: {
           normalizedQuestionText: questionMetadata.normalizedQuestionText,
           questionTextHash: questionMetadata.questionTextHash,
-          answerText,
-          citationChunkIds,
+          answerText: normalizedApproval.answerText,
+          citationChunkIds: normalizedApproval.citationChunkIds,
           source: "MANUAL_EDIT",
           note,
           approvedBy
@@ -127,6 +122,13 @@ export async function PATCH(request: Request, context: RouteContext) {
         questionMetadata.questionTextHash,
         updated.id
       );
+
+      await syncApprovedAnswerEvidenceSnapshots({
+        db: tx,
+        organizationId: ctx.orgId,
+        approvedAnswerId: updated.id,
+        citationChunkIds: normalizedApproval.citationChunkIds
+      });
 
       await tx.question.update({
         where: {

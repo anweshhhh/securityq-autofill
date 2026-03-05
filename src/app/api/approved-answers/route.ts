@@ -11,7 +11,10 @@ import {
 } from "@/lib/approvalValidation";
 import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/requestContext";
-import { NOT_FOUND_TEXT } from "@/shared/answerTemplates";
+import {
+  normalizeApprovalAnswerAndCitations,
+  syncApprovedAnswerEvidenceSnapshots
+} from "@/server/approvedAnswers/evidenceSnapshots";
 import { assertCan, RbacAction } from "@/server/rbac";
 
 type CreateApprovedAnswerBody = {
@@ -63,31 +66,22 @@ export async function POST(request: Request) {
 
     const answerTextCandidate =
       typeof payload?.answerText === "string" ? payload.answerText.trim() : (question.answer ?? "").trim();
-    if (!answerTextCandidate || answerTextCandidate === NOT_FOUND_TEXT) {
-      throw new ApiRouteError({
-        status: 400,
-        code: "VALIDATION_ERROR",
-        message: "Cannot approve an empty or not-found answer."
-      });
-    }
-
     const citationChunkIdsCandidate =
       payload?.citationChunkIds !== undefined
         ? normalizeCitationChunkIds(payload.citationChunkIds)
         : extractCitationChunkIds(question.citations);
 
-    if (citationChunkIdsCandidate.length === 0) {
-      throw new ApiRouteError({
-        status: 400,
-        code: "VALIDATION_ERROR",
-        message: "citationChunkIds must be non-empty."
+    const normalizedApproval = normalizeApprovalAnswerAndCitations({
+      answerText: answerTextCandidate,
+      citationChunkIds: citationChunkIdsCandidate
+    });
+
+    if (normalizedApproval.citationChunkIds.length > 0) {
+      await assertChunkOwnership({
+        organizationId: ctx.orgId,
+        chunkIds: normalizedApproval.citationChunkIds
       });
     }
-
-    await assertChunkOwnership({
-      organizationId: ctx.orgId,
-      chunkIds: citationChunkIdsCandidate
-    });
 
     const source =
       payload?.source === "MANUAL_EDIT" || payload?.source === "GENERATED"
@@ -108,8 +102,8 @@ export async function POST(request: Request) {
           questionId: question.id,
           normalizedQuestionText: questionMetadata.normalizedQuestionText,
           questionTextHash: questionMetadata.questionTextHash,
-          answerText: answerTextCandidate,
-          citationChunkIds: citationChunkIdsCandidate,
+          answerText: normalizedApproval.answerText,
+          citationChunkIds: normalizedApproval.citationChunkIds,
           source,
           approvedBy,
           note
@@ -117,8 +111,8 @@ export async function POST(request: Request) {
         update: {
           normalizedQuestionText: questionMetadata.normalizedQuestionText,
           questionTextHash: questionMetadata.questionTextHash,
-          answerText: answerTextCandidate,
-          citationChunkIds: citationChunkIdsCandidate,
+          answerText: normalizedApproval.answerText,
+          citationChunkIds: normalizedApproval.citationChunkIds,
           source,
           approvedBy,
           note
@@ -139,6 +133,13 @@ export async function POST(request: Request) {
         questionMetadata.questionTextHash,
         upserted.id
       );
+
+      await syncApprovedAnswerEvidenceSnapshots({
+        db: tx,
+        organizationId: ctx.orgId,
+        approvedAnswerId: upserted.id,
+        citationChunkIds: normalizedApproval.citationChunkIds
+      });
 
       await tx.question.update({
         where: {

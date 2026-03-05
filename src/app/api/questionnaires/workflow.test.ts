@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { MembershipRole } from "@prisma/client";
 import { parseCsvText } from "@/lib/csv";
 import { prisma } from "@/lib/prisma";
+import { computeEvidenceFingerprint } from "@/server/evidenceFingerprint";
 
 const {
   answerQuestionMock,
@@ -292,7 +293,8 @@ async function seedEvidenceChunksForOrganization(organizationId: string) {
     data: {
       documentId: documentA.id,
       chunkIndex: 0,
-      content: "External traffic requires TLS 1.2 or higher."
+      content: "External traffic requires TLS 1.2 or higher.",
+      evidenceFingerprint: computeEvidenceFingerprint("External traffic requires TLS 1.2 or higher.")
     }
   });
 
@@ -300,7 +302,10 @@ async function seedEvidenceChunksForOrganization(organizationId: string) {
     data: {
       documentId: documentA.id,
       chunkIndex: 1,
-      content: "Single sign-on is supported for workforce identity providers."
+      content: "Single sign-on is supported for workforce identity providers.",
+      evidenceFingerprint: computeEvidenceFingerprint(
+        "Single sign-on is supported for workforce identity providers."
+      )
     }
   });
 
@@ -308,7 +313,8 @@ async function seedEvidenceChunksForOrganization(organizationId: string) {
     data: {
       documentId: documentB.id,
       chunkIndex: 0,
-      content: "Encryption at rest is enabled."
+      content: "Encryption at rest is enabled.",
+      evidenceFingerprint: computeEvidenceFingerprint("Encryption at rest is enabled.")
     }
   });
 
@@ -1290,7 +1296,8 @@ describe.sequential("questionnaire workflow integration", () => {
       data: {
         documentId: foreignDocument.id,
         chunkIndex: 0,
-        content: "Foreign organization evidence."
+        content: "Foreign organization evidence.",
+        evidenceFingerprint: computeEvidenceFingerprint("Foreign organization evidence.")
       }
     });
 

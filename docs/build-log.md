@@ -1423,3 +1423,31 @@ Current log of implemented MVP work (concise, execution-focused).
   - `npm run dev -- --port 4010` => PASS
   - `/questionnaires` and `/questionnaires/:id` load in browser shell context
   - full authenticated UI review of NOT_FOUND/PARTIAL/FOUND answer cards was not completed in this shell session because pages remained in signed-out state (`Sign in` prompt visible)
+
+## 2026-03-05 - approval-evidence-snapshot-01
+
+- Added approval evidence snapshot + staleness detection foundations:
+  - `DocumentChunk.evidenceFingerprint` (SHA-256 of normalized chunk text at ingestion time)
+  - new `ApprovedAnswerEvidence` snapshot model storing `(approvedAnswerId, chunkId, fingerprintAtApproval)`
+- Approval write paths now sync snapshots transactionally:
+  - `POST /api/approved-answers`
+  - `PATCH /api/approved-answers/:id`
+  - snapshots are upserted for cited chunks and removed when citations are removed
+- Reuse safety (trust-first):
+  - added `isApprovedAnswerStale(...)` on-demand staleness check
+  - stale approvals are filtered out in approved-answer reuse matching
+  - stale approvals are also skipped in `POST /api/questionnaires/:id/approve-reused` (exact-only bulk approve)
+- Added deterministic helper + tests:
+  - `src/server/evidenceFingerprint.ts`
+  - `src/server/approvedAnswers/staleness.test.ts` covering:
+    - snapshot persistence with expected fingerprint
+    - staleness after cited-chunk drift
+    - stale approvals excluded from reuse candidates
+- Commands run:
+  - `npx prisma migrate deploy` => PASS (applied `20260305165000_approval_evidence_snapshot`)
+  - `npm test` => PASS (24 passed test files, 1 skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run dev -- --port 4010` => PASS (manual route load checks)
+- Manual smoke/auth notes:
+  - `/documents`, `/questionnaires`, `/settings/members` returned 200 in dev shell route checks
+  - authenticated end-to-end reuse toggle test could not be completed in this shell run because no signed-in browser session was available

@@ -149,13 +149,15 @@ model Document {
 }
 
 model DocumentChunk {
-  id         String   @id @default(cuid())
-  documentId String
-  document   Document @relation(fields: [documentId], references: [id])
-  chunkIndex Int
-  content    String
-  embedding  Unsupported("vector(1536)")?
-  createdAt  DateTime @default(now())
+  id                  String                   @id @default(cuid())
+  documentId          String
+  document            Document                 @relation(fields: [documentId], references: [id])
+  chunkIndex          Int
+  content             String
+  evidenceFingerprint String
+  embedding           Unsupported("vector(1536)")?
+  createdAt           DateTime                 @default(now())
+  approvedEvidence    ApprovedAnswerEvidence[]
 
   @@unique([documentId, chunkIndex])
 }
@@ -196,23 +198,38 @@ model Question {
 }
 
 model ApprovedAnswer {
-  id             String               @id @default(cuid())
-  organizationId String
-  organization   Organization         @relation(fields: [organizationId], references: [id])
+  id                     String                   @id @default(cuid())
+  organizationId         String
+  organization           Organization             @relation(fields: [organizationId], references: [id])
   /// TODO(mvp-followup): decouple approvals from strict questionId binding so approved answers can be reused across semantically equivalent questions with evidence checks.
-  questionId      String               @unique
-  question        Question             @relation(fields: [questionId], references: [id])
-  normalizedQuestionText String        @default("")
-  questionTextHash       String        @default("")
+  questionId             String                   @unique
+  question               Question                 @relation(fields: [questionId], references: [id])
+  normalizedQuestionText String                   @default("")
+  questionTextHash       String                   @default("")
   questionEmbedding      Unsupported("vector(1536)")?
-  answerText      String
-  citationChunkIds String[]
-  source          ApprovedAnswerSource
-  approvedBy      String?              @default("system")
-  note            String?
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  answerText             String
+  citationChunkIds       String[]
+  source                 ApprovedAnswerSource
+  approvedBy             String?                  @default("system")
+  note                   String?
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  evidenceSnapshots      ApprovedAnswerEvidence[]
 
   @@index([organizationId, questionTextHash])
   @@index([organizationId, normalizedQuestionText])
+}
+
+model ApprovedAnswerEvidence {
+  id                   String         @id @default(cuid())
+  approvedAnswerId     String
+  approvedAnswer       ApprovedAnswer @relation(fields: [approvedAnswerId], references: [id], onDelete: Cascade)
+  chunkId              String
+  chunk                DocumentChunk  @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  fingerprintAtApproval String
+  createdAt            DateTime       @default(now())
+
+  @@unique([approvedAnswerId, chunkId])
+  @@index([approvedAnswerId])
+  @@index([chunkId])
 }

@@ -2,6 +2,7 @@ import { createEmbedding } from "@/lib/openai";
 import { prisma } from "@/lib/prisma";
 import { embeddingToVectorLiteral } from "@/lib/retrieval";
 import { NOT_FOUND_TEXT } from "@/shared/answerTemplates";
+import { isApprovedAnswerStale } from "@/server/approvedAnswers/staleness";
 import {
   buildQuestionTextMetadata,
   questionTextNearExactSimilarity
@@ -147,9 +148,14 @@ async function resolveBestCandidate(params: {
   candidates: ApprovedAnswerCandidate[];
   matchType: ReuseMatchType;
   citationResolver: CitationResolver;
+  isStale: (approvedAnswerId: string) => Promise<boolean>;
 }): Promise<ReusedApprovedAnswer | null> {
   for (const candidate of params.candidates) {
     if (!isReusableAnswerText(candidate.answerText)) {
+      continue;
+    }
+
+    if (await params.isStale(candidate.id)) {
       continue;
     }
 
@@ -187,6 +193,20 @@ export async function createApprovedAnswerReuseMatcher(params: {
   });
   const citationResolver = await createCitationResolver(params.organizationId);
   const candidateById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+  const staleByApprovedAnswerId = new Map<string, Promise<boolean>>();
+
+  const isCandidateStale = (approvedAnswerId: string): Promise<boolean> => {
+    const cached = staleByApprovedAnswerId.get(approvedAnswerId);
+    if (cached) {
+      return cached;
+    }
+
+    const pending = isApprovedAnswerStale(approvedAnswerId, {
+      orgId: params.organizationId
+    });
+    staleByApprovedAnswerId.set(approvedAnswerId, pending);
+    return pending;
+  };
 
   const findForQuestion = async (questionText: string): Promise<ReusedApprovedAnswer | null> => {
     if (candidates.length === 0) {
@@ -209,7 +229,8 @@ export async function createApprovedAnswerReuseMatcher(params: {
     const exactMatch = await resolveBestCandidate({
       candidates: exactCandidates,
       matchType: "exact",
-      citationResolver
+      citationResolver,
+      isStale: isCandidateStale
     });
     if (exactMatch) {
       return exactMatch;
@@ -233,7 +254,8 @@ export async function createApprovedAnswerReuseMatcher(params: {
     const nearMatch = await resolveBestCandidate({
       candidates: nearCandidates,
       matchType: "near_exact",
-      citationResolver
+      citationResolver,
+      isStale: isCandidateStale
     });
     if (nearMatch) {
       return nearMatch;
@@ -264,7 +286,8 @@ export async function createApprovedAnswerReuseMatcher(params: {
     return resolveBestCandidate({
       candidates: semanticCandidates,
       matchType: "semantic",
-      citationResolver
+      citationResolver,
+      isStale: isCandidateStale
     });
   };
 

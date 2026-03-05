@@ -4,6 +4,7 @@ import { toApiErrorResponse } from "@/lib/apiResponse";
 import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/requestContext";
 import { NOT_FOUND_TEXT } from "@/shared/answerTemplates";
+import { isApprovedAnswerStale } from "@/server/approvedAnswers/staleness";
 import { assertCan, RbacAction } from "@/server/rbac";
 
 type RouteContext = {
@@ -69,15 +70,39 @@ export async function POST(request: Request, context: RouteContext) {
         id: true,
         answer: true,
         citations: true,
-        reviewStatus: true
+        reviewStatus: true,
+        reusedFromApprovedAnswerId: true
       }
     });
 
     const approvableCandidates: Array<{ id: string; citationChunkIds: string[]; alreadyApproved: boolean }> = [];
     let skippedNotFoundOrEmpty = 0;
     let skippedInvalidCitations = 0;
+    let skippedStale = 0;
+    const staleByApprovedAnswerId = new Map<string, Promise<boolean>>();
 
     for (const question of exactReusedQuestions) {
+      const reusedFromApprovedAnswerId = question.reusedFromApprovedAnswerId;
+      if (!reusedFromApprovedAnswerId) {
+        skippedInvalidCitations += 1;
+        continue;
+      }
+
+      const staleCheck = staleByApprovedAnswerId.get(reusedFromApprovedAnswerId);
+      const isStale =
+        staleCheck ??
+        isApprovedAnswerStale(reusedFromApprovedAnswerId, {
+          orgId: ctx.orgId
+        });
+      if (!staleByApprovedAnswerId.has(reusedFromApprovedAnswerId)) {
+        staleByApprovedAnswerId.set(reusedFromApprovedAnswerId, isStale);
+      }
+
+      if (await isStale) {
+        skippedStale += 1;
+        continue;
+      }
+
       const answerText = (question.answer ?? "").trim();
       if (!answerText || answerText === NOT_FOUND_TEXT) {
         skippedNotFoundOrEmpty += 1;
@@ -155,9 +180,10 @@ export async function POST(request: Request, context: RouteContext) {
       exactReusedCount: exactReusedQuestions.length,
       approvedCount: questionIdsToApprove.length,
       alreadyApprovedCount,
-      skippedCount: skippedNotFoundOrEmpty + skippedInvalidCitations,
+      skippedCount: skippedNotFoundOrEmpty + skippedInvalidCitations + skippedStale,
       skippedNotFoundOrEmpty,
-      skippedInvalidCitations
+      skippedInvalidCitations,
+      skippedStale
     });
   } catch (error) {
     return toApiErrorResponse(error, "Failed to approve reused answers.");

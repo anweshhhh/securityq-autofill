@@ -7,6 +7,7 @@ import { GET as questionnaireExportRoute } from "@/app/api/questionnaires/[id]/e
 import { POST as questionnaireAutofillRoute } from "@/app/api/questionnaires/[id]/autofill/route";
 import { POST as questionnaireImportRoute } from "@/app/api/questionnaires/import/route";
 import { prisma } from "@/lib/prisma";
+import { computeEvidenceFingerprint } from "@/server/evidenceFingerprint";
 import { setActiveOrgForUser } from "@/test/orgContextTestUtils";
 
 const {
@@ -146,7 +147,10 @@ async function seedQuestionnaireWithCitation(orgId: string) {
     data: {
       documentId: document.id,
       chunkIndex: 0,
-      content: "External traffic requires TLS 1.2 or higher. MFA is required for administrators."
+      content: "External traffic requires TLS 1.2 or higher. MFA is required for administrators.",
+      evidenceFingerprint: computeEvidenceFingerprint(
+        "External traffic requires TLS 1.2 or higher. MFA is required for administrators."
+      )
     }
   });
 

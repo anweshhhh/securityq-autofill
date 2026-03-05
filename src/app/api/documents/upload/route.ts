@@ -4,6 +4,7 @@ import { chunkText } from "@/lib/chunker";
 import { extractText, inferMimeType, isSupportedTextFile } from "@/lib/extractText";
 import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/requestContext";
+import { computeEvidenceFingerprint } from "@/server/evidenceFingerprint";
 import { assertCan, RbacAction } from "@/server/rbac";
 
 export const runtime = "nodejs";
@@ -120,7 +121,8 @@ export async function POST(request: Request) {
         data: chunks.map((chunk) => ({
           documentId: document.id,
           chunkIndex: chunk.chunkIndex,
-          content: chunk.content
+          content: chunk.content,
+          evidenceFingerprint: computeEvidenceFingerprint(chunk.content)
         }))
       }),
       prisma.document.update({

@@ -23,12 +23,14 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 - NOT_FOUND response is exact: `Not found in provided documents.` with empty citations
 - PARTIAL response is exact: `Not specified in provided documents.` when relevant evidence exists but specifics are missing
 - Canonical templates are centralized in `src/shared/answerTemplates.ts` and enforced at final emission via `canonicalizeAnswerOutput(...)` in `src/server/answerEngine.ts`
+- Approved answers persist evidence snapshots (cited chunk fingerprints) at approval time
+- Stale approvals (evidence fingerprint drift or missing cited chunks) are never reused for autofill/reuse flows
 - No doc-template-specific keyword/canned-answer logic in retrieval/answer path
 
 ## 4) Current Architecture
 
 - Stack: Next.js App Router + TypeScript + Prisma + Postgres (`pgvector`)
-- Core Prisma models: `User`, `Account`, `Session`, `VerificationToken`, `Organization`, `Membership`, `Document`, `DocumentChunk`, `Questionnaire`, `Question`, `ApprovedAnswer`
+- Core Prisma models: `User`, `Account`, `Session`, `VerificationToken`, `Organization`, `Membership`, `Document`, `DocumentChunk`, `Questionnaire`, `Question`, `ApprovedAnswer`, `ApprovedAnswerEvidence`
 - Shared answering pipeline in `src/server/answerEngine.ts` used by:
   - `POST /api/questions/answer`
   - `POST /api/questionnaires/:id/autofill`
