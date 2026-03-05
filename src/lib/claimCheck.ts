@@ -1,4 +1,6 @@
-export const NOT_SPECIFIED_RESPONSE_TEXT = "Not specified in provided documents.";
+import { PARTIAL_TEXT } from "@/shared/answerTemplates";
+
+export const NOT_SPECIFIED_RESPONSE_TEXT = PARTIAL_TEXT;
 
 const STOPWORDS = new Set([
   "about",

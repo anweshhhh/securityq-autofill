@@ -11,9 +11,8 @@ import {
 } from "@/lib/approvalValidation";
 import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/requestContext";
+import { NOT_FOUND_TEXT } from "@/shared/answerTemplates";
 import { assertCan, RbacAction } from "@/server/rbac";
-
-const NOT_FOUND_ANSWER = "Not found in provided documents.";
 
 type CreateApprovedAnswerBody = {
   questionId?: unknown;
@@ -64,7 +63,7 @@ export async function POST(request: Request) {
 
     const answerTextCandidate =
       typeof payload?.answerText === "string" ? payload.answerText.trim() : (question.answer ?? "").trim();
-    if (!answerTextCandidate || answerTextCandidate === NOT_FOUND_ANSWER) {
+    if (!answerTextCandidate || answerTextCandidate === NOT_FOUND_TEXT) {
       throw new ApiRouteError({
         status: 400,
         code: "VALIDATION_ERROR",

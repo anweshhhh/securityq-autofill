@@ -1,4 +1,4 @@
-import { NOT_SPECIFIED_RESPONSE_TEXT, applyClaimCheckGuardrails } from "@/lib/claimCheck";
+import { applyClaimCheckGuardrails } from "@/lib/claimCheck";
 import {
   createEmbedding,
   generateEvidenceSufficiency,
@@ -12,6 +12,7 @@ import {
   retrieveTopChunks,
   type RetrievedChunk
 } from "@/lib/retrieval";
+import { canonicalizeAnswerOutput, NOT_FOUND_TEXT, PARTIAL_TEXT } from "@/shared/answerTemplates";
 import { sanitizeExtractedText } from "@/lib/textNormalization";
 
 export type Citation = {
@@ -68,9 +69,8 @@ const VECTOR_WEIGHT = 0.7;
 const LEXICAL_WEIGHT = 0.3;
 const MIN_TOP_SIMILARITY = 0.2;
 const MIN_TOKEN_LENGTH = 4;
-const NOT_FOUND_TEXT = "Not found in provided documents.";
-const NORMALIZED_NOT_FOUND_TEXT = normalizeTemplateText(NOT_FOUND_TEXT);
-const NORMALIZED_NOT_SPECIFIED_TEXT = normalizeTemplateText(NOT_SPECIFIED_RESPONSE_TEXT);
+const NORMALIZED_NOT_FOUND_TEXT = normalizeTemplateMatcherText(NOT_FOUND_TEXT);
+const NORMALIZED_NOT_SPECIFIED_TEXT = normalizeTemplateMatcherText(PARTIAL_TEXT);
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
 const FALSE_VALUES = new Set(["0", "false", "no", "off"]);
 
@@ -128,13 +128,37 @@ function createNotFoundResponse(reason: NotFoundReason): EvidenceAnswer {
   };
 }
 
-function withDebugInfo(answer: EvidenceAnswer, debugEnabled: boolean, debug: EvidenceDebugInfo): EvidenceAnswer {
-  if (!debugEnabled) {
-    return answer;
+function finalizeAnswerForEmission(answer: EvidenceAnswer): EvidenceAnswer {
+  const canonicalized = canonicalizeAnswerOutput({
+    text: answer.answer,
+    citations: answer.citations
+  });
+
+  if (canonicalized.kind === "NOT_FOUND") {
+    return {
+      ...answer,
+      answer: NOT_FOUND_TEXT,
+      citations: [],
+      confidence: "low",
+      needsReview: true
+    };
   }
 
   return {
     ...answer,
+    answer: canonicalized.text,
+    citations: canonicalized.citations as Citation[]
+  };
+}
+
+function withDebugInfo(answer: EvidenceAnswer, debugEnabled: boolean, debug: EvidenceDebugInfo): EvidenceAnswer {
+  const finalized = finalizeAnswerForEmission(answer);
+  if (!debugEnabled) {
+    return finalized;
+  }
+
+  return {
+    ...finalized,
     debug
   };
 }
@@ -153,7 +177,7 @@ function normalizeWhitespace(value: string): string {
   return sanitizeExtractedText(value).replace(/\s+/g, " ").trim();
 }
 
-function normalizeTemplateText(value: string): string {
+function normalizeTemplateMatcherText(value: string): string {
   return sanitizeExtractedText(value)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
@@ -161,12 +185,12 @@ function normalizeTemplateText(value: string): string {
 }
 
 function isNotFoundTemplateLike(value: string): boolean {
-  const normalized = normalizeTemplateText(value);
+  const normalized = normalizeTemplateMatcherText(value);
   return normalized.includes(NORMALIZED_NOT_FOUND_TEXT);
 }
 
 function isNotSpecifiedTemplateLike(value: string): boolean {
-  const normalized = normalizeTemplateText(value);
+  const normalized = normalizeTemplateMatcherText(value);
   return normalized.includes(NORMALIZED_NOT_SPECIFIED_TEXT);
 }
 
@@ -318,7 +342,7 @@ function validateAnswerFormat(answer: string): boolean {
     return false;
   }
 
-  if (trimmed === NOT_FOUND_TEXT || trimmed === NOT_SPECIFIED_RESPONSE_TEXT) {
+  if (trimmed === NOT_FOUND_TEXT || trimmed === PARTIAL_TEXT) {
     return true;
   }
 
@@ -335,9 +359,6 @@ export function normalizeAnswerOutput(params: {
   allRequirementsSatisfied: boolean;
 }): EvidenceAnswer {
   const citations = dedupeCitations(params.citations);
-  if (citations.length === 0) {
-    return NOT_FOUND_RESPONSE;
-  }
 
   const rawAnswer = sanitizeExtractedText(params.modelAnswer).trim();
   if (!rawAnswer || isNotFoundTemplateLike(rawAnswer)) {
@@ -380,16 +401,24 @@ export function normalizeAnswerOutput(params: {
     return NOT_FOUND_RESPONSE;
   }
 
+  const canonicalized = canonicalizeAnswerOutput({
+    text: answer,
+    citations
+  });
+  if (canonicalized.kind === "NOT_FOUND") {
+    return NOT_FOUND_RESPONSE;
+  }
+
   const needsReview =
     preserveGroundedDraftFromClobber ||
     claimCheck.needsReview ||
     params.modelHadFormatViolation ||
-    isNotSpecifiedTemplateLike(answer);
+    canonicalized.kind === "PARTIAL";
 
   let confidence = claimCheck.confidence;
   if (preserveGroundedDraftFromClobber) {
     confidence = "low";
-  } else if (isNotSpecifiedTemplateLike(answer)) {
+  } else if (canonicalized.kind === "PARTIAL") {
     confidence = "low";
   }
 
@@ -398,8 +427,8 @@ export function normalizeAnswerOutput(params: {
   }
 
   return {
-    answer,
-    citations,
+    answer: canonicalized.text,
+    citations: canonicalized.citations as Citation[],
     confidence,
     needsReview
   };
@@ -645,15 +674,18 @@ async function generateGroundedFallbackFromReranked(params: {
     groundedCitations: groundedDraft.citations,
     chosenById
   });
-  const answer = sanitizeExtractedText(groundedDraft.answer).trim();
+  const canonicalized = canonicalizeAnswerOutput({
+    text: sanitizeExtractedText(groundedDraft.answer).trim(),
+    citations
+  });
 
-  if (!answer || answer === NOT_FOUND_TEXT || citations.length === 0) {
+  if (canonicalized.kind === "NOT_FOUND") {
     return params.returnNotFound("NO_RELEVANT_EVIDENCE");
   }
 
   const fallbackAnswer: EvidenceAnswer = {
-    answer,
-    citations,
+    answer: canonicalized.text,
+    citations: canonicalized.citations as Citation[],
     confidence: "low",
     needsReview: true
   };
@@ -884,7 +916,7 @@ export async function answerQuestion(params: AnswerQuestionParams): Promise<Evid
 
     if (gateDecision.overall === "PARTIAL") {
       const partialAnswer: EvidenceAnswer = {
-        answer: NOT_SPECIFIED_RESPONSE_TEXT,
+        answer: PARTIAL_TEXT,
         citations,
         confidence: "low",
         needsReview: true
@@ -957,10 +989,6 @@ export async function answerQuestion(params: AnswerQuestionParams): Promise<Evid
 
   if (normalized.answer === NOT_FOUND_TEXT) {
     return returnNotFound("NO_RELEVANT_EVIDENCE");
-  }
-
-  if (isNotSpecifiedTemplateLike(normalized.answer)) {
-    normalized.answer = NOT_SPECIFIED_RESPONSE_TEXT;
   }
 
   debugInfo.finalCitations = normalized.citations.map((citation) => ({

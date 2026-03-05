@@ -3,9 +3,8 @@ import { ApiRouteError, extractCitationChunkIds } from "@/lib/approvalValidation
 import { toApiErrorResponse } from "@/lib/apiResponse";
 import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/requestContext";
+import { NOT_FOUND_TEXT } from "@/shared/answerTemplates";
 import { assertCan, RbacAction } from "@/server/rbac";
-
-const NOT_FOUND_ANSWER = "Not found in provided documents.";
 
 type RouteContext = {
   params: {
@@ -80,7 +79,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     for (const question of exactReusedQuestions) {
       const answerText = (question.answer ?? "").trim();
-      if (!answerText || answerText === NOT_FOUND_ANSWER) {
+      if (!answerText || answerText === NOT_FOUND_TEXT) {
         skippedNotFoundOrEmpty += 1;
         continue;
       }

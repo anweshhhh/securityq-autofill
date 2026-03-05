@@ -6,6 +6,7 @@ import { useAppAuthz } from "@/components/AppAuthzContext";
 import { ExportModal } from "@/components/ExportModal";
 import { Badge, Button, Card, TextArea, TextInput, cx } from "@/components/ui";
 import { useFocusTrap } from "@/lib/useFocusTrap";
+import { NOT_FOUND_TEXT } from "@/shared/answerTemplates";
 import { can, RbacAction } from "@/server/rbac";
 
 type Citation = {
@@ -117,7 +118,7 @@ type DocumentDetailsPayload = {
 
 type DrawerTab = "ANSWER" | "EVIDENCE" | "REFERENCES";
 
-const NOT_FOUND_ANSWER = "Not found in provided documents.";
+const NOT_FOUND_ANSWER = NOT_FOUND_TEXT;
 const FILTER_OPTIONS: Array<{ key: QuestionFilter; label: string }> = [
   { key: "ALL", label: "All" },
   { key: "DRAFT", label: "Draft" },

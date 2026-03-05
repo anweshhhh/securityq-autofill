@@ -1389,3 +1389,37 @@ Current log of implemented MVP work (concise, execution-focused).
   - DEV role switch endpoint allows self-role mutation when `DEV_MODE=true`
   - `/api/auth/[...nextauth]` is outside JSON-envelope policy (framework-managed exception)
   - unauthenticated UI-audit runs produce noisy 401 console/network signal
+
+## 2026-03-05 - canon-templates-01
+
+- Centralized answer templates + canonicalization contract:
+  - added `src/shared/answerTemplates.ts` with:
+    - `NOT_FOUND_TEXT`
+    - `PARTIAL_TEXT`
+    - `normalizeTemplateText(...)`
+    - `canonicalizeAnswerOutput(...)`
+- Enforced canonicalization at final answer emission in `src/server/answerEngine.ts`:
+  - all returned answers now pass through canonicalization right before emission
+  - extractor-invalid grounded fallback no longer relies on strict raw equality for NOT_FOUND detection; it now canonicalizes template-like variants before deciding output
+  - evidence-first invariant preserved at emission:
+    - non-NOT_FOUND with empty citations downgrades to canonical NOT_FOUND + empty citations
+- Replaced touched duplicate literals with shared constants in:
+  - `src/lib/claimCheck.ts`
+  - `src/lib/approvedAnswerReuse.ts`
+  - `src/app/api/approved-answers/route.ts`
+  - `src/app/api/questionnaires/[id]/approve-reused/route.ts`
+  - `src/app/questionnaires/[id]/page.tsx`
+- Regression coverage added:
+  - `src/shared/answerTemplates.test.ts`
+    - NOT_FOUND variant normalization + citation clearing
+    - PARTIAL variant normalization + citation preservation
+    - FOUND-without-citations downgrade to NOT_FOUND
+  - `src/server/answerEngine.test.ts`
+    - extractor-invalid fallback returns template-like NOT_FOUND variant -> canonical NOT_FOUND with empty citations
+- Validation:
+  - `npm test` => PASS (23 passed, 1 skipped test files)
+  - `npm run build` => PASS (with expected Next.js dynamic-server-usage warnings on auth-protected API routes)
+- Manual smoke (dev server):
+  - `npm run dev -- --port 4010` => PASS
+  - `/questionnaires` and `/questionnaires/:id` load in browser shell context
+  - full authenticated UI review of NOT_FOUND/PARTIAL/FOUND answer cards was not completed in this shell session because pages remained in signed-out state (`Sign in` prompt visible)

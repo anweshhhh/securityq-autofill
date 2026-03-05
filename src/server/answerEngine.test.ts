@@ -276,4 +276,51 @@ describe("MVP answer engine contract", () => {
     expect(result.needsReview).toBe(true);
     expect(result.confidence).toBe("low");
   });
+
+  it("canonicalizes template-like NOT_FOUND variants in extractor-invalid fallback output", async () => {
+    retrieveTopChunksMock.mockResolvedValue([
+      {
+        chunkId: "chunk-fallback-1",
+        docName: "Evidence Pack",
+        quotedSnippet: "No specific retention period is stated.",
+        fullContent: "No specific retention period is stated.",
+        similarity: 0.9
+      }
+    ]);
+
+    generateEvidenceSufficiencyMock.mockResolvedValue({
+      requirements: ["Specific retention period"],
+      extracted: [
+        {
+          requirement: "Specific retention period",
+          value: null,
+          supportingChunkIds: []
+        }
+      ],
+      overall: "NOT_FOUND",
+      hadShapeRepair: true,
+      extractorInvalid: true,
+      invalidReason: "NO_VALID_EXTRACTED_ITEMS"
+    });
+
+    generateGroundedAnswerMock.mockResolvedValue({
+      answer: "  not found in provided documents.  ",
+      citations: [
+        {
+          chunkId: "chunk-fallback-1",
+          quotedSnippet: "No specific retention period is stated."
+        }
+      ],
+      confidence: "high",
+      needsReview: false
+    });
+
+    const result = await answerQuestion({
+      orgId: "org-1",
+      questionText: "What is the specific retention period?"
+    });
+
+    expect(result.answer).toBe("Not found in provided documents.");
+    expect(result.citations).toEqual([]);
+  });
 });

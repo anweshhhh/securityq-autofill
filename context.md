@@ -22,6 +22,7 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 - FOUND answers require non-empty citations
 - NOT_FOUND response is exact: `Not found in provided documents.` with empty citations
 - PARTIAL response is exact: `Not specified in provided documents.` when relevant evidence exists but specifics are missing
+- Canonical templates are centralized in `src/shared/answerTemplates.ts` and enforced at final emission via `canonicalizeAnswerOutput(...)` in `src/server/answerEngine.ts`
 - No doc-template-specific keyword/canned-answer logic in retrieval/answer path
 
 ## 4) Current Architecture

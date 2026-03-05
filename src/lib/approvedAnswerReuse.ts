@@ -1,13 +1,12 @@
 import { createEmbedding } from "@/lib/openai";
 import { prisma } from "@/lib/prisma";
 import { embeddingToVectorLiteral } from "@/lib/retrieval";
+import { NOT_FOUND_TEXT } from "@/shared/answerTemplates";
 import {
   buildQuestionTextMetadata,
   questionTextNearExactSimilarity
 } from "@/lib/questionText";
 import { sanitizeExtractedText } from "@/lib/textNormalization";
-
-const NOT_FOUND_TEXT = "Not found in provided documents.";
 const NEAR_EXACT_MIN_SIMILARITY = 0.93;
 const SEMANTIC_MIN_SIMILARITY = 0.88;
 const MAX_SEMANTIC_CANDIDATES = 12;
