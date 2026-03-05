@@ -1330,3 +1330,40 @@ Current log of implemented MVP work (concise, execution-focused).
 - Scope:
   - no backend/API/DB changes
   - existing import/autofill/export/delete flows and RBAC behavior preserved
+
+## 2026-03-04 - ui-dirB-05-pr3-b3-throughput-and-keyboard
+
+- Direction B PR3 throughput + keyboard shortcuts on `/questionnaires/[id]`:
+  - added deterministic auto-advance after successful `Approve`, `Needs review`, and `Unapprove`
+    - uses current visible queue ordering under active filter/search
+    - moves to next row when available, otherwise previous row
+    - closes drawer and clears selection when no visible rows remain
+  - integrated `Approve reused (exact)` into the sticky metrics strip with live eligible-count label
+  - retained existing top-bar/overflow reuse approval path and success/error banner behavior
+- Keyboard contract implemented:
+  - `J` / `K` and `ArrowDown` / `ArrowUp`: next/previous queue row
+  - `Enter`: open drawer for selected row when closed (non-destructive when already open)
+  - `A`: approve selected row
+  - `R`: mark selected row as needs review
+  - `U`: unapprove selected row (when approved answer exists)
+  - `C`: copy selected answer
+  - `/`: focus queue search
+  - `?`: open shortcut help modal
+- Shortcut safety/UX:
+  - global shortcuts are blocked while typing in `input` / `textarea` / `select` / `contenteditable`
+  - conflicts avoided while menus/modals are open
+  - selected row is scrolled into view for keyboard navigation and auto-advance
+  - added lightweight shortcut help modal (`aria-labelledby`, focus trap, `Esc` close)
+- Manual verification checklist (PR3):
+  - approve several rows and verify deterministic auto-advance
+  - validate `J/K` navigation updates selection and drawer content
+  - validate `/` focuses queue search and `?` opens shortcut help
+  - confirm shortcuts do not fire while typing in search/edit fields
+  - confirm `Approve reused (exact)` updates statuses/counts and shows success message
+- Validation:
+  - `npm test` => PASS
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-protected APIs)
+  - `npm run ui:audit -- http://localhost:4010/questionnaires/cmmbig5lk000mgqbxr97frti9`
+    - artifacts: `artifacts/ui-audit/2026-03-05T02-59-21-981Z/pr3-b3/`
+    - axe serious/critical: `0/0`
+    - note: unauthenticated playwright run still reports expected protected-route `401` console/network entries

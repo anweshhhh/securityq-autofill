@@ -1166,8 +1166,20 @@ textarea {
 
 .queue-search-wrap {
   width: min(360px, 100%);
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.queue-metrics-side {
+  width: min(620px, 100%);
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.queue-metrics-side .btn {
+  white-space: nowrap;
 }
 
 .sticky-panel {
@@ -1659,6 +1671,10 @@ textarea {
   background: rgba(2, 6, 23, 0.48);
 }
 
+.shortcut-help-overlay {
+  z-index: 130;
+}
+
 .overlay-modal-card {
   width: min(560px, 100%);
   background: #ffffff;
@@ -1927,6 +1943,12 @@ textarea {
 
   .queue-search-wrap {
     width: 100%;
+  }
+
+  .queue-metrics-side {
+    width: 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
   }
 
   .context-panel {

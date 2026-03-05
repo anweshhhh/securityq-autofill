@@ -453,14 +453,22 @@ Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now expl
     - Direction B queue-first on `/questionnaires/[id]`:
       - top bar uses exactly one primary CTA (state-driven: `Run Autofill` -> `Approve Reused (Exact)` -> `Export`, with permission fallback)
       - secondary/destructive actions moved under `More` overflow (including `Approve Visible`, `Refresh`, `Delete questionnaire`)
-      - sticky metrics strip includes counts (`Approved`, `Needs review`, `Draft`, `Not found`, `Reused`), approved progress, filters, and queue search
+      - sticky metrics strip includes counts (`Approved`, `Needs review`, `Draft`, `Not found`, `Reused`), approved progress, filters, queue search, and `Approve reused (exact)` bulk action placement
       - queue list rows are preview-only (`status`, 2-line question preview, optional reuse badge, citations count) with no heavy inline actions
       - single-row deterministic selection:
         - initial load selects first visible queue row
         - filter/search keeps current selection when visible; otherwise first visible row; `null` when no rows
-      - keyboard baseline:
-        - `ArrowUp` / `ArrowDown` move selection
-        - `Enter` toggles answer expand/collapse
+      - throughput rules:
+        - successful `Approve` / `Needs review` / `Unapprove` auto-advance selection by current visible queue ordering (next row, otherwise previous row)
+        - when no visible rows remain after action, selection is cleared and drawer closes
+      - keyboard shortcuts:
+        - `J` / `K` (`ArrowDown` / `ArrowUp`) move selection
+        - `Enter` opens drawer for selected row when closed
+        - `A` approve, `R` needs review, `U` unapprove, `C` copy answer
+        - `/` focuses queue search
+        - `?` opens shortcut help modal
+      - shortcut input guard:
+        - shortcuts are ignored while focus is inside `input`, `textarea`, `select`, or contenteditable controls
     - Direction B PR2 contextual drawer/sheet on `/questionnaires/[id]`:
       - row click both selects and opens contextual panel
       - desktop drawer + mobile bottom sheet with half/full states

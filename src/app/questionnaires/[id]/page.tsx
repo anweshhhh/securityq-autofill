@@ -453,6 +453,56 @@ function toQuestionPreview(questionText: string): string {
   return normalized;
 }
 
+function getFilteredQuestionIdsForView(
+  questions: QuestionRow[],
+  filter: QuestionFilter,
+  deferredSearchText: string
+): string[] {
+  const loweredSearch = deferredSearchText.trim().toLowerCase();
+  return questions
+    .filter((question) => {
+      if (filter === "NOT_FOUND" && !isNotFoundAnswer(question.answer)) {
+        return false;
+      }
+
+      if (filter === "REUSED" && !question.reuseMatchType) {
+        return false;
+      }
+
+      if (filter !== "ALL" && filter !== "NOT_FOUND" && filter !== "REUSED" && question.reviewStatus !== filter) {
+        return false;
+      }
+
+      if (!loweredSearch) {
+        return true;
+      }
+
+      return (
+        question.text.toLowerCase().includes(loweredSearch) ||
+        (question.answer ?? "").toLowerCase().includes(loweredSearch) ||
+        (question.approvedAnswer?.answerText ?? "").toLowerCase().includes(loweredSearch)
+      );
+    })
+    .map((question) => question.id);
+}
+
+function getAdjacentSelectionCandidate(currentId: string, orderedVisibleIds: string[]): string | null {
+  const currentIndex = orderedVisibleIds.indexOf(currentId);
+  if (currentIndex < 0) {
+    return orderedVisibleIds[0] ?? null;
+  }
+
+  if (currentIndex < orderedVisibleIds.length - 1) {
+    return orderedVisibleIds[currentIndex + 1];
+  }
+
+  if (currentIndex > 0) {
+    return orderedVisibleIds[currentIndex - 1];
+  }
+
+  return null;
+}
+
 function OpenDocIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -540,6 +590,7 @@ export default function QuestionnaireDetailsPage() {
   const [isBulkConfirmOpen, setIsBulkConfirmOpen] = useState(false);
   const [isBulkApproving, setIsBulkApproving] = useState(false);
   const [isApprovingReusedExact, setIsApprovingReusedExact] = useState(false);
+  const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [documentIdByName, setDocumentIdByName] = useState<Record<string, string>>({});
   const [isDocumentModalOpen, setIsDocumentModalOpen] = useState(false);
   const [isDocumentLoading, setIsDocumentLoading] = useState(false);
@@ -550,6 +601,7 @@ export default function QuestionnaireDetailsPage() {
   const queueRowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const bulkModalRef = useRef<HTMLDivElement | null>(null);
   const documentModalRef = useRef<HTMLDivElement | null>(null);
+  const shortcutHelpModalRef = useRef<HTMLDivElement | null>(null);
   const deferredSearchText = useDeferredValue(searchText);
   const canRunAutofill = role ? can(role, RbacAction.RUN_AUTOFILL) : false;
   const canApproveAnswers = role ? can(role, RbacAction.APPROVE_ANSWERS) : false;
@@ -648,35 +700,10 @@ export default function QuestionnaireDetailsPage() {
       return [];
     }
 
-    const loweredSearch = deferredSearchText.trim().toLowerCase();
-    return questionOrder.filter((questionId) => {
-      const question = questionsById[questionId];
-      if (!question) {
-        return false;
-      }
-
-      if (filter === "NOT_FOUND" && !isNotFoundAnswer(question.answer)) {
-        return false;
-      }
-
-      if (filter === "REUSED" && !question.reuseMatchType) {
-        return false;
-      }
-
-      if (filter !== "ALL" && filter !== "NOT_FOUND" && filter !== "REUSED" && question.reviewStatus !== filter) {
-        return false;
-      }
-
-      if (!loweredSearch) {
-        return true;
-      }
-
-      return (
-        question.text.toLowerCase().includes(loweredSearch) ||
-        (question.answer ?? "").toLowerCase().includes(loweredSearch) ||
-        (question.approvedAnswer?.answerText ?? "").toLowerCase().includes(loweredSearch)
-      );
-    });
+    const orderedQuestions = questionOrder
+      .map((questionId) => questionsById[questionId])
+      .filter((question): question is QuestionRow => Boolean(question));
+    return getFilteredQuestionIdsForView(orderedQuestions, filter, deferredSearchText);
   }, [data, deferredSearchText, filter, questionOrder, questionsById]);
 
   const statusCounts = useMemo<StatusCounts>(() => {
@@ -766,6 +793,14 @@ export default function QuestionnaireDetailsPage() {
     }
   }, [selectedQuestionId]);
 
+  const scrollQueueRowIntoView = useCallback((questionId: string) => {
+    window.requestAnimationFrame(() => {
+      queueRowRefs.current[questionId]?.scrollIntoView({
+        block: "nearest"
+      });
+    });
+  }, []);
+
   const moveSelection = useCallback(
     (direction: -1 | 1) => {
       if (filteredQuestionIds.length === 0) {
@@ -776,6 +811,7 @@ export default function QuestionnaireDetailsPage() {
         if (!current) {
           const firstId = filteredQuestionIds[0];
           setLastInteractedRowId(firstId);
+          scrollQueueRowIntoView(firstId);
           return firstId;
         }
 
@@ -783,16 +819,18 @@ export default function QuestionnaireDetailsPage() {
         if (currentIndex < 0) {
           const firstId = filteredQuestionIds[0];
           setLastInteractedRowId(firstId);
+          scrollQueueRowIntoView(firstId);
           return firstId;
         }
 
         const nextIndex = Math.max(0, Math.min(filteredQuestionIds.length - 1, currentIndex + direction));
         const nextId = filteredQuestionIds[nextIndex];
         setLastInteractedRowId(nextId);
+        scrollQueueRowIntoView(nextId);
         return nextId;
       });
     },
-    [filteredQuestionIds]
+    [filteredQuestionIds, scrollQueueRowIntoView]
   );
 
   const railItems = useMemo<QuestionRailItem[]>(() => {
@@ -865,6 +903,53 @@ export default function QuestionnaireDetailsPage() {
   }, [autofillProgress]);
 
   const showLoadingSkeletons = isLoading && !data;
+
+  const autoAdvanceAfterSuccessfulAction = useCallback(
+    (currentQuestionId: string, visibleBeforeAction: string[], latestPayload: QuestionnaireDetailsPayload | null) => {
+      const questionsForView = latestPayload?.questions ?? data?.questions ?? [];
+      const visibleAfterAction = getFilteredQuestionIdsForView(questionsForView, filter, deferredSearchText);
+
+      if (visibleAfterAction.length === 0) {
+        setSelectedQuestionId(null);
+        setIsContextOpen(false);
+        setIsMobileSheetExpanded(false);
+        return;
+      }
+
+      const currentIndexBefore = visibleBeforeAction.indexOf(currentQuestionId);
+      const preferredAdjacentId = getAdjacentSelectionCandidate(currentQuestionId, visibleBeforeAction);
+
+      let nextSelectedId: string | null = null;
+      if (preferredAdjacentId && visibleAfterAction.includes(preferredAdjacentId)) {
+        nextSelectedId = preferredAdjacentId;
+      } else if (visibleAfterAction.includes(currentQuestionId)) {
+        const currentIndexAfter = visibleAfterAction.indexOf(currentQuestionId);
+        if (currentIndexAfter < visibleAfterAction.length - 1) {
+          nextSelectedId = visibleAfterAction[currentIndexAfter + 1];
+        } else if (currentIndexAfter > 0) {
+          nextSelectedId = visibleAfterAction[currentIndexAfter - 1];
+        } else {
+          nextSelectedId = currentQuestionId;
+        }
+      } else if (currentIndexBefore >= 0) {
+        nextSelectedId = visibleAfterAction[Math.min(currentIndexBefore, visibleAfterAction.length - 1)] ?? null;
+      } else {
+        nextSelectedId = visibleAfterAction[0] ?? null;
+      }
+
+      if (!nextSelectedId) {
+        setSelectedQuestionId(null);
+        setIsContextOpen(false);
+        setIsMobileSheetExpanded(false);
+        return;
+      }
+
+      setSelectedQuestionId(nextSelectedId);
+      setLastInteractedRowId(nextSelectedId);
+      scrollQueueRowIntoView(nextSelectedId);
+    },
+    [data?.questions, deferredSearchText, filter, scrollQueueRowIntoView]
+  );
 
   const evidenceItems = useMemo(() => {
     if (!selectedQuestion) {
@@ -1221,6 +1306,7 @@ export default function QuestionnaireDetailsPage() {
       return;
     }
 
+    const visibleBeforeAction = [...filteredQuestionIds];
     setMessage("");
     setActiveQuestionActionId(question.id);
 
@@ -1232,13 +1318,14 @@ export default function QuestionnaireDetailsPage() {
       }
 
       setMessage(question.approvedAnswer ? "Approval refreshed from saved values." : "Answer approved.");
-      await loadDetails();
+      const latest = await loadDetails({ silent: true });
+      autoAdvanceAfterSuccessfulAction(question.id, visibleBeforeAction, latest);
     } catch (error) {
       setMessage(`Approve failed: ${error instanceof Error ? error.message : "Unknown error."}`);
     } finally {
       setActiveQuestionActionId(null);
     }
-  }, [canApproveAnswers, loadDetails, persistApproval]);
+  }, [autoAdvanceAfterSuccessfulAction, canApproveAnswers, filteredQuestionIds, loadDetails, persistApproval]);
 
   const updateReviewStatus = useCallback(async (questionId: string, reviewStatus: "NEEDS_REVIEW" | "DRAFT") => {
     if (!canMarkNeedsReview) {
@@ -1246,6 +1333,7 @@ export default function QuestionnaireDetailsPage() {
       return;
     }
 
+    const visibleBeforeAction = [...filteredQuestionIds];
     setMessage("");
     setActiveQuestionActionId(questionId);
 
@@ -1266,13 +1354,14 @@ export default function QuestionnaireDetailsPage() {
       }
 
       setMessage(reviewStatus === "NEEDS_REVIEW" ? "Marked as needs review." : "Marked as draft.");
-      await loadDetails();
+      const latest = await loadDetails({ silent: true });
+      autoAdvanceAfterSuccessfulAction(questionId, visibleBeforeAction, latest);
     } catch (error) {
       setMessage(`Unable to update review status: ${error instanceof Error ? error.message : "Unknown error."}`);
     } finally {
       setActiveQuestionActionId(null);
     }
-  }, [canMarkNeedsReview, loadDetails]);
+  }, [autoAdvanceAfterSuccessfulAction, canMarkNeedsReview, filteredQuestionIds, loadDetails]);
 
   const unapprove = useCallback(async (approvedAnswerId: string, questionId: string) => {
     if (!canApproveAnswers) {
@@ -1280,6 +1369,7 @@ export default function QuestionnaireDetailsPage() {
       return;
     }
 
+    const visibleBeforeAction = [...filteredQuestionIds];
     setMessage("");
     setActiveQuestionActionId(questionId);
 
@@ -1294,13 +1384,14 @@ export default function QuestionnaireDetailsPage() {
       }
 
       setMessage("Approval removed.");
-      await loadDetails();
+      const latest = await loadDetails({ silent: true });
+      autoAdvanceAfterSuccessfulAction(questionId, visibleBeforeAction, latest);
     } catch (error) {
       setMessage(`Unable to remove approval: ${error instanceof Error ? error.message : "Unknown error."}`);
     } finally {
       setActiveQuestionActionId(null);
     }
-  }, [canApproveAnswers, loadDetails]);
+  }, [autoAdvanceAfterSuccessfulAction, canApproveAnswers, filteredQuestionIds, loadDetails]);
 
   function beginEdit(question: QuestionRow) {
     if (!canEditApprovedAnswers) {
@@ -1382,6 +1473,30 @@ export default function QuestionnaireDetailsPage() {
       setMessage("Unable to copy to clipboard.");
     }
   }, []);
+
+  const openDrawerForSelectedQuestion = useCallback(() => {
+    if (!selectedQuestionId) {
+      return;
+    }
+
+    setIsContextOpen(true);
+    setDrawerTab("ANSWER");
+    setLastInteractedRowId(selectedQuestionId);
+    scrollQueueRowIntoView(selectedQuestionId);
+  }, [scrollQueueRowIntoView, selectedQuestionId]);
+
+  const copySelectedAnswer = useCallback(async () => {
+    if (!selectedQuestion) {
+      return;
+    }
+
+    const generatedRaw = (selectedQuestion.answer ?? "").trim();
+    const approvedRaw = (selectedQuestion.approvedAnswer?.answerText ?? "").trim();
+    const generated = stripLeadingQuestionEcho(generatedRaw, selectedQuestion.text) || "Not answered yet.";
+    const approved = stripLeadingQuestionEcho(approvedRaw, selectedQuestion.text);
+    const answerToCopy = approved || generated;
+    await copyText(answerToCopy, "Answer copied.");
+  }, [copyText, selectedQuestion]);
 
   const openDocumentModal = useCallback(
     async (docName: string) => {
@@ -1466,6 +1581,12 @@ export default function QuestionnaireDetailsPage() {
   });
 
   useFocusTrap({
+    active: isShortcutHelpOpen,
+    containerRef: shortcutHelpModalRef,
+    onEscape: () => setIsShortcutHelpOpen(false)
+  });
+
+  useFocusTrap({
     active: isContextOpen && Boolean(selectedQuestion),
     containerRef: contextDrawerRef,
     onEscape: closeContextDrawer
@@ -1525,7 +1646,7 @@ export default function QuestionnaireDetailsPage() {
         key: "approve-reused" as const,
         label: isApprovingReusedExact
           ? "Approving reused..."
-          : `Approve Reused (Exact) (${exactReusedEligibleQuestions.length})`,
+          : `Approve reused (exact) · ${exactReusedEligibleQuestions.length}`,
         disabled: isLoading || isRunningAutofill || isBulkApproving || isApprovingReusedExact
       };
     }
@@ -1589,11 +1710,12 @@ export default function QuestionnaireDetailsPage() {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.metaKey || event.ctrlKey || event.altKey || isEditableTarget(event.target)) {
-        return;
-      }
-
       if (event.key === "Escape") {
+        if (isShortcutHelpOpen) {
+          event.preventDefault();
+          setIsShortcutHelpOpen(false);
+          return;
+        }
         if (isDocumentModalOpen) {
           event.preventDefault();
           closeDocumentModal();
@@ -1612,21 +1734,43 @@ export default function QuestionnaireDetailsPage() {
         return;
       }
 
-      if (isBulkConfirmOpen || isDocumentModalOpen) {
+      if (event.metaKey || event.ctrlKey || event.altKey || isEditableTarget(event.target)) {
         return;
       }
 
-      if (isContextOpen) {
+      const detailsMenuOpen = document.querySelector("details[open]") !== null;
+      const accountMenuOpen = document.querySelector(".account-menu-popover") !== null;
+      if (detailsMenuOpen || accountMenuOpen) {
         return;
       }
 
-      if (event.key === "ArrowDown") {
+      if (isBulkConfirmOpen || isDocumentModalOpen || isShortcutHelpOpen) {
+        return;
+      }
+
+      if (event.key === "?") {
+        event.preventDefault();
+        setIsShortcutHelpOpen(true);
+        return;
+      }
+
+      if (event.key === "/") {
+        const searchInput = document.getElementById("queue-search-input");
+        if (searchInput instanceof HTMLInputElement) {
+          event.preventDefault();
+          searchInput.focus();
+          searchInput.select();
+        }
+        return;
+      }
+
+      if (event.key === "ArrowDown" || event.key.toLowerCase() === "j") {
         event.preventDefault();
         moveSelection(1);
         return;
       }
 
-      if (event.key === "ArrowUp") {
+      if (event.key === "ArrowUp" || event.key.toLowerCase() === "k") {
         event.preventDefault();
         moveSelection(-1);
         return;
@@ -1637,20 +1781,52 @@ export default function QuestionnaireDetailsPage() {
           return;
         }
         event.preventDefault();
-        setIsAnswerExpanded((value) => !value);
+        if (!isContextOpen) {
+          openDrawerForSelectedQuestion();
+        }
+        return;
+      }
+
+      if (event.key.toLowerCase() === "a" && selectedQuestion) {
+        event.preventDefault();
+        void approveQuestion(selectedQuestion);
+        return;
+      }
+
+      if (event.key.toLowerCase() === "r" && selectedQuestion) {
+        event.preventDefault();
+        void updateReviewStatus(selectedQuestion.id, "NEEDS_REVIEW");
+        return;
+      }
+
+      if (event.key.toLowerCase() === "u" && selectedQuestion?.approvedAnswer) {
+        event.preventDefault();
+        void unapprove(selectedQuestion.approvedAnswer.id, selectedQuestion.id);
+        return;
+      }
+
+      if (event.key.toLowerCase() === "c" && selectedQuestion) {
+        event.preventDefault();
+        void copySelectedAnswer();
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
+    approveQuestion,
     closeDocumentModal,
     closeContextDrawer,
+    copySelectedAnswer,
+    isShortcutHelpOpen,
     isBulkConfirmOpen,
     isContextOpen,
     isDocumentModalOpen,
     moveSelection,
+    openDrawerForSelectedQuestion,
     selectedQuestion,
+    unapprove,
+    updateReviewStatus,
   ]);
 
   return (
@@ -1733,7 +1909,7 @@ export default function QuestionnaireDetailsPage() {
                       exactReusedEligibleQuestions.length === 0
                     }
                   >
-                    Approve Reused (Exact) ({exactReusedEligibleQuestions.length})
+                    Approve reused (exact) · {exactReusedEligibleQuestions.length}
                   </button>
                 ) : null}
 
@@ -1801,13 +1977,35 @@ export default function QuestionnaireDetailsPage() {
               </button>
             ))}
           </nav>
-          <div className="queue-search-wrap">
-            <TextInput
-              value={searchText}
-              onChange={(event) => setSearchText(event.target.value)}
-              placeholder="Search question text or answer preview"
-              aria-label="Search question text or answer preview"
-            />
+          <div className="queue-metrics-side">
+            {canApproveAnswers ? (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void approveExactReusedQuestions()}
+                disabled={
+                  isLoading ||
+                  isBulkApproving ||
+                  isApprovingReusedExact ||
+                  isRunningAutofill ||
+                  exactReusedEligibleQuestions.length === 0
+                }
+                aria-label={`Approve reused exact questions (${exactReusedEligibleQuestions.length})`}
+              >
+                {isApprovingReusedExact
+                  ? "Approving reused..."
+                  : `Approve reused (exact) · ${exactReusedEligibleQuestions.length}`}
+              </Button>
+            ) : null}
+            <div className="queue-search-wrap">
+              <TextInput
+                id="queue-search-input"
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+                placeholder="Search question text or answer preview"
+                aria-label="Search question text or answer preview"
+              />
+            </div>
           </div>
         </div>
         <div className="trust-progress">
@@ -1860,7 +2058,19 @@ export default function QuestionnaireDetailsPage() {
               <Card data-testid="question-rail-panel">
                 <div className="card-title-row">
                   <h3 style={{ margin: 0 }}>Queue</h3>
-                  <Badge tone="draft">{filteredQuestionIds.length} visible</Badge>
+                  <div className="toolbar-row compact">
+                    <Badge tone="draft">{filteredQuestionIds.length} visible</Badge>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="icon-btn"
+                      onClick={() => setIsShortcutHelpOpen(true)}
+                      aria-label="Open keyboard shortcuts help"
+                      title="Keyboard shortcuts"
+                    >
+                      ?
+                    </Button>
+                  </div>
                 </div>
 
                 {!selectedQuestion && railItems.length > 0 ? (
@@ -2299,6 +2509,33 @@ export default function QuestionnaireDetailsPage() {
                 Copy Document Text
               </Button>
               <Button type="button" variant="primary" onClick={closeDocumentModal}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isShortcutHelpOpen ? (
+        <div className="overlay-modal shortcut-help-overlay" role="dialog" aria-modal="true" aria-labelledby="shortcut-help-title">
+          <div className="overlay-modal-card" ref={shortcutHelpModalRef} tabIndex={-1}>
+            <h3 id="shortcut-help-title" style={{ marginTop: 0 }}>Keyboard Shortcuts</h3>
+            <div className="shortcut-grid" role="list" aria-label="Keyboard shortcut list">
+              <div role="listitem"><kbd>J</kbd> Next row</div>
+              <div role="listitem"><kbd>K</kbd> Previous row</div>
+              <div role="listitem"><kbd>Enter</kbd> Open drawer</div>
+              <div role="listitem"><kbd>A</kbd> Approve selected</div>
+              <div role="listitem"><kbd>R</kbd> Mark needs review</div>
+              <div role="listitem"><kbd>U</kbd> Unapprove selected</div>
+              <div role="listitem"><kbd>C</kbd> Copy answer</div>
+              <div role="listitem"><kbd>/</kbd> Focus queue search</div>
+              <div role="listitem"><kbd>?</kbd> Open shortcut help</div>
+            </div>
+            <p className="small muted" style={{ margin: "0 0 10px" }}>
+              Shortcuts are disabled while typing in inputs, textareas, selects, or editable fields.
+            </p>
+            <div className="toolbar-row">
+              <Button type="button" variant="primary" onClick={() => setIsShortcutHelpOpen(false)}>
                 Close
               </Button>
             </div>
