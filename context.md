@@ -25,6 +25,7 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 - Canonical templates are centralized in `src/shared/answerTemplates.ts` and enforced at final emission via `canonicalizeAnswerOutput(...)` in `src/server/answerEngine.ts`
 - Approved answers persist evidence snapshots (cited chunk fingerprints) at approval time
 - Stale approvals (evidence fingerprint drift or missing cited chunks) are never reused for autofill/reuse flows
+- Approved-only export is blocked when any approved answers are stale (evidence drift)
 - No doc-template-specific keyword/canned-answer logic in retrieval/answer path
 
 ## 4) Current Architecture

@@ -1245,6 +1245,136 @@ describe.sequential("questionnaire workflow integration", () => {
     expect(generatedRowTwo?.Answer).toBe(generatedSsoAnswer);
   });
 
+  it("blocks approved-only export when approved answers are stale", async () => {
+    if (!activeOrganizationId) {
+      throw new Error("Expected active organization to be initialized.");
+    }
+    const chunkIds = await seedEvidenceChunksForOrganization(activeOrganizationId);
+
+    const csvContent = "Control ID,Question\nQ-1,What minimum TLS version is required?\n";
+    const formData = new FormData();
+    formData.append("file", new File([csvContent], "approval-stale-export.csv", { type: "text/csv" }));
+    formData.append("questionColumn", "Question");
+    formData.append("name", `${TEST_QUESTIONNAIRE_NAME_PREFIX}${Date.now()}`);
+
+    const importResponse = await importRoute(
+      new Request("http://localhost/api/questionnaires/import", {
+        method: "POST",
+        body: formData
+      })
+    );
+    expect(importResponse.status).toBe(201);
+    const importPayload = (await importResponse.json()) as {
+      questionnaire?: { id: string };
+    };
+    const questionnaireId = importPayload.questionnaire?.id;
+    expect(questionnaireId).toBeTruthy();
+
+    answerQuestionMock.mockResolvedValueOnce({
+      answer: "Generated TLS answer: minimum version is TLS 1.2.",
+      citations: [
+        {
+          docName: "Workflow Evidence",
+          chunkId: chunkIds.tlsChunkId,
+          quotedSnippet: "External traffic requires TLS 1.2 or higher."
+        }
+      ]
+    });
+
+    const autofillResponse = await autofillRoute(new Request("http://localhost"), {
+      params: { id: questionnaireId as string }
+    });
+    expect(autofillResponse.status).toBe(200);
+
+    const question = await prisma.question.findFirst({
+      where: {
+        questionnaireId: questionnaireId as string
+      },
+      select: {
+        id: true,
+        rowIndex: true
+      }
+    });
+    expect(question?.id).toBeTruthy();
+
+    const approvalResponse = await approvedAnswersCreateRoute(
+      new Request("http://localhost/api/approved-answers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          questionId: question?.id
+        })
+      })
+    );
+    expect(approvalResponse.status).toBe(200);
+
+    const approvedOnlyFreshResponse = await exportRoute(
+      new Request(`http://localhost/api/questionnaires/${questionnaireId}/export?mode=approvedOnly`),
+      {
+        params: {
+          id: questionnaireId as string
+        }
+      }
+    );
+    expect(approvedOnlyFreshResponse.status).toBe(200);
+    const approvedOnlyFreshCsv = await approvedOnlyFreshResponse.text();
+    expect(approvedOnlyFreshCsv).toContain('"Answer","Citations"');
+    expect(approvedOnlyFreshCsv.length).toBeGreaterThan(0);
+
+    const updatedChunkText = "Policy updated: minimum TLS requirement is currently under review.";
+    await prisma.documentChunk.update({
+      where: {
+        id: chunkIds.tlsChunkId
+      },
+      data: {
+        content: updatedChunkText,
+        evidenceFingerprint: computeEvidenceFingerprint(updatedChunkText)
+      }
+    });
+
+    const approvedOnlyStaleResponse = await exportRoute(
+      new Request(`http://localhost/api/questionnaires/${questionnaireId}/export?mode=approvedOnly`),
+      {
+        params: {
+          id: questionnaireId as string
+        }
+      }
+    );
+    expect(approvedOnlyStaleResponse.status).toBe(409);
+    const stalePayload = (await approvedOnlyStaleResponse.json()) as {
+      error?: {
+        code?: string;
+        message?: string;
+        details?: {
+          staleCount?: number;
+          staleItems?: Array<{ questionnaireItemId?: string; rowIndex?: number | null }>;
+        };
+      };
+    };
+    expect(stalePayload.error?.code).toBe("EXPORT_BLOCKED_STALE_APPROVALS");
+    expect(stalePayload.error?.details?.staleCount).toBe(1);
+    expect(stalePayload.error?.details?.staleItems).toEqual(
+      expect.arrayContaining([
+        {
+          questionnaireItemId: question?.id,
+          rowIndex: question?.rowIndex
+        }
+      ])
+    );
+
+    const generatedExportResponse = await exportRoute(
+      new Request(`http://localhost/api/questionnaires/${questionnaireId}/export?mode=generated`),
+      {
+        params: {
+          id: questionnaireId as string
+        }
+      }
+    );
+    expect(generatedExportResponse.status).toBe(200);
+  });
+
   it("rejects approval when citation chunk IDs are from a different organization", async () => {
     const csvContent = "Control ID,Question\nQ-1,Do you support SSO?\n";
     const formData = new FormData();

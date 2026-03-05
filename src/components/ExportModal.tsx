@@ -59,6 +59,31 @@ async function extractErrorMessage(response: Response): Promise<string> {
       if (typeof payload.error === "string" && payload.error.trim().length > 0) {
         return payload.error;
       }
+
+      if (payload.error && typeof payload.error === "object" && !Array.isArray(payload.error)) {
+        const typedError = payload.error as {
+          code?: unknown;
+          message?: unknown;
+          details?: unknown;
+        };
+        if (
+          typedError.code === "EXPORT_BLOCKED_STALE_APPROVALS" &&
+          typedError.details &&
+          typeof typedError.details === "object" &&
+          !Array.isArray(typedError.details)
+        ) {
+          const details = typedError.details as { staleCount?: unknown };
+          if (typeof details.staleCount === "number") {
+            return `Export blocked: ${details.staleCount} approved answer${
+              details.staleCount === 1 ? "" : "s"
+            } are stale and need review.`;
+          }
+        }
+
+        if (typeof typedError.message === "string" && typedError.message.trim().length > 0) {
+          return typedError.message;
+        }
+      }
     } else {
       const text = (await response.text()).trim();
       if (text.length > 0) {

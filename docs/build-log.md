@@ -1451,3 +1451,31 @@ Current log of implemented MVP work (concise, execution-focused).
 - Manual smoke/auth notes:
   - `/documents`, `/questionnaires`, `/settings/members` returned 200 in dev shell route checks
   - authenticated end-to-end reuse toggle test could not be completed in this shell run because no signed-in browser session was available
+
+## 2026-03-05 - export-stale-guardrail-01
+
+- Added export-time trust guardrail for approved-only mode:
+  - `GET /api/questionnaires/:id/export?mode=approvedOnly` now computes approval staleness on-demand and blocks export when stale approvals exist.
+  - blocked response is JSON-only `409`:
+    - `error.code = EXPORT_BLOCKED_STALE_APPROVALS`
+    - `error.message = "Export blocked: some approved answers are stale and need review."`
+    - `error.details = { staleCount, staleItems: [{ questionnaireItemId, rowIndex }] }`
+- Staleness helper enhancements:
+  - added batched questionnaire-level helper in `src/server/approvedAnswers/staleness.ts` to evaluate stale approved answers without OpenAI calls.
+- Export route behavior:
+  - non-approved-only export modes remain unchanged.
+  - anti-enumeration and org scoping remain enforced via existing request context + scoped lookup.
+- Regression coverage:
+  - `src/app/api/questionnaires/workflow.test.ts`
+    - verifies approved-only export succeeds when approvals are fresh.
+    - verifies approved-only export returns `409 EXPORT_BLOCKED_STALE_APPROVALS` after chunk fingerprint drift.
+    - verifies generated export still succeeds after stale block.
+- Minimal UI error handling:
+  - `src/components/ExportModal.tsx` now parses `EXPORT_BLOCKED_STALE_APPROVALS` and surfaces a clear stale-count message.
+- Commands run:
+  - `npm test` => PASS (24 passed test files, 1 skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run dev -- --port 4010` => PASS (manual route checks)
+- Manual smoke/auth notes:
+  - `/documents`, `/questionnaires`, `/settings/members` loaded in dev checks.
+  - full authenticated export flow validation was not possible in this shell session; unauthenticated `/api/questionnaires/:id/export?mode=approvedOnly` returned expected JSON `401` envelope.

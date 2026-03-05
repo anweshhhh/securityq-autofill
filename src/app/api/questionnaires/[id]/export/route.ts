@@ -4,6 +4,7 @@ import { jsonError, toApiErrorResponse } from "@/lib/apiResponse";
 import { buildQuestionnaireExportCsv } from "@/lib/export";
 import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/requestContext";
+import { findStaleApprovedItemsForQuestionnaire } from "@/server/approvedAnswers/staleness";
 import { assertCan, RbacAction } from "@/server/rbac";
 
 type ExportMode = "preferApproved" | "approvedOnly" | "generated";
@@ -115,6 +116,25 @@ export async function GET(_request: Request, context: { params: { id: string } }
         code: "NOT_FOUND",
         message: "Questionnaire not found."
       });
+    }
+
+    if (mode === "approvedOnly") {
+      const staleItems = await findStaleApprovedItemsForQuestionnaire({
+        questionnaireId: questionnaire.id,
+        orgId: ctx.orgId
+      });
+
+      if (staleItems.length > 0) {
+        return jsonError({
+          status: 409,
+          code: "EXPORT_BLOCKED_STALE_APPROVALS",
+          message: "Export blocked: some approved answers are stale and need review.",
+          details: {
+            staleCount: staleItems.length,
+            staleItems
+          }
+        });
+      }
     }
 
     const headers = toStringArray(questionnaire.sourceHeaders);
