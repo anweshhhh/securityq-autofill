@@ -1367,3 +1367,25 @@ Current log of implemented MVP work (concise, execution-focused).
     - artifacts: `artifacts/ui-audit/2026-03-05T02-59-21-981Z/pr3-b3/`
     - axe serious/critical: `0/0`
     - note: unauthenticated playwright run still reports expected protected-route `401` console/network entries
+
+## 2026-03-05 - repo-audit-claimops-01
+
+- Produced repo audit report (documentation + artifacts only; no runtime code changes):
+  - `artifacts/repo-audit/2026-03-05T21-32-15Z/audit.md`
+- Verification runbook executed:
+  - `docker compose up -d` => PASS
+  - `npm install` => PASS
+  - `npx prisma migrate deploy` => PASS (no pending migrations)
+  - `npm test` => PASS (22 passed, 1 skipped test files)
+  - `npm run build` => PASS (with expected Next.js dynamic-server-usage warnings for auth-protected API routes)
+- UI audit script detected and executed:
+  - command: `npm run ui:audit -- http://localhost:4010/questionnaires/cmmd2c8d700107uyr2fo86qfe`
+  - artifacts: `artifacts/ui-audit/2026-03-05T21-35-44-160Z/repo-audit/`
+  - axe serious/critical: `0/0`
+  - note: unauthenticated run reports expected protected-route `401` console/network entries
+- Top 5 risks/gaps documented:
+  - extractor-invalid fallback path uses exact NOT_FOUND equality and may miss template-like variants
+  - canonical template literals are duplicated across server/API/UI modules (drift risk)
+  - DEV role switch endpoint allows self-role mutation when `DEV_MODE=true`
+  - `/api/auth/[...nextauth]` is outside JSON-envelope policy (framework-managed exception)
+  - unauthenticated UI-audit runs produce noisy 401 console/network signal
