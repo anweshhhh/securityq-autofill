@@ -422,6 +422,10 @@ Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now expl
     - Trust Bar progress indicator has an accessible name and value text (`aria-label`/`aria-labelledby` + `aria-valuetext`)
 - Component conventions:
   - primitives in `src/components/ui.tsx` (`Button`, `Badge`, `Card`, `TextInput`, `TextArea`)
+  - shared compact stats primitive: `src/components/CompactStatCard.tsx`
+    - used on `/` (Operational Snapshot), `/documents` metrics strip, and `/questionnaires` metrics strip
+    - supports label/value/sublabel, optional tone, optional link/button semantics, and loading state
+    - replaces one-off KPI card markup to keep vertical density tighter on repeat-use pages
   - questionnaire details page is a queue-first review workbench:
     - queue rail is always-visible primary surface
     - contextual details open in a right drawer (desktop) / bottom sheet (mobile)

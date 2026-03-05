@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppAuthz } from "@/components/AppAuthzContext";
 import { CollapsibleInputSection } from "@/components/CollapsibleInputSection";
+import { CompactStatCard } from "@/components/CompactStatCard";
 import { ExportModal } from "@/components/ExportModal";
 import { Badge, Button, Card, TextInput, cx } from "@/components/ui";
 import { can, RbacAction } from "@/server/rbac";
@@ -446,23 +447,11 @@ export default function QuestionnairesPage() {
         </div>
       ) : null}
 
-      <div className="kpi-grid">
-        <div className="kpi-card">
-          <div className="label">Questionnaires</div>
-          <div className="value">{questionnaireSummary.totalQuestionnaires}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="label">Questions total</div>
-          <div className="value">{questionnaireSummary.totalQuestions}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="label">Answered</div>
-          <div className="value">{questionnaireSummary.totalAnswered}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="label">Not found</div>
-          <div className="value">{questionnaireSummary.totalNotFound}</div>
-        </div>
+      <div className="compact-stats-grid">
+        <CompactStatCard label="Questionnaires" value={questionnaireSummary.totalQuestionnaires} />
+        <CompactStatCard label="Questions total" value={questionnaireSummary.totalQuestions} />
+        <CompactStatCard label="Answered" value={questionnaireSummary.totalAnswered} tone="success" />
+        <CompactStatCard label="Not found" value={questionnaireSummary.totalNotFound} tone="danger" />
       </div>
 
       {previewRows.length > 0 ? (

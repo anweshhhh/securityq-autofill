@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useAppAuthz } from "@/components/AppAuthzContext";
 import { CollapsibleInputSection } from "@/components/CollapsibleInputSection";
+import { CompactStatCard } from "@/components/CompactStatCard";
 import { Badge, Button, Card, TextInput, cx } from "@/components/ui";
 import { can, RbacAction } from "@/server/rbac";
 
@@ -356,23 +357,15 @@ export default function DocumentsPage() {
         </form>
       </CollapsibleInputSection>
 
-      <div className="kpi-grid">
-        <div className="kpi-card">
-          <div className="label">Visible documents</div>
-          <div className="value">{filteredDocuments.length}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="label">Embedded (chunked)</div>
-          <div className="value">{embeddedCount}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="label">Selected</div>
-          <div className="value">{selectedDocumentIds.length}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="label">Filter mode</div>
-          <div className="value">{showLatestOnly ? "Latest" : "All"}</div>
-        </div>
+      <div className="compact-stats-grid">
+        <CompactStatCard label="Visible documents" value={filteredDocuments.length} />
+        <CompactStatCard label="Embedded (chunked)" value={embeddedCount} tone="success" />
+        <CompactStatCard label="Selected" value={selectedDocumentIds.length} tone="neutral" />
+        <CompactStatCard
+          label="Filter mode"
+          value={showLatestOnly ? "Latest" : "All"}
+          sublabel={showLatestOnly ? "Showing latest per file" : "Showing all versions"}
+        />
       </div>
 
       {message ? (

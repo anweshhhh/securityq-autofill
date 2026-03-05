@@ -893,33 +893,99 @@ textarea {
   width: min(280px, 100%);
 }
 
-.kpi-grid {
+.compact-stats-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .home-snapshot-grid {
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
 }
 
-.kpi-card {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 12px;
+.compact-stat-card {
+  border: 1px solid #d8e2f2;
+  border-radius: 10px;
   background: #fff;
+  min-height: 72px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: left;
+  color: inherit;
+  text-decoration: none;
 }
 
-.kpi-card .label {
-  font-size: 12px;
+.compact-stat-card-interactive {
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.compact-stat-card-interactive:hover {
+  border-color: #b8c9e6;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.compact-stat-card-interactive:focus-visible {
+  outline: 2px solid rgba(85, 102, 221, 0.34);
+  outline-offset: 2px;
+  border-color: #778de3;
+}
+
+.compact-stat-card.tone-success {
+  background: linear-gradient(180deg, #ffffff 0%, #f6fff8 100%);
+}
+
+.compact-stat-card.tone-warning {
+  background: linear-gradient(180deg, #ffffff 0%, #fffbf2 100%);
+}
+
+.compact-stat-card.tone-danger {
+  background: linear-gradient(180deg, #ffffff 0%, #fff7f7 100%);
+}
+
+.compact-stat-card.tone-neutral {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.compact-stat-label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.compact-stat-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--muted-text);
 }
 
-.kpi-card .value {
-  font-size: 24px;
-  line-height: 1.1;
-  margin-top: 4px;
+.compact-stat-label {
+  font-size: 11px;
   font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-text);
+}
+
+.compact-stat-value {
+  font-size: 22px;
+  line-height: 1.1;
+  margin-top: 5px;
+  font-weight: 700;
+}
+
+.compact-stat-value.is-loading {
+  color: #8ba0bf;
+}
+
+.compact-stat-sublabel {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--muted-text);
 }
 
 .stats-grid {
@@ -1855,7 +1921,7 @@ textarea {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .kpi-grid {
+  .compact-stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

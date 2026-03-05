@@ -1267,3 +1267,15 @@ Current log of implemented MVP work (concise, execution-focused).
 - Behavior scope:
   - no backend/API/DB changes
   - all existing upload/import/delete/autofill/export/RBAC behavior preserved
+
+## 2026-03-04 - ui-shared-01-compact-stats-component
+
+- Added shared compact stats component and adopted it across list/dashboard pages:
+  - new reusable component: `src/components/CompactStatCard.tsx`
+  - adopted on `/` Operational Snapshot, `/documents` metrics strip, and `/questionnaires` metrics strip
+- UI treatment changes:
+  - replaced one-off KPI card markup with a consistent compact stat card pattern
+  - tightened spacing and card height so primary tables/lists surface sooner
+- Scope:
+  - presentation-only refactor; no backend/API/DB changes
+  - existing data sources, counts, and calculations remain unchanged

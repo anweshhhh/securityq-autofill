@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAppAuthz } from "@/components/AppAuthzContext";
+import { CompactStatCard, type CompactStatTone } from "@/components/CompactStatCard";
 import { Badge, Button, Card, cx } from "@/components/ui";
 import { can, RbacAction } from "@/server/rbac";
 
@@ -136,7 +137,7 @@ export default function Home() {
     documentsCount === 0;
 
   const snapshotCards = useMemo(() => {
-    const cards: Array<{ key: string; label: string; value: number }> = [];
+    const cards: Array<{ key: string; label: string; value: number; tone?: CompactStatTone }> = [];
 
     if (documentsState === "ready" && documentsCount !== null) {
       cards.push({
@@ -158,7 +159,8 @@ export default function Home() {
       cards.push({
         key: "pending-review",
         label: "Pending Review",
-        value: pendingReviewCount
+        value: pendingReviewCount,
+        tone: "warning"
       });
     }
 
@@ -166,7 +168,8 @@ export default function Home() {
       cards.push({
         key: "approved-reusable",
         label: "Approved Reusable Answers",
-        value: approvedReusableCount
+        value: approvedReusableCount,
+        tone: "success"
       });
     }
 
@@ -466,12 +469,9 @@ export default function Home() {
             Snapshot data is unavailable right now.
           </p>
         ) : (
-          <div className="kpi-grid home-snapshot-grid">
+          <div className="compact-stats-grid home-snapshot-grid">
             {snapshotCards.map((card) => (
-              <div key={card.key} className="kpi-card">
-                <div className="label">{card.label}</div>
-                <div className="value">{card.value}</div>
-              </div>
+              <CompactStatCard key={card.key} label={card.label} value={card.value} tone={card.tone} />
             ))}
           </div>
         )}
