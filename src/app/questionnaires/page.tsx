@@ -37,6 +37,11 @@ type EmbedResult = {
   error?: unknown;
 };
 
+function toTimestamp(value: string): number {
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
 function getApiErrorMessage(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== "object") {
     return fallback;
@@ -101,19 +106,26 @@ export default function QuestionnairesPage() {
   const canDeleteQuestionnaires = role ? can(role, RbacAction.DELETE_QUESTIONNAIRES) : false;
   const canExportQuestionnaires = role ? can(role, RbacAction.EXPORT) : false;
 
+  const sortedQuestionnaires = useMemo(() => {
+    return [...questionnaires].sort(
+      (left, right) =>
+        toTimestamp(right.updatedAt || right.createdAt) - toTimestamp(left.updatedAt || left.createdAt)
+    );
+  }, [questionnaires]);
+
   const filteredQuestionnaires = useMemo(() => {
     const lowered = searchText.trim().toLowerCase();
     if (!lowered) {
-      return questionnaires;
+      return sortedQuestionnaires;
     }
 
-    return questionnaires.filter((questionnaire) => {
+    return sortedQuestionnaires.filter((questionnaire) => {
       return (
         questionnaire.name.toLowerCase().includes(lowered) ||
         (questionnaire.sourceFileName ?? "").toLowerCase().includes(lowered)
       );
     });
-  }, [questionnaires, searchText]);
+  }, [searchText, sortedQuestionnaires]);
 
   const questionnaireSummary = useMemo(() => {
     const totalQuestionnaires = questionnaires.length;
@@ -128,6 +140,7 @@ export default function QuestionnairesPage() {
       totalNotFound
     };
   }, [questionnaires]);
+  const hasQuestionnaires = questionnaireSummary.totalQuestionnaires > 0;
 
   const fetchQuestionnaires = useCallback(async () => {
     setIsLoadingList(true);
@@ -356,13 +369,16 @@ export default function QuestionnairesPage() {
     <div className="page-stack">
       <CollapsibleInputSection
         id="import"
-        title="Import Questionnaire"
-        helperText="Upload CSV, pick the question column, and create a new review run."
+        title="Import new questionnaire"
+        helperText="Upload a CSV and select the question column."
+        className={cx("questionnaire-import-section", hasQuestionnaires && "repeat-mode")}
         expanded={isImportSectionExpanded}
         onToggle={() => setIsImportSectionExpanded((value) => !value)}
         badgeLabel="CSV workflow"
         badgeTone="draft"
         badgeTitle="CSV only"
+        expandLabel="Expand"
+        collapseLabel="Collapse"
       >
         <form onSubmit={handleImport} className="page-stack">
           <div className="two-col">
@@ -430,6 +446,34 @@ export default function QuestionnairesPage() {
             </Button>
           </div>
         </form>
+
+        {previewRows.length > 0 ? (
+          <Card className="questionnaire-import-preview">
+            <div className="card-title-row">
+              <h3 style={{ margin: 0 }}>Preview ({previewRows.length} rows)</h3>
+            </div>
+            <div className="data-table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    {previewHeaders.map((header) => (
+                      <th key={header}>{header}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewRows.map((row, rowIndex) => (
+                    <tr key={`preview-${rowIndex}`}>
+                      {previewHeaders.map((header) => (
+                        <td key={`${rowIndex}-${header}`}>{row[header]}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        ) : null}
       </CollapsibleInputSection>
 
       {message ? (
@@ -447,47 +491,14 @@ export default function QuestionnairesPage() {
         </div>
       ) : null}
 
-      <div className="compact-stats-grid">
-        <CompactStatCard label="Questionnaires" value={questionnaireSummary.totalQuestionnaires} />
-        <CompactStatCard label="Questions total" value={questionnaireSummary.totalQuestions} />
-        <CompactStatCard label="Answered" value={questionnaireSummary.totalAnswered} tone="success" />
-        <CompactStatCard label="Not found" value={questionnaireSummary.totalNotFound} tone="danger" />
-      </div>
-
-      {previewRows.length > 0 ? (
-        <Card>
-          <div className="card-title-row">
-            <h3 style={{ margin: 0 }}>Preview ({previewRows.length} rows)</h3>
-          </div>
-          <div className="data-table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  {previewHeaders.map((header) => (
-                    <th key={header}>{header}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {previewRows.map((row, rowIndex) => (
-                  <tr key={`preview-${rowIndex}`}>
-                    {previewHeaders.map((header) => (
-                      <td key={`${rowIndex}-${header}`}>{row[header]}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      ) : null}
-
-      <Card>
+      <Card className="questionnaires-list-card">
         <div className="card-title-row">
           <div>
             <h2 style={{ marginBottom: 4 }}>Saved Questionnaires</h2>
-            <p className="muted" style={{ margin: 0 }}>
-              Open for review, rerun autofill, and export.
+            <p className="muted small" style={{ margin: "2px 0 0" }}>
+              {hasQuestionnaires
+                ? "Most recently updated first."
+                : "Import your first CSV to start the autofill and review workflow."}
             </p>
           </div>
           <div className="toolbar-row compact">
@@ -594,8 +605,12 @@ export default function QuestionnairesPage() {
                           </Button>
                         </div>
                         <details className="row-actions-menu">
-                          <summary className="btn btn-ghost row-actions-trigger" aria-label="Open more actions menu">
-                            More
+                          <summary
+                            className="btn btn-ghost row-actions-trigger row-actions-trigger-icon"
+                            aria-label={`Open more actions for questionnaire ${questionnaire.name}`}
+                            title={`More actions for questionnaire ${questionnaire.name}`}
+                          >
+                            ⋯
                           </summary>
                           <div className="row-actions-dropdown">
                             <button
@@ -633,6 +648,15 @@ export default function QuestionnairesPage() {
           </div>
         )}
       </Card>
+
+      {hasQuestionnaires ? (
+        <div className="compact-stats-grid questionnaires-support-stats">
+          <CompactStatCard label="Questionnaires" value={questionnaireSummary.totalQuestionnaires} />
+          <CompactStatCard label="Questions total" value={questionnaireSummary.totalQuestions} />
+          <CompactStatCard label="Answered" value={questionnaireSummary.totalAnswered} tone="success" />
+          <CompactStatCard label="Not found" value={questionnaireSummary.totalNotFound} tone="danger" />
+        </div>
+      ) : null}
 
       <ExportModal
         isOpen={Boolean(exportTarget) && canExportQuestionnaires}

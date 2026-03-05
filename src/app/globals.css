@@ -442,6 +442,30 @@ textarea {
   margin-top: 8px;
 }
 
+.questionnaire-import-section.repeat-mode {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.questionnaire-import-section.repeat-mode.collapsed {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.questionnaire-import-section.repeat-mode .card-title-row {
+  margin-bottom: 6px;
+}
+
+.questionnaire-import-preview {
+  margin-top: 10px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.questionnaire-import-preview .card-title-row {
+  margin-bottom: 6px;
+}
+
 .page-title {
   margin: 0;
   font-size: 24px;
@@ -768,6 +792,15 @@ textarea {
   background: #eef1ff;
 }
 
+.row-actions-trigger-icon {
+  min-width: 34px;
+  width: 34px;
+  padding: 0;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+}
+
 .row-actions-dropdown {
   position: absolute;
   right: 0;
@@ -812,28 +845,48 @@ textarea {
 }
 
 .questionnaires-table {
-  min-width: 980px;
+  min-width: 940px;
 }
 
 .questionnaire-actions-cell {
-  min-width: 260px;
+  min-width: 230px;
 }
 
 .questionnaire-action-stack {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 8px;
+  gap: 6px;
 }
 
 .questionnaire-action-stack .table-actions {
-  gap: 8px;
+  gap: 6px;
 }
 
 .questionnaire-action-stack .btn {
   white-space: nowrap;
   font-size: 12px;
-  padding: 7px 10px;
+  padding: 6px 9px;
+}
+
+.questionnaires-list-card {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.questionnaires-list-card .card-title-row {
+  margin-bottom: 8px;
+}
+
+.questionnaires-support-stats .compact-stat-card {
+  min-height: 62px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.questionnaires-support-stats .compact-stat-value {
+  font-size: 20px;
+  margin-top: 4px;
 }
 
 .questionnaire-source {

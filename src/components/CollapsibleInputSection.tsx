@@ -7,6 +7,7 @@ type CollapsibleInputSectionProps = {
   id: string;
   title: string;
   helperText: string;
+  className?: string;
   expanded: boolean;
   onToggle: () => void;
   children: ReactNode;
@@ -21,6 +22,7 @@ export function CollapsibleInputSection({
   id,
   title,
   helperText,
+  className,
   expanded,
   onToggle,
   children,
@@ -34,7 +36,7 @@ export function CollapsibleInputSection({
   const toggleLabel = expanded ? collapseLabel : expandLabel;
 
   return (
-    <Card id={id} className={cx("collapsible-section", !expanded && "collapsed")}>
+    <Card id={id} className={cx("collapsible-section", !expanded && "collapsed", className)}>
       <div className="card-title-row">
         <div className="collapsible-header-copy">
           <h2 style={{ marginBottom: 4 }}>{title}</h2>

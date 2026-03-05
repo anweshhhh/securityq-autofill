@@ -441,8 +441,10 @@ Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now expl
     - heavy input sections on list pages are first-run aware:
       - `/documents`: `Upload Evidence` stays expanded when zero documents, collapses by default when documents exist
       - `/questionnaires`: `Import Questionnaire` stays expanded when zero questionnaires, collapses by default when questionnaires exist
+      - `/questionnaires` repeat-use hierarchy: saved list is prioritized above fold; import remains compact/collapsed with action-oriented copy when questionnaires already exist
     - filtered-table select-all acts on currently visible rows
     - row action hierarchy on `/questionnaires`: keep only core actions inline (`Open`, `Run Autofill`), move export + delete into a compact overflow menu (`More`)
+    - saved questionnaires list is rendered most-recently-updated first (by `updatedAt`, fallback `createdAt`)
     - Saved Questionnaires search uses a styled control with persistent label and explicit clear action
     - Saved Questionnaires actions are now explicitly visible without requiring horizontal scroll discovery (`Open` + `Run Autofill` on first line, `More` directly below)
     - `/questionnaires/[id]` uses normalized question state (`questionsById` + ordered IDs) and supports `Not found` filter/count alongside review statuses

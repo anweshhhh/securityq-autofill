@@ -1310,3 +1310,23 @@ Current log of implemented MVP work (concise, execution-focused).
   - confirm Home, Documents, and Questionnaires refresh to org-B scoped data
   - switch back org B -> org A and confirm data switches back
   - confirm no cross-org data leakage and API failures return JSON
+
+## 2026-03-04 - ui-questionnaires-01-prioritize-saved-list
+
+- Questionnaires page prioritized for repeat-use (saved list above fold):
+  - kept `Import` first-run aware and collapsed by default when saved questionnaires exist
+  - updated collapsed import microcopy to action-oriented wording:
+    - title: `Import new questionnaire`
+    - helper: `Upload a CSV and select the question column`
+  - moved CSV preview table inside the import section body so it no longer pushes the saved list down when import is collapsed
+- Saved list UX polish:
+  - tightened saved-list card chrome/padding so rows appear sooner
+  - clarified header state with `Most recently updated first`
+  - enforced recency ordering in client list rendering by `updatedAt/createdAt` descending
+  - kept action hierarchy (`Open` primary, `Run Autofill` secondary, compact overflow trigger for extra actions)
+- Supporting metrics:
+  - retained compact load-bearing metrics (`Questionnaires`, `Questions total`, `Answered`, `Not found`)
+  - moved metrics into a lighter supporting row below the saved list for repeat-use only
+- Scope:
+  - no backend/API/DB changes
+  - existing import/autofill/export/delete flows and RBAC behavior preserved
