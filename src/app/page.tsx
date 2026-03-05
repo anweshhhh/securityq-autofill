@@ -107,7 +107,7 @@ function getMessageTone(message: string): "approved" | "review" | "notfound" {
 
 export default function Home() {
   const router = useRouter();
-  const { role } = useAppAuthz();
+  const { role, orgId } = useAppAuthz();
   const [questionnaires, setQuestionnaires] = useState<QuestionnaireRow[]>([]);
   const [documentsCount, setDocumentsCount] = useState<number | null>(null);
   const [questionnairesState, setQuestionnairesState] = useState<LoadState>("loading");
@@ -228,7 +228,7 @@ export default function Home() {
 
   useEffect(() => {
     void refreshDashboard();
-  }, [refreshDashboard]);
+  }, [orgId, refreshDashboard]);
 
   useEffect(() => {
     let cancelled = false;

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppAuthzProvider, type AppAuthzState } from "@/components/AppAuthzContext";
 import { Button, TextInput, cx } from "@/components/ui";
@@ -35,6 +35,18 @@ type MePayload = {
     orgName: string;
     role: Role;
   }>;
+};
+
+type ActiveOrgSwitchPayload = {
+  ok?: boolean;
+  activeOrg?: {
+    id?: string;
+    name?: string;
+  };
+  role?: Role;
+  error?: {
+    message?: string;
+  };
 };
 
 const ROLE_OPTIONS: Role[] = ["OWNER", "ADMIN", "REVIEWER", "VIEWER"];
@@ -161,6 +173,7 @@ function isActiveRoute(pathname: string, href: string): boolean {
 
 export function AppShell({ devMode, children }: AppShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const { data: session, status } = useSession();
   const devRoleSwitcherEnabled = devMode && process.env.NODE_ENV !== "production";
   const [authzState, setAuthzState] = useState<AppAuthzState>({
@@ -172,6 +185,8 @@ export function AppShell({ devMode, children }: AppShellProps) {
     memberships: []
   });
   const [isDevRoleSwitching, setIsDevRoleSwitching] = useState(false);
+  const [isWorkspaceSwitching, setIsWorkspaceSwitching] = useState(false);
+  const [workspaceSwitchError, setWorkspaceSwitchError] = useState<string>("");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
@@ -478,7 +493,10 @@ export function AppShell({ devMode, children }: AppShellProps) {
                   aria-haspopup="dialog"
                   aria-expanded={isAccountMenuOpen}
                   aria-label="Open user and workspace menu"
-                  onClick={() => setIsAccountMenuOpen((value) => !value)}
+                  onClick={() => {
+                    setWorkspaceSwitchError("");
+                    setIsAccountMenuOpen((value) => !value);
+                  }}
                 >
                   <span className="account-menu-avatar" aria-hidden="true">
                     U
@@ -516,17 +534,66 @@ export function AppShell({ devMode, children }: AppShellProps) {
                         <span className="account-menu-meta-label">Workspace switcher</span>
                         <select
                           className="input"
-                          disabled
-                          value={authzState.orgName ?? ""}
-                          aria-label="Organization switcher (coming soon)"
-                          title="Organization switcher (coming soon)"
+                          disabled={isWorkspaceSwitching}
+                          value={authzState.orgId ?? authzState.memberships[0]?.orgId ?? ""}
+                          onChange={async (event) => {
+                            const nextOrgId = event.target.value;
+                            if (!nextOrgId || nextOrgId === authzState.orgId) {
+                              return;
+                            }
+
+                            setIsWorkspaceSwitching(true);
+                            setWorkspaceSwitchError("");
+
+                            try {
+                              const response = await fetch("/api/me/active-org", {
+                                method: "POST",
+                                headers: {
+                                  "Content-Type": "application/json"
+                                },
+                                body: JSON.stringify({
+                                  organizationId: nextOrgId
+                                })
+                              });
+
+                              const payload = (await response.json().catch(() => null)) as ActiveOrgSwitchPayload | null;
+                              if (!response.ok || !payload?.ok || !payload.activeOrg?.id || !payload.activeOrg?.name) {
+                                throw new Error(payload?.error?.message ?? "Failed to switch workspace.");
+                              }
+
+                              setAuthzState((current) => ({
+                                ...current,
+                                orgId: payload.activeOrg?.id ?? current.orgId,
+                                orgName: payload.activeOrg?.name ?? current.orgName,
+                                role: payload.role ?? current.role
+                              }));
+
+                              closeAccountMenu();
+                              router.refresh();
+                              await loadAuthContext();
+                            } catch (error) {
+                              setWorkspaceSwitchError(
+                                error instanceof Error ? error.message : "Failed to switch workspace."
+                              );
+                            } finally {
+                              setIsWorkspaceSwitching(false);
+                            }
+                          }}
+                          aria-label="Workspace switcher"
+                          title="Workspace switcher"
                         >
                           {authzState.memberships.map((membership) => (
-                            <option key={membership.orgId} value={membership.orgName}>
+                            <option key={membership.orgId} value={membership.orgId}>
                               {membership.orgName}
+                              {membership.orgId === authzState.orgId ? " (Current)" : ""}
                             </option>
                           ))}
                         </select>
+                        {workspaceSwitchError ? (
+                          <div className="small account-menu-error" role="alert">
+                            {workspaceSwitchError}
+                          </div>
+                        ) : null}
                       </label>
                     ) : null}
 

@@ -166,4 +166,60 @@ describe("organization membership bootstrap", () => {
     expect(active.role).toBe(MembershipRole.REVIEWER);
     expect(active.membershipCount).toBe(2);
   });
+
+  it("falls back to first membership when lastUsedOrganizationId is stale", async () => {
+    const now = Date.now();
+    const staleOrg = await prisma.organization.create({
+      data: {
+        name: `${TEST_ORG_PREFIX}${now}-stale-unused`
+      }
+    });
+    const user = await prisma.user.create({
+      data: {
+        email: `${TEST_EMAIL_PREFIX}${now}-stale@example.com`,
+        name: "Stale Active Org Tester",
+        lastUsedOrganizationId: staleOrg.id
+      }
+    });
+
+    const orgA = await prisma.organization.create({
+      data: {
+        name: `${TEST_ORG_PREFIX}${now}-stale-a`
+      }
+    });
+    const orgB = await prisma.organization.create({
+      data: {
+        name: `${TEST_ORG_PREFIX}${now}-stale-b`
+      }
+    });
+
+    await prisma.membership.createMany({
+      data: [
+        {
+          userId: user.id,
+          organizationId: orgA.id,
+          role: MembershipRole.ADMIN
+        },
+        {
+          userId: user.id,
+          organizationId: orgB.id,
+          role: MembershipRole.REVIEWER
+        }
+      ]
+    });
+
+    const active = await getActiveOrgForUser(user.id);
+    expect(active.orgId).toBe(orgA.id);
+    expect(active.role).toBe(MembershipRole.ADMIN);
+
+    const userAfter = await prisma.user.findUniqueOrThrow({
+      where: {
+        id: user.id
+      },
+      select: {
+        lastUsedOrganizationId: true
+      }
+    });
+    expect(userAfter.lastUsedOrganizationId).toBe(orgA.id);
+  });
 });

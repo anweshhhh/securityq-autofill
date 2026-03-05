@@ -75,8 +75,13 @@ Core promise: answers are generated only from uploaded evidence and always inclu
   - bootstrap is idempotent: repeat sign-ins do not create duplicate organizations/memberships.
   - active org resolution is membership-derived via `getActiveOrgForUser(userId)`:
     - one membership: use that membership
-    - multiple memberships: prefer `User.lastUsedOrganizationId`, otherwise newest membership
+    - multiple memberships: prefer `User.lastUsedOrganizationId`, otherwise first membership by creation order
     - no memberships: bootstrap org + `OWNER` membership
+  - active workspace switching:
+    - `POST /api/me/active-org` accepts `{ organizationId }`
+    - switch target must be an org where the user has membership
+    - successful switch persists `User.lastUsedOrganizationId`
+    - stale/invalid `lastUsedOrganizationId` values fall back to the first valid membership and are repaired
   - request context helper `getRequestContext()` resolves `{ userId, orgId, role }` from session + active membership.
 
 ### Organization roles
@@ -415,6 +420,7 @@ Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now expl
   - top-bar account dropdown in shell:
     - compact trigger (workspace label + optional role) replaces inline email/org/role block
     - menu contains email, workspace, role, members link, and sign out
+    - workspace switcher is active for multi-membership users and refreshes route data after switch
     - `Esc` closes menu and returns focus to trigger
   - landmarks + progressbar a11y:
     - shell includes explicit landmarks (`header`, `nav`, single `main`, sidebar navigation landmark)
@@ -508,6 +514,7 @@ Home route (`/`) behavior:
 
 API:
 - `POST /api/dev/role` (DEV tools; `DEV_MODE=true` and non-production only)
+- `POST /api/me/active-org`
 - `GET /api/org/members`
 - `PATCH /api/org/members/:userId`
 - `POST /api/org/invites`

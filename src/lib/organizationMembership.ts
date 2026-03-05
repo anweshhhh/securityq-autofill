@@ -122,8 +122,7 @@ async function resolveActiveMembership(
   }
 
   const activeMembership =
-    memberships.find((membership) => membership.organizationId === user.lastUsedOrganizationId) ??
-    memberships[memberships.length - 1];
+    memberships.find((membership) => membership.organizationId === user.lastUsedOrganizationId) ?? memberships[0];
 
   if (activeMembership.organizationId !== user.lastUsedOrganizationId) {
     await tx.user.update({
@@ -191,4 +190,61 @@ export async function listUserMemberships(userId: string): Promise<UserMembershi
     orgName: membership.organization.name,
     role: membership.role
   }));
+}
+
+export async function setActiveOrgForUser(
+  userId: string,
+  organizationId: string
+): Promise<ActiveOrgForUser | null> {
+  const normalizedUserId = userId.trim();
+  const normalizedOrgId = organizationId.trim();
+
+  if (!normalizedUserId || !normalizedOrgId) {
+    return null;
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const membership = await tx.membership.findUnique({
+      where: {
+        userId_organizationId: {
+          userId: normalizedUserId,
+          organizationId: normalizedOrgId
+        }
+      },
+      include: {
+        organization: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    });
+
+    if (!membership) {
+      return null;
+    }
+
+    await tx.user.update({
+      where: {
+        id: normalizedUserId
+      },
+      data: {
+        lastUsedOrganizationId: normalizedOrgId
+      }
+    });
+
+    const membershipCount = await tx.membership.count({
+      where: {
+        userId: normalizedUserId
+      }
+    });
+
+    return {
+      orgId: membership.organization.id,
+      orgName: membership.organization.name,
+      role: membership.role,
+      membershipCount
+    };
+  });
 }

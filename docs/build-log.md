@@ -1279,3 +1279,34 @@ Current log of implemented MVP work (concise, execution-focused).
 - Scope:
   - presentation-only refactor; no backend/API/DB changes
   - existing data sources, counts, and calculations remain unchanged
+
+## 2026-03-04 - phase4-ui-02-fix-workspace-switcher
+
+- Diagnosis (root cause):
+  - the profile dropdown workspace switcher was rendered as a disabled "coming soon" select and never executed a server mutation.
+  - active org (`User.lastUsedOrganizationId`) was therefore never updated from the switcher UI, so org-scoped data remained on the previous workspace.
+- Fix summary:
+  - added canonical active-org switch endpoint:
+    - `POST /api/me/active-org` with body `{ organizationId }`
+    - requires authenticated request context
+    - verifies target org membership for current user
+    - persists `User.lastUsedOrganizationId` on success
+    - returns JSON success payload (`ok`, `activeOrg`, `role`) or JSON error (`FORBIDDEN_ORG_SWITCH` for non-membership targets)
+  - added shared server helper:
+    - `setActiveOrgForUser(userId, organizationId)` in `src/lib/organizationMembership.ts`
+  - hardened active org fallback behavior:
+    - when `lastUsedOrganizationId` is stale/invalid, resolver now falls back deterministically to first membership by creation order and repairs persisted value.
+  - wired AppShell dropdown switcher to call `/api/me/active-org`, update local authz state, close menu on success, and refresh route/auth context.
+  - list/workbench pages refetch org-scoped data when active org changes from shell context.
+- Verification:
+  - added tests:
+    - `src/app/api/me/active-org.route.test.ts`
+    - `src/lib/requestContext.active-org.test.ts`
+    - `src/lib/organizationMembership.test.ts` (stale active-org fallback case)
+- Manual verification checklist:
+  - create one user with memberships in two orgs
+  - add distinct documents/questionnaires in each org
+  - switch via top-bar dropdown from org A -> org B
+  - confirm Home, Documents, and Questionnaires refresh to org-B scoped data
+  - switch back org B -> org A and confirm data switches back
+  - confirm no cross-org data leakage and API failures return JSON

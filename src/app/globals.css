@@ -319,6 +319,14 @@ textarea {
   height: 34px;
 }
 
+.account-menu-error {
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff1f2;
+  color: #9f1239;
+  padding: 6px 8px;
+}
+
 .account-menu-actions {
   border-top: 1px solid #e5ebf7;
   padding-top: 8px;

@@ -516,7 +516,7 @@ export default function QuestionnaireDetailsPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const questionnaireId = params.id;
-  const { role } = useAppAuthz();
+  const { role, orgId } = useAppAuthz();
 
   const [data, setData] = useState<QuestionnaireDetailsPayload | null>(null);
   const [message, setMessage] = useState("");
@@ -626,7 +626,7 @@ export default function QuestionnaireDetailsPage() {
     if (questionnaireId) {
       void loadDetails();
     }
-  }, [questionnaireId, loadDetails]);
+  }, [orgId, questionnaireId, loadDetails]);
 
   const questionsById = useMemo(() => {
     if (!data) {

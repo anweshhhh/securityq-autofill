@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppAuthz } from "@/components/AppAuthzContext";
 import { CollapsibleInputSection } from "@/components/CollapsibleInputSection";
@@ -77,7 +77,7 @@ function getMessageTone(message: string): "approved" | "review" | "notfound" {
 
 export default function QuestionnairesPage() {
   const router = useRouter();
-  const { role } = useAppAuthz();
+  const { role, orgId } = useAppAuthz();
   const [questionnaires, setQuestionnaires] = useState<QuestionnaireRow[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -129,7 +129,7 @@ export default function QuestionnairesPage() {
     };
   }, [questionnaires]);
 
-  async function fetchQuestionnaires() {
+  const fetchQuestionnaires = useCallback(async () => {
     setIsLoadingList(true);
 
     try {
@@ -153,11 +153,11 @@ export default function QuestionnairesPage() {
     } finally {
       setIsLoadingList(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     void fetchQuestionnaires();
-  }, []);
+  }, [fetchQuestionnaires, orgId]);
 
   async function handleFileSelect(file: File | null) {
     if (!canImportQuestionnaires) {

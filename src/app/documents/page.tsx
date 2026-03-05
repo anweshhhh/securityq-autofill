@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppAuthz } from "@/components/AppAuthzContext";
 import { CollapsibleInputSection } from "@/components/CollapsibleInputSection";
 import { CompactStatCard } from "@/components/CompactStatCard";
@@ -104,7 +104,7 @@ function documentTypeLabel(document: Pick<DocumentRow, "mimeType" | "originalNam
 }
 
 export default function DocumentsPage() {
-  const { role } = useAppAuthz();
+  const { role, orgId } = useAppAuthz();
   const [documents, setDocuments] = useState<DocumentRow[]>([]);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -154,7 +154,7 @@ export default function DocumentsPage() {
   const canUploadDocuments = role ? can(role, RbacAction.UPLOAD_DOCUMENTS) : false;
   const canDeleteDocuments = role ? can(role, RbacAction.DELETE_DOCUMENTS) : false;
 
-  async function fetchDocuments() {
+  const fetchDocuments = useCallback(async () => {
     setIsLoading(true);
 
     try {
@@ -178,11 +178,11 @@ export default function DocumentsPage() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     void fetchDocuments();
-  }, []);
+  }, [fetchDocuments, orgId]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
