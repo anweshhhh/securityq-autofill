@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAppAuthz } from "@/components/AppAuthzContext";
+import { CollapsibleInputSection } from "@/components/CollapsibleInputSection";
 import { ExportModal } from "@/components/ExportModal";
 import { Badge, Button, Card, TextInput, cx } from "@/components/ui";
 import { can, RbacAction } from "@/server/rbac";
@@ -73,6 +75,7 @@ function getMessageTone(message: string): "approved" | "review" | "notfound" {
 }
 
 export default function QuestionnairesPage() {
+  const router = useRouter();
   const { role } = useAppAuthz();
   const [questionnaires, setQuestionnaires] = useState<QuestionnaireRow[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -88,6 +91,8 @@ export default function QuestionnairesPage() {
   const [activeDeleteId, setActiveDeleteId] = useState<string | null>(null);
   const [searchText, setSearchText] = useState("");
   const [exportTarget, setExportTarget] = useState<{ id: string; name: string } | null>(null);
+  const [isImportSectionExpanded, setIsImportSectionExpanded] = useState(true);
+  const importCollapseInitializedRef = useRef(false);
 
   const previewHeaders = useMemo(() => headers, [headers]);
   const canImportQuestionnaires = role ? can(role, RbacAction.IMPORT_QUESTIONNAIRES) : false;
@@ -138,6 +143,10 @@ export default function QuestionnairesPage() {
       }
 
       setQuestionnaires(payload.questionnaires ?? []);
+      if (!importCollapseInitializedRef.current) {
+        setIsImportSectionExpanded((payload.questionnaires ?? []).length === 0);
+        importCollapseInitializedRef.current = true;
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to load questionnaires");
     } finally {
@@ -332,21 +341,28 @@ export default function QuestionnairesPage() {
     }
   }
 
+  function openQuestionnaire(questionnaireId: string) {
+    try {
+      window.localStorage.setItem("lastQuestionnaireId", questionnaireId);
+    } catch {
+      // Navigation should still proceed even if localStorage is unavailable.
+    }
+
+    router.push(`/questionnaires/${questionnaireId}`);
+  }
+
   return (
     <div className="page-stack">
-      <Card id="import">
-        <div className="card-title-row">
-          <div>
-            <h2 style={{ marginBottom: 4 }}>Import Questionnaire</h2>
-            <p className="muted" style={{ margin: 0 }}>
-              Upload CSV, pick the question column, and create a new review run.
-            </p>
-          </div>
-          <Badge tone="draft" title="CSV only">
-            CSV workflow
-          </Badge>
-        </div>
-
+      <CollapsibleInputSection
+        id="import"
+        title="Import Questionnaire"
+        helperText="Upload CSV, pick the question column, and create a new review run."
+        expanded={isImportSectionExpanded}
+        onToggle={() => setIsImportSectionExpanded((value) => !value)}
+        badgeLabel="CSV workflow"
+        badgeTone="draft"
+        badgeTitle="CSV only"
+      >
         <form onSubmit={handleImport} className="page-stack">
           <div className="two-col">
             <div className="card card-muted">
@@ -413,7 +429,7 @@ export default function QuestionnairesPage() {
             </Button>
           </div>
         </form>
-      </Card>
+      </CollapsibleInputSection>
 
       {message ? (
         <div
@@ -567,9 +583,14 @@ export default function QuestionnairesPage() {
                     <td className="questionnaire-actions-cell">
                       <div className="questionnaire-action-stack">
                         <div className="table-actions">
-                          <Link href={`/questionnaires/${questionnaire.id}`} className="btn btn-primary">
+                          <Button
+                            type="button"
+                            variant="primary"
+                            onClick={() => openQuestionnaire(questionnaire.id)}
+                            aria-label={`Open questionnaire ${questionnaire.name}`}
+                          >
                             Open
-                          </Link>
+                          </Button>
                           <Button
                             type="button"
                             variant="secondary"

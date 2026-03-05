@@ -428,6 +428,9 @@ Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now expl
   - UX polish conventions:
     - contextual feedback uses `message-banner` (`success` / `error`) instead of status badges for user actions
     - list pages support lightweight local search where row volume grows (`/documents`, `/questionnaires`)
+    - heavy input sections on list pages are first-run aware:
+      - `/documents`: `Upload Evidence` stays expanded when zero documents, collapses by default when documents exist
+      - `/questionnaires`: `Import Questionnaire` stays expanded when zero questionnaires, collapses by default when questionnaires exist
     - filtered-table select-all acts on currently visible rows
     - row action hierarchy on `/questionnaires`: keep only core actions inline (`Open`, `Run Autofill`), move export + delete into a compact overflow menu (`More`)
     - Saved Questionnaires search uses a styled control with persistent label and explicit clear action

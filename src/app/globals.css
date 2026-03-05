@@ -383,6 +383,57 @@ textarea {
   gap: 16px;
 }
 
+.collapsible-section {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.collapsible-section.collapsed {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.collapsible-section .card-title-row {
+  margin-bottom: 8px;
+}
+
+.collapsible-section.collapsed .card-title-row {
+  margin-bottom: 0;
+}
+
+.collapsible-header-copy {
+  min-width: 0;
+}
+
+.collapsible-helper {
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.collapsible-header-actions {
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.collapsible-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 98px;
+  justify-content: center;
+}
+
+.collapsible-toggle-chevron {
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.collapsible-section-body {
+  margin-top: 8px;
+}
+
 .page-title {
   margin: 0;
   font-size: 24px;

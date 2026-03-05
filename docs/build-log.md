@@ -1254,3 +1254,16 @@ Current log of implemented MVP work (concise, execution-focused).
   - `/questionnaires`: account menu visible, route header/CTA hierarchy unchanged
   - `/settings/members`: account menu visible, route header/CTA hierarchy unchanged
   - sign out action still routes to `/login`
+
+## 2026-03-04 - ui-pages-01-collapse-heavy-input-sections
+
+- Collapsed heavy input sections for repeat-use workflows on list pages:
+  - `/documents`: `Upload Evidence` is now collapsible and defaults to collapsed when documents exist; defaults expanded when there are zero documents.
+  - `/questionnaires`: `Import Questionnaire` is now collapsible and defaults to collapsed when questionnaires exist; defaults expanded when there are zero questionnaires.
+- Added shared accessible collapsible section primitive:
+  - trigger button with `aria-expanded` + `aria-controls`
+  - keyboard-accessible toggle behavior via standard button semantics
+  - compact collapsed header spacing to surface inventory/saved tables earlier
+- Behavior scope:
+  - no backend/API/DB changes
+  - all existing upload/import/delete/autofill/export/RBAC behavior preserved

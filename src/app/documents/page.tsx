@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useAppAuthz } from "@/components/AppAuthzContext";
+import { CollapsibleInputSection } from "@/components/CollapsibleInputSection";
 import { Badge, Button, Card, TextInput, cx } from "@/components/ui";
 import { can, RbacAction } from "@/server/rbac";
 
@@ -112,6 +113,8 @@ export default function DocumentsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [message, setMessage] = useState<string>("");
   const [searchText, setSearchText] = useState("");
+  const [isUploadSectionExpanded, setIsUploadSectionExpanded] = useState(true);
+  const uploadCollapseInitializedRef = useRef(false);
 
   const visibleDocuments = useMemo(() => {
     if (!showLatestOnly) {
@@ -162,6 +165,10 @@ export default function DocumentsPage() {
       }
 
       setDocuments(payload.documents);
+      if (!uploadCollapseInitializedRef.current) {
+        setIsUploadSectionExpanded(payload.documents.length === 0);
+        uploadCollapseInitializedRef.current = true;
+      }
       setSelectedDocumentIds((current) =>
         current.filter((selectedId) => payload.documents.some((document) => document.id === selectedId))
       );
@@ -299,19 +306,16 @@ export default function DocumentsPage() {
 
   return (
     <div className="page-stack">
-      <Card id="upload">
-        <div className="card-title-row">
-          <div>
-            <h2 style={{ marginBottom: 4 }}>Upload Evidence</h2>
-            <p className="muted" style={{ margin: 0 }}>
-              Add `.txt`, `.md`, or `.pdf` evidence files. Upload keeps chunk extraction deterministic.
-            </p>
-          </div>
-          <Badge tone="draft" title="Ingestion pipeline">
-            Ingestion
-          </Badge>
-        </div>
-
+      <CollapsibleInputSection
+        id="upload"
+        title="Upload Evidence"
+        helperText="Add `.txt`, `.md`, or `.pdf` evidence files. Upload keeps chunk extraction deterministic."
+        expanded={isUploadSectionExpanded}
+        onToggle={() => setIsUploadSectionExpanded((value) => !value)}
+        badgeLabel="Ingestion"
+        badgeTone="draft"
+        badgeTitle="Ingestion pipeline"
+      >
         <form onSubmit={handleSubmit} className="page-stack">
           <div className="empty-state">
             <h3 style={{ marginTop: 0 }}>Drop evidence files here</h3>
@@ -350,7 +354,7 @@ export default function DocumentsPage() {
             </label>
           </div>
         </form>
-      </Card>
+      </CollapsibleInputSection>
 
       <div className="kpi-grid">
         <div className="kpi-card">
