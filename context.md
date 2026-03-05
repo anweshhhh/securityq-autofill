@@ -412,6 +412,10 @@ Extractor prompt in `generateEvidenceSufficiency` (`src/lib/openai.ts`) now expl
     - not found = red
   - interactive controls require visible focus styles and accessible labels
   - modal/drawer surfaces trap keyboard focus while open and support `Esc` close
+  - top-bar account dropdown in shell:
+    - compact trigger (workspace label + optional role) replaces inline email/org/role block
+    - menu contains email, workspace, role, members link, and sign out
+    - `Esc` closes menu and returns focus to trigger
   - landmarks + progressbar a11y:
     - shell includes explicit landmarks (`header`, `nav`, single `main`, sidebar navigation landmark)
     - focusable skip link (`Skip to main content`) targets `#main-content`

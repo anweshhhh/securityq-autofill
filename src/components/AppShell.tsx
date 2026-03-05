@@ -174,7 +174,10 @@ export function AppShell({ devMode, children }: AppShellProps) {
   const [isDevRoleSwitching, setIsDevRoleSwitching] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const mobileSidebarRef = useRef<HTMLElement | null>(null);
+  const accountMenuContainerRef = useRef<HTMLDivElement | null>(null);
+  const accountMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   const navItems: NavItem[] = useMemo(() => {
     const items: NavItem[] = [
@@ -197,12 +200,25 @@ export function AppShell({ devMode, children }: AppShellProps) {
   const pageHeader = getPageHeader(pathname);
   const primaryAction = getPrimaryAction(pathname, authzState.role);
   const showTopNavSearch = pathname !== "/";
+  const canViewMembers = authzState.role ? can(authzState.role, RbacAction.VIEW_MEMBERS) : false;
+  const accountEmail = session?.user?.email ?? authzState.userEmail ?? "Signed in";
+  const accountOrgName = authzState.orgName ?? "Workspace";
+  const accountRole = authzState.role ?? "Unknown";
 
   useFocusTrap({
     active: isMobileSidebarOpen,
     containerRef: mobileSidebarRef,
     onEscape: () => setIsMobileSidebarOpen(false)
   });
+
+  const closeAccountMenu = useCallback((options?: { returnFocus?: boolean }) => {
+    setIsAccountMenuOpen(false);
+    if (options?.returnFocus) {
+      window.requestAnimationFrame(() => {
+        accountMenuTriggerRef.current?.focus();
+      });
+    }
+  }, []);
 
   const loadAuthContext = useCallback(async () => {
     try {
@@ -250,11 +266,54 @@ export function AppShell({ devMode, children }: AppShellProps) {
         role: null,
         memberships: []
       });
+      setIsAccountMenuOpen(false);
       return;
     }
 
     void loadAuthContext();
   }, [loadAuthContext, status]);
+
+  useEffect(() => {
+    closeAccountMenu();
+  }, [closeAccountMenu, pathname]);
+
+  useEffect(() => {
+    if (!isAccountMenuOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent | TouchEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (accountMenuContainerRef.current?.contains(target)) {
+        return;
+      }
+
+      closeAccountMenu();
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      event.preventDefault();
+      closeAccountMenu({ returnFocus: true });
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [closeAccountMenu, isAccountMenuOpen]);
 
   async function handleDevRoleChange(event: ChangeEvent<HTMLSelectElement>) {
     const nextRole = event.target.value as Role;
@@ -411,65 +470,115 @@ export function AppShell({ devMode, children }: AppShellProps) {
               </Link>
             ) : null}
             {status === "authenticated" ? (
-              <div className="toolbar-row compact">
-                <span className="small muted">{session.user?.email ?? authzState.userEmail ?? "Signed in"}</span>
-                <span className="small muted">
-                  Org: {authzState.orgName ?? "Loading..."}
-                </span>
-                {authzState.role ? <span className="small muted">Role: {authzState.role}</span> : null}
-                {devRoleSwitcherEnabled ? (
-                  <label className="small muted" style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
-                    Dev role
-                    <select
-                      className="input"
-                      value={authzState.role ?? ""}
-                      onChange={handleDevRoleChange}
-                      disabled={isDevRoleSwitching || !authzState.role}
-                      aria-label="Development role switcher"
-                      title="Development role switcher"
-                      style={{ minWidth: 120, height: 34 }}
-                    >
-                      {!authzState.role ? (
-                        <option value="" disabled>
-                          Loading
-                        </option>
-                      ) : null}
-                      {ROLE_OPTIONS.map((role) => (
-                        <option key={role} value={role}>
-                          {role}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-                {authzState.memberships.length > 1 ? (
-                  <label className="small muted" style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
-                    Workspace
-                    <select
-                      className="input"
-                      disabled
-                      value={authzState.orgName ?? ""}
-                      aria-label="Organization switcher (coming soon)"
-                      title="Organization switcher (coming soon)"
-                      style={{ minWidth: 180, height: 34 }}
-                    >
-                      {authzState.memberships.map((membership) => (
-                        <option key={membership.orgId} value={membership.orgName}>
-                          {membership.orgName}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-                <Button
+              <div className="account-menu-container" ref={accountMenuContainerRef}>
+                <button
+                  ref={accountMenuTriggerRef}
                   type="button"
-                  variant="ghost"
-                  onClick={() => void signOut({ callbackUrl: "/login" })}
-                  aria-label="Sign out"
-                  title="Sign out"
+                  className={cx("account-menu-trigger", isAccountMenuOpen && "open")}
+                  aria-haspopup="dialog"
+                  aria-expanded={isAccountMenuOpen}
+                  aria-label="Open user and workspace menu"
+                  onClick={() => setIsAccountMenuOpen((value) => !value)}
                 >
-                  Sign out
-                </Button>
+                  <span className="account-menu-avatar" aria-hidden="true">
+                    U
+                  </span>
+                  <span className="account-menu-org" title={accountOrgName}>
+                    {accountOrgName}
+                  </span>
+                  {authzState.role ? <span className="account-menu-role">{authzState.role}</span> : null}
+                  <span className="account-menu-chevron" aria-hidden="true">
+                    {isAccountMenuOpen ? "▲" : "▼"}
+                  </span>
+                </button>
+
+                {isAccountMenuOpen ? (
+                  <div className="account-menu-popover" role="dialog" aria-label="User and workspace menu">
+                    <div className="account-menu-meta">
+                      <div className="account-menu-meta-label">Email</div>
+                      <div className="account-menu-meta-value" title={accountEmail}>
+                        {accountEmail}
+                      </div>
+                    </div>
+                    <div className="account-menu-meta">
+                      <div className="account-menu-meta-label">Workspace</div>
+                      <div className="account-menu-meta-value" title={accountOrgName}>
+                        {accountOrgName}
+                      </div>
+                    </div>
+                    <div className="account-menu-meta">
+                      <div className="account-menu-meta-label">Role</div>
+                      <div className="account-menu-meta-value">{accountRole}</div>
+                    </div>
+
+                    {authzState.memberships.length > 1 ? (
+                      <label className="account-menu-control">
+                        <span className="account-menu-meta-label">Workspace switcher</span>
+                        <select
+                          className="input"
+                          disabled
+                          value={authzState.orgName ?? ""}
+                          aria-label="Organization switcher (coming soon)"
+                          title="Organization switcher (coming soon)"
+                        >
+                          {authzState.memberships.map((membership) => (
+                            <option key={membership.orgId} value={membership.orgName}>
+                              {membership.orgName}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
+
+                    {devRoleSwitcherEnabled ? (
+                      <label className="account-menu-control">
+                        <span className="account-menu-meta-label">Dev role</span>
+                        <select
+                          className="input"
+                          value={authzState.role ?? ""}
+                          onChange={handleDevRoleChange}
+                          disabled={isDevRoleSwitching || !authzState.role}
+                          aria-label="Development role switcher"
+                          title="Development role switcher"
+                        >
+                          {!authzState.role ? (
+                            <option value="" disabled>
+                              Loading
+                            </option>
+                          ) : null}
+                          {ROLE_OPTIONS.map((role) => (
+                            <option key={role} value={role}>
+                              {role}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
+
+                    <div className="account-menu-actions">
+                      {canViewMembers ? (
+                        <Link
+                          href="/settings/members"
+                          className="account-menu-action"
+                          onClick={() => closeAccountMenu()}
+                        >
+                          Members
+                        </Link>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="account-menu-action"
+                        onClick={() => {
+                          closeAccountMenu();
+                          void signOut({ callbackUrl: "/login" });
+                        }}
+                        aria-label="Sign out"
+                      >
+                        Sign out
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <Link href="/login" className="btn btn-secondary" aria-label="Sign in">

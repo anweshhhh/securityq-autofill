@@ -1230,3 +1230,27 @@ Current log of implemented MVP work (concise, execution-focused).
 - Shell cleanup on Home route:
   - removed duplicate top-nav primary CTA on `/`
   - hid non-functional global search input on `/`
+
+## 2026-03-04 - ui-topbar-01-user-org-menu-cleanup
+
+- Top bar account section in `AppShell` was simplified from inline text/actions into a compact user/org dropdown menu trigger.
+- New dropdown preserves existing account/workspace details and actions:
+  - user email
+  - active workspace name
+  - role
+  - `Members` link (permission-aware)
+  - `Sign out`
+  - existing dev-role switcher remains available in dev mode
+  - existing multi-membership workspace switcher remains visible as disabled "coming soon" control
+- Accessibility behavior added:
+  - trigger uses `aria-haspopup` + `aria-expanded`
+  - `Escape` closes the menu and returns focus to the trigger
+  - focus-visible styles added for trigger/menu actions
+- Top bar hierarchy cleanup retained:
+  - Home route (`/`) keeps top search hidden and no duplicate shell-level primary CTA
+- Manual verification checklist (signed-in):
+  - `/`: top bar is cleaner, account details available in menu
+  - `/documents`: account menu visible, route header/CTA hierarchy unchanged
+  - `/questionnaires`: account menu visible, route header/CTA hierarchy unchanged
+  - `/settings/members`: account menu visible, route header/CTA hierarchy unchanged
+  - sign out action still routes to `/login`
