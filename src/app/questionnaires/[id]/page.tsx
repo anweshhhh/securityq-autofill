@@ -54,7 +54,7 @@ type QuestionnaireDetailsPayload = {
   error?: string;
 };
 
-type QuestionFilter = "ALL" | "DRAFT" | "APPROVED" | "NEEDS_REVIEW" | "NOT_FOUND" | "REUSED";
+type QuestionFilter = "ALL" | "DRAFT" | "APPROVED" | "NEEDS_REVIEW" | "NOT_FOUND" | "REUSED" | "STALE";
 type StatusCounts = Record<QuestionFilter, number>;
 
 type EvidenceItem = {
@@ -71,6 +71,13 @@ type QuestionRailItem = {
   notFound: boolean;
   reuseMatchType: QuestionRow["reuseMatchType"];
   citationCount: number;
+  isStale: boolean;
+  hasApprovedAnswer: boolean;
+};
+
+type QuestionnaireStaleItem = {
+  questionnaireItemId: string;
+  rowIndex: number | null;
 };
 
 type AutofillPayload = {
@@ -125,7 +132,8 @@ const FILTER_OPTIONS: Array<{ key: QuestionFilter; label: string }> = [
   { key: "APPROVED", label: "Approved" },
   { key: "NEEDS_REVIEW", label: "Needs review" },
   { key: "NOT_FOUND", label: "Not found" },
-  { key: "REUSED", label: "Reused" }
+  { key: "REUSED", label: "Reused" },
+  { key: "STALE", label: "Stale" }
 ];
 
 const QUESTION_TERM_STOPWORDS = new Set([
@@ -457,7 +465,8 @@ function toQuestionPreview(questionText: string): string {
 function getFilteredQuestionIdsForView(
   questions: QuestionRow[],
   filter: QuestionFilter,
-  deferredSearchText: string
+  deferredSearchText: string,
+  staleQuestionIds: Set<string>
 ): string[] {
   const loweredSearch = deferredSearchText.trim().toLowerCase();
   return questions
@@ -467,6 +476,10 @@ function getFilteredQuestionIdsForView(
       }
 
       if (filter === "REUSED" && !question.reuseMatchType) {
+        return false;
+      }
+
+      if (filter === "STALE" && !staleQuestionIds.has(question.id)) {
         return false;
       }
 
@@ -552,6 +565,11 @@ const QuestionRailItemButton = memo(function QuestionRailItemButton({
             </Badge>
           ) : null}
           {item.notFound ? <Badge tone="notfound">Not found</Badge> : null}
+          {item.isStale && item.hasApprovedAnswer ? (
+            <Badge tone="notfound" title="This approved answer is stale based on cited chunk drift">
+              STALE
+            </Badge>
+          ) : null}
           <Badge tone="draft">{item.citationCount} citation{item.citationCount === 1 ? "" : "s"}</Badge>
         </div>
       </div>
@@ -593,6 +611,7 @@ export default function QuestionnaireDetailsPage() {
   const [isApprovingReusedExact, setIsApprovingReusedExact] = useState(false);
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [documentIdByName, setDocumentIdByName] = useState<Record<string, string>>({});
+  const [staleQuestionnaireItems, setStaleQuestionnaireItems] = useState<QuestionnaireStaleItem[]>([]);
   const [isDocumentModalOpen, setIsDocumentModalOpen] = useState(false);
   const [isDocumentLoading, setIsDocumentLoading] = useState(false);
   const [documentModalTitle, setDocumentModalTitle] = useState("");
@@ -675,11 +694,67 @@ export default function QuestionnaireDetailsPage() {
     [questionnaireId]
   );
 
+  const staleQuestionIdSet = useMemo(
+    () => new Set(staleQuestionnaireItems.map((item) => item.questionnaireItemId)),
+    [staleQuestionnaireItems]
+  );
+
+  const loadQuestionnaireStaleness = useCallback(async () => {
+    if (!questionnaireId) {
+      setStaleQuestionnaireItems([]);
+      return null;
+    }
+
+    try {
+      const response = await fetch(`/api/questionnaires/${questionnaireId}/staleness`, {
+        cache: "no-store"
+      });
+      const payload = (await response.json()) as {
+        staleCount?: number;
+        staleItems?: Array<{ questionnaireItemId?: unknown; rowIndex?: number | null }>;
+        error?: unknown;
+      };
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          return null;
+        }
+        return null;
+      }
+
+      const staleItems: QuestionnaireStaleItem[] = Array.isArray(payload.staleItems)
+        ? payload.staleItems
+            .map((item) => {
+              const typed = item as { questionnaireItemId?: unknown; rowIndex?: unknown };
+              if (typeof typed.questionnaireItemId !== "string") {
+                return null;
+              }
+
+              return {
+                questionnaireItemId: typed.questionnaireItemId,
+                rowIndex: typeof typed.rowIndex === "number" ? typed.rowIndex : null
+              };
+            })
+            .filter((item): item is QuestionnaireStaleItem => item !== null)
+        : [];
+
+      setStaleQuestionnaireItems(staleItems);
+      return staleItems;
+    } catch {
+      return null;
+    }
+  }, [questionnaireId]);
+
   useEffect(() => {
     if (questionnaireId) {
       void loadDetails();
+      void loadQuestionnaireStaleness();
     }
-  }, [orgId, questionnaireId, loadDetails]);
+  }, [orgId, questionnaireId, loadDetails, loadQuestionnaireStaleness]);
+
+  useEffect(() => {
+    setStaleQuestionnaireItems([]);
+  }, [questionnaireId]);
 
   const questionsById = useMemo(() => {
     if (!data) {
@@ -704,8 +779,8 @@ export default function QuestionnaireDetailsPage() {
     const orderedQuestions = questionOrder
       .map((questionId) => questionsById[questionId])
       .filter((question): question is QuestionRow => Boolean(question));
-    return getFilteredQuestionIdsForView(orderedQuestions, filter, deferredSearchText);
-  }, [data, deferredSearchText, filter, questionOrder, questionsById]);
+    return getFilteredQuestionIdsForView(orderedQuestions, filter, deferredSearchText, staleQuestionIdSet);
+  }, [data, deferredSearchText, filter, questionOrder, questionsById, staleQuestionIdSet]);
 
   const statusCounts = useMemo<StatusCounts>(() => {
     const counts: StatusCounts = {
@@ -714,7 +789,8 @@ export default function QuestionnaireDetailsPage() {
       APPROVED: 0,
       NEEDS_REVIEW: 0,
       NOT_FOUND: 0,
-      REUSED: 0
+      REUSED: 0,
+      STALE: 0
     };
 
     for (const questionId of questionOrder) {
@@ -733,8 +809,10 @@ export default function QuestionnaireDetailsPage() {
       }
     }
 
+    counts.STALE = new Set(staleQuestionnaireItems.map((item) => item.questionnaireItemId)).size;
+
     return counts;
-  }, [questionOrder, questionsById]);
+  }, [questionOrder, questionsById, staleQuestionnaireItems]);
 
   useEffect(() => {
     if (filteredQuestionIds.length === 0) {
@@ -849,17 +927,45 @@ export default function QuestionnaireDetailsPage() {
           reviewStatus: question.reviewStatus,
           notFound: isNotFoundAnswer(question.answer),
           reuseMatchType: question.reuseMatchType,
-          citationCount: getQueueCitationCount(question)
+          citationCount: getQueueCitationCount(question),
+          isStale: staleQuestionIdSet.has(question.id),
+          hasApprovedAnswer: Boolean(question.approvedAnswer)
         };
       })
       .filter((item): item is QuestionRailItem => Boolean(item));
-  }, [filteredQuestionIds, questionsById]);
+  }, [filteredQuestionIds, questionsById, staleQuestionIdSet]);
 
   const visibleQuestions = useMemo(() => {
     return filteredQuestionIds
       .map((questionId) => questionsById[questionId])
       .filter((question): question is QuestionRow => Boolean(question));
   }, [filteredQuestionIds, questionsById]);
+
+  const staleQuestionIdsInOrder = useMemo(
+    () => questionOrder.filter((questionId) => staleQuestionIdSet.has(questionId)),
+    [questionOrder, staleQuestionIdSet]
+  );
+
+  const reviewStaleAction = useCallback(() => {
+    const firstStaleId = staleQuestionIdsInOrder.find((questionId) =>
+      getFilteredQuestionIdsForView(
+        questionOrder.map((id) => questionsById[id]).filter((question): question is QuestionRow => Boolean(question)),
+        "STALE",
+        deferredSearchText,
+        staleQuestionIdSet
+      ).includes(questionId)
+    );
+
+    if (!firstStaleId) {
+      return;
+    }
+
+    setFilter("STALE");
+    setSelectedQuestionId(firstStaleId);
+    setLastInteractedRowId(firstStaleId);
+    setIsContextOpen(true);
+    scrollQueueRowIntoView(firstStaleId);
+  }, [deferredSearchText, questionOrder, questionsById, scrollQueueRowIntoView, staleQuestionIdSet, staleQuestionIdsInOrder]);
 
   const bulkEligibleQuestions = useMemo(() => {
     return visibleQuestions.filter((question) => {
@@ -908,7 +1014,12 @@ export default function QuestionnaireDetailsPage() {
   const autoAdvanceAfterSuccessfulAction = useCallback(
     (currentQuestionId: string, visibleBeforeAction: string[], latestPayload: QuestionnaireDetailsPayload | null) => {
       const questionsForView = latestPayload?.questions ?? data?.questions ?? [];
-      const visibleAfterAction = getFilteredQuestionIdsForView(questionsForView, filter, deferredSearchText);
+      const visibleAfterAction = getFilteredQuestionIdsForView(
+        questionsForView,
+        filter,
+        deferredSearchText,
+        staleQuestionIdSet
+      );
 
       if (visibleAfterAction.length === 0) {
         setSelectedQuestionId(null);
@@ -949,8 +1060,14 @@ export default function QuestionnaireDetailsPage() {
       setLastInteractedRowId(nextSelectedId);
       scrollQueueRowIntoView(nextSelectedId);
     },
-    [data?.questions, deferredSearchText, filter, scrollQueueRowIntoView]
+    [data?.questions, deferredSearchText, filter, staleQuestionIdSet, scrollQueueRowIntoView]
   );
+
+  const refreshQuestionnaireData = useCallback(async () => {
+    const latest = await loadDetails({ silent: true });
+    await loadQuestionnaireStaleness();
+    return latest;
+  }, [loadDetails, loadQuestionnaireStaleness]);
 
   const evidenceItems = useMemo(() => {
     if (!selectedQuestion) {
@@ -1254,7 +1371,7 @@ export default function QuestionnaireDetailsPage() {
       setMessage(`Bulk approval complete: ${succeeded} questions approved.`);
     }
 
-    await loadDetails();
+    await refreshQuestionnaireData();
   }
 
   async function approveExactReusedQuestions() {
@@ -1293,7 +1410,7 @@ export default function QuestionnaireDetailsPage() {
           ? `Approved ${approvedCount} reused exact question${approvedCount === 1 ? "" : "s"}. Skipped ${skippedCount}.`
           : `Approved ${approvedCount} reused exact question${approvedCount === 1 ? "" : "s"}.`
       );
-      await loadDetails();
+      await refreshQuestionnaireData();
     } catch (error) {
       setMessage(`Approve reused exact failed: ${error instanceof Error ? error.message : "Unknown error."}`);
     } finally {
@@ -1319,14 +1436,14 @@ export default function QuestionnaireDetailsPage() {
       }
 
       setMessage(question.approvedAnswer ? "Approval refreshed from saved values." : "Answer approved.");
-      const latest = await loadDetails({ silent: true });
+      const latest = await refreshQuestionnaireData();
       autoAdvanceAfterSuccessfulAction(question.id, visibleBeforeAction, latest);
     } catch (error) {
       setMessage(`Approve failed: ${error instanceof Error ? error.message : "Unknown error."}`);
     } finally {
       setActiveQuestionActionId(null);
     }
-  }, [autoAdvanceAfterSuccessfulAction, canApproveAnswers, filteredQuestionIds, loadDetails, persistApproval]);
+  }, [autoAdvanceAfterSuccessfulAction, canApproveAnswers, filteredQuestionIds, persistApproval, refreshQuestionnaireData]);
 
   const updateReviewStatus = useCallback(async (questionId: string, reviewStatus: "NEEDS_REVIEW" | "DRAFT") => {
     if (!canMarkNeedsReview) {
@@ -1355,14 +1472,14 @@ export default function QuestionnaireDetailsPage() {
       }
 
       setMessage(reviewStatus === "NEEDS_REVIEW" ? "Marked as needs review." : "Marked as draft.");
-      const latest = await loadDetails({ silent: true });
+      const latest = await refreshQuestionnaireData();
       autoAdvanceAfterSuccessfulAction(questionId, visibleBeforeAction, latest);
     } catch (error) {
       setMessage(`Unable to update review status: ${error instanceof Error ? error.message : "Unknown error."}`);
     } finally {
       setActiveQuestionActionId(null);
     }
-  }, [autoAdvanceAfterSuccessfulAction, canMarkNeedsReview, filteredQuestionIds, loadDetails]);
+  }, [autoAdvanceAfterSuccessfulAction, canMarkNeedsReview, filteredQuestionIds, refreshQuestionnaireData]);
 
   const unapprove = useCallback(async (approvedAnswerId: string, questionId: string) => {
     if (!canApproveAnswers) {
@@ -1385,14 +1502,14 @@ export default function QuestionnaireDetailsPage() {
       }
 
       setMessage("Approval removed.");
-      const latest = await loadDetails({ silent: true });
+      const latest = await refreshQuestionnaireData();
       autoAdvanceAfterSuccessfulAction(questionId, visibleBeforeAction, latest);
     } catch (error) {
       setMessage(`Unable to remove approval: ${error instanceof Error ? error.message : "Unknown error."}`);
     } finally {
       setActiveQuestionActionId(null);
     }
-  }, [autoAdvanceAfterSuccessfulAction, canApproveAnswers, filteredQuestionIds, loadDetails]);
+  }, [autoAdvanceAfterSuccessfulAction, canApproveAnswers, filteredQuestionIds, refreshQuestionnaireData]);
 
   function beginEdit(question: QuestionRow) {
     if (!canEditApprovedAnswers) {
@@ -1458,7 +1575,7 @@ export default function QuestionnaireDetailsPage() {
 
       setMessage("Approved answer updated.");
       cancelEdit();
-      await loadDetails();
+      await refreshQuestionnaireData();
     } catch (error) {
       setMessage(`Unable to save approved answer: ${error instanceof Error ? error.message : "Unknown error."}`);
     } finally {
@@ -2027,6 +2144,23 @@ export default function QuestionnaireDetailsPage() {
           </div>
           <div className="small">{approvedProgress}% approved</div>
         </div>
+        {staleQuestionnaireItems.length > 0 ? (
+          <div className="message-banner" role="status" aria-live="polite" style={{ marginTop: 10 }}>
+            <div className="toolbar-row compact" style={{ alignItems: "center" }}>
+              <span>{`${staleQuestionnaireItems.length} approved answers are stale — review now`}</span>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={reviewStaleAction}
+                disabled={!staleQuestionIdsInOrder.length}
+                title="Review stale answers"
+                aria-label="Review stale approved answers"
+              >
+                Review stale
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </Card>
 
       {message ? (

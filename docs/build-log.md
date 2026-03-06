@@ -1479,3 +1479,30 @@ Current log of implemented MVP work (concise, execution-focused).
 - Manual smoke/auth notes:
   - `/documents`, `/questionnaires`, `/settings/members` loaded in dev checks.
   - full authenticated export flow validation was not possible in this shell session; unauthenticated `/api/questionnaires/:id/export?mode=approvedOnly` returned expected JSON `401` envelope.
+
+## 2026-03-05 - stale-ui-review-loop-01
+
+- Added review-workbench stale visibility loop:
+  - New server helper: `src/server/questionnaires/getQuestionnaireStaleness.ts`
+    - `getQuestionnaireStaleness(ctx, questionnaireId)` returns `{ staleCount, staleItems }`
+    - includes questionnaire/org-scoped query path for anti-enumeration-safe filtering via `ensureQuestionnaireForOrg`
+  - New endpoint: `GET /api/questionnaires/:id/staleness`
+    - returns `{ staleCount, staleItems: [{ questionnaireItemId, rowIndex }] }`
+    - scoped via `getRequestContext()`, RBAC (`VIEW_QUESTIONNAIRES`), and org ownership check (404 for out-of-org/missing)
+  - `/questionnaires/[id]` UI now:
+    - shows `STALE` badge on stale approved rows
+    - adds `Stale` filter chip in queue filter row with live stale count
+    - shows top banner with stale summary: `X approved answers are stale — review now`
+    - “Review stale” CTA switches to stale filter and jumps to first stale row in current visible order
+    - stale summary is refreshed after approve/review/unapprove/edit success paths
+- Added regression tests:
+  - `src/app/api/questionnaires/[id]/staleness.test.ts`
+  - `src/server/questionnaires/getQuestionnaireStaleness.test.ts`
+- Verification:
+  - `npm test` => PASS
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run ui:audit -- http://localhost:4010/questionnaires` => PASS for axe with artifacts in:
+    - `artifacts/ui-audit/2026-03-06T06-13-06-780Z/stale-ui-review-loop-01/`
+    - 0 serious/critical a11y violations
+    - console errors: 6 (all 401s from auth-gated routes), network failures: 1 (401-based), DOM assertions: 1/4
+  - top-level manual smoke items were not fully executed in-session because no persistent authenticated shell session was available.
