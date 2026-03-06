@@ -1506,3 +1506,33 @@ Current log of implemented MVP work (concise, execution-focused).
     - 0 serious/critical a11y violations
     - console errors: 6 (all 401s from auth-gated routes), network failures: 1 (401-based), DOM assertions: 1/4
   - top-level manual smoke items were not fully executed in-session because no persistent authenticated shell session was available.
+
+## 2026-03-06 - reuse-suggestions-01
+
+- Added semantic Approved Answer Suggestions to the questionnaire review drawer:
+  - new helper: `src/server/approvedAnswers/getReuseSuggestions.ts`
+  - new endpoint: `GET /api/questionnaires/:id/items/:itemId/reuse-suggestions`
+  - new draft-write endpoint for suggestion apply: `POST /api/questions/:id/draft`
+  - `GET /api/approved-answers/:id` now returns answer text + citations for apply flow and blocks stale approvals from being applied
+- Review drawer behavior:
+  - Answer tab now shows up to 3 fresh approved-answer suggestions for non-approved items
+  - each suggestion shows preview text, similarity, citations count, and `Apply`
+  - `Apply` copies answer text + citations into the question draft and marks the item `NEEDS_REVIEW`
+  - approved items do not allow apply; existing approve/edit/unapprove behavior remains unchanged
+- Tests added:
+  - `src/server/approvedAnswers/getReuseSuggestions.test.ts`
+  - `src/app/api/questionnaires/[id]/items/[itemId]/reuse-suggestions/route.test.ts`
+  - `src/app/api/questions/[id]/draft/route.test.ts`
+- Commands run:
+  - `npm test` with repo-default DB config => FAIL (`DATABASE_URL` target on `localhost:5433` was unusable because that port was already occupied by an unrelated local Postgres container)
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npx prisma migrate deploy` => PASS
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npm test` => PASS (`29` files passed, `1` skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run ui:audit -- http://localhost:4010/questionnaires` => completed with artifacts moved to:
+    - `artifacts/ui-audit/2026-03-06T19-20-15-907Z/reuse-suggestions-01/`
+- UI audit/auth notes:
+  - axe serious/critical: `0/0`
+  - console errors: `6`
+  - network failures: `1`
+  - DOM assertions: `1/4`
+  - audit target was unauthenticated, so the non-axe failures were expected auth-gated `401` responses rather than a reuse-suggestions regression

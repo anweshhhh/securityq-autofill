@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { jsonError } from "@/lib/apiResponse";
 import { ApiRouteError, assertChunkOwnership, normalizeCitationChunkIds } from "@/lib/approvalValidation";
 import { toApiErrorResponse } from "@/lib/apiResponse";
 import { createEmbedding } from "@/lib/openai";
@@ -10,6 +11,7 @@ import {
   normalizeApprovalAnswerAndCitations,
   syncApprovedAnswerEvidenceSnapshots
 } from "@/server/approvedAnswers/evidenceSnapshots";
+import { isApprovedAnswerStale } from "@/server/approvedAnswers/staleness";
 import { assertCan, RbacAction } from "@/server/rbac";
 
 type RouteContext = {
@@ -24,6 +26,112 @@ type UpdateApprovedAnswerBody = {
   note?: unknown;
   approvedBy?: unknown;
 };
+
+type ApprovedAnswerCitation = {
+  chunkId: string;
+  docName: string;
+  quotedSnippet: string;
+};
+
+export async function GET(_request: Request, context: RouteContext) {
+  try {
+    const approvedAnswerId = context.params.id.trim();
+
+    if (!approvedAnswerId) {
+      return jsonError({
+        status: 400,
+        code: "VALIDATION_ERROR",
+        message: "Approved answer ID is required."
+      });
+    }
+
+    const ctx = await getRequestContext(_request);
+    assertCan(ctx.role, RbacAction.VIEW_QUESTIONNAIRES);
+
+    const approvedAnswer = await prisma.approvedAnswer.findFirst({
+      where: {
+        id: approvedAnswerId,
+        organizationId: ctx.orgId
+      },
+      select: {
+        id: true,
+        answerText: true,
+        citationChunkIds: true
+      }
+    });
+
+    if (!approvedAnswer) {
+      throw new ApiRouteError({
+        status: 404,
+        code: "NOT_FOUND",
+        message: "Approved answer not found."
+      });
+    }
+
+    const isStale = await isApprovedAnswerStale(approvedAnswer.id, {
+      orgId: ctx.orgId
+    });
+    if (isStale) {
+      return jsonError({
+        status: 409,
+        code: "STALE_APPROVED_ANSWER",
+        message: "Approved answer is stale and cannot be applied."
+      });
+    }
+
+    const citationChunkIds = Array.from(
+      new Set(
+        approvedAnswer.citationChunkIds
+          .map((chunkId) => chunkId.trim())
+          .filter((chunkId) => chunkId.length > 0)
+      )
+    );
+
+    const citations = citationChunkIds.length
+      ? await prisma.documentChunk.findMany({
+          where: {
+            id: {
+              in: citationChunkIds
+            },
+            document: {
+              organizationId: ctx.orgId
+            }
+          },
+          select: {
+            id: true,
+            content: true,
+            document: {
+              select: {
+                name: true
+              }
+            }
+          }
+        })
+      : [];
+
+    const citationByChunkId = new Map(
+      citations.map((chunk) => [
+        chunk.id,
+        {
+          chunkId: chunk.id,
+          docName: chunk.document.name,
+          quotedSnippet: chunk.content
+        }
+      ])
+    );
+
+    const orderedCitations = citationChunkIds
+      .map((chunkId) => citationByChunkId.get(chunkId))
+      .filter((citation): citation is ApprovedAnswerCitation => Boolean(citation));
+
+    return NextResponse.json({
+      answerText: approvedAnswer.answerText,
+      citations: orderedCitations
+    });
+  } catch (error) {
+    return toApiErrorResponse(error, "Failed to load approved answer.");
+  }
+}
 
 export async function PATCH(request: Request, context: RouteContext) {
   try {

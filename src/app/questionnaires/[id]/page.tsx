@@ -80,6 +80,13 @@ type QuestionnaireStaleItem = {
   rowIndex: number | null;
 };
 
+type ReuseSuggestionSummary = {
+  approvedAnswerId: string;
+  answerText: string;
+  citationsCount: number;
+  similarity: number;
+};
+
 type AutofillPayload = {
   totalCount?: number;
   answeredCount?: number;
@@ -120,6 +127,22 @@ type DocumentDetailsPayload = {
     originalName: string;
     fullText: string;
   };
+  error?: unknown;
+};
+
+type ReuseSuggestionsPayload = {
+  suggestions?: Array<{
+    approvedAnswerId?: unknown;
+    answerText?: unknown;
+    citationsCount?: unknown;
+    similarity?: unknown;
+  }>;
+  error?: unknown;
+};
+
+type ApprovedAnswerDetailsPayload = {
+  answerText?: unknown;
+  citations?: unknown;
   error?: unknown;
 };
 
@@ -612,6 +635,9 @@ export default function QuestionnaireDetailsPage() {
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [documentIdByName, setDocumentIdByName] = useState<Record<string, string>>({});
   const [staleQuestionnaireItems, setStaleQuestionnaireItems] = useState<QuestionnaireStaleItem[]>([]);
+  const [reuseSuggestions, setReuseSuggestions] = useState<ReuseSuggestionSummary[]>([]);
+  const [isReuseSuggestionsLoading, setIsReuseSuggestionsLoading] = useState(false);
+  const [activeSuggestionId, setActiveSuggestionId] = useState<string | null>(null);
   const [isDocumentModalOpen, setIsDocumentModalOpen] = useState(false);
   const [isDocumentLoading, setIsDocumentLoading] = useState(false);
   const [documentModalTitle, setDocumentModalTitle] = useState("");
@@ -1104,6 +1130,87 @@ export default function QuestionnaireDetailsPage() {
       setShowGeneratedDraft(false);
     }
   }, [selectedQuestion?.approvedAnswer, selectedQuestion?.id]);
+
+  useEffect(() => {
+    const selectedQuestionIdForSuggestions = selectedQuestion?.id ?? null;
+    const selectedApprovedAnswerId = selectedQuestion?.approvedAnswer?.id ?? null;
+
+    if (!questionnaireId || !selectedQuestionIdForSuggestions || selectedApprovedAnswerId) {
+      setReuseSuggestions([]);
+      setIsReuseSuggestionsLoading(false);
+      return;
+    }
+
+    let active = true;
+    setIsReuseSuggestionsLoading(true);
+
+    async function loadReuseSuggestionsForSelection() {
+      try {
+        const response = await fetch(
+          `/api/questionnaires/${questionnaireId}/items/${selectedQuestionIdForSuggestions}/reuse-suggestions`,
+          {
+            cache: "no-store"
+          }
+        );
+        const payload = (await response.json().catch(() => ({}))) as ReuseSuggestionsPayload;
+
+        if (!active) {
+          return;
+        }
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            setReuseSuggestions([]);
+            return;
+          }
+
+          throw new Error(getApiErrorMessage(payload, "Failed to load approved-answer suggestions."));
+        }
+
+        const nextSuggestions = Array.isArray(payload.suggestions)
+          ? payload.suggestions
+              .map((suggestion) => {
+                if (
+                  typeof suggestion?.approvedAnswerId !== "string" ||
+                  typeof suggestion?.answerText !== "string"
+                ) {
+                  return null;
+                }
+
+                return {
+                  approvedAnswerId: suggestion.approvedAnswerId,
+                  answerText: suggestion.answerText,
+                  citationsCount:
+                    typeof suggestion.citationsCount === "number" ? suggestion.citationsCount : 0,
+                  similarity: typeof suggestion.similarity === "number" ? suggestion.similarity : 0
+                };
+              })
+              .filter((suggestion): suggestion is ReuseSuggestionSummary => suggestion !== null)
+          : [];
+
+        setReuseSuggestions(nextSuggestions);
+      } catch (error) {
+        if (active) {
+          setReuseSuggestions([]);
+          setMessage(
+            `Unable to load approved-answer suggestions: ${
+              error instanceof Error ? error.message : "Unknown error."
+            }`
+          );
+        }
+      } finally {
+        if (active) {
+          setIsReuseSuggestionsLoading(false);
+        }
+      }
+    }
+
+    void loadReuseSuggestionsForSelection();
+
+    return () => {
+      active = false;
+    };
+  }, [questionnaireId, selectedQuestion?.approvedAnswer?.id, selectedQuestion?.id]);
 
   useEffect(() => {
     let active = true;
@@ -1616,6 +1723,61 @@ export default function QuestionnaireDetailsPage() {
     await copyText(answerToCopy, "Answer copied.");
   }, [copyText, selectedQuestion]);
 
+  const applyReuseSuggestion = useCallback(
+    async (question: QuestionRow, suggestion: ReuseSuggestionSummary) => {
+      if (question.approvedAnswer) {
+        setMessage("Unapprove the current answer before applying a suggestion.");
+        return;
+      }
+
+      setMessage("");
+      setActiveSuggestionId(suggestion.approvedAnswerId);
+
+      try {
+        const suggestionResponse = await fetch(`/api/approved-answers/${suggestion.approvedAnswerId}`, {
+          cache: "no-store"
+        });
+        const suggestionPayload = (await suggestionResponse.json().catch(() => ({}))) as ApprovedAnswerDetailsPayload;
+        if (!suggestionResponse.ok) {
+          throw new Error(getApiErrorMessage(suggestionPayload, "Failed to load suggestion details."));
+        }
+
+        const answerText =
+          typeof suggestionPayload.answerText === "string" ? suggestionPayload.answerText.trim() : "";
+        const citations = normalizeCitations(suggestionPayload.citations);
+        const citationChunkIds = citations.map((citation) => citation.chunkId);
+
+        const applyResponse = await fetch(`/api/questions/${question.id}/draft`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            answerText,
+            citationChunkIds
+          })
+        });
+        const applyPayload = (await applyResponse.json().catch(() => ({}))) as unknown;
+        if (!applyResponse.ok) {
+          throw new Error(getApiErrorMessage(applyPayload, "Failed to apply approved-answer suggestion."));
+        }
+
+        setMessage("Suggestion applied to draft. Review and approve when ready.");
+        setShowGeneratedDraft(false);
+        await refreshQuestionnaireData();
+      } catch (error) {
+        setMessage(
+          `Unable to apply approved-answer suggestion: ${
+            error instanceof Error ? error.message : "Unknown error."
+          }`
+        );
+      } finally {
+        setActiveSuggestionId(null);
+      }
+    },
+    [refreshQuestionnaireData]
+  );
+
   const openDocumentModal = useCallback(
     async (docName: string) => {
       const lookupKey = docName.trim().toLowerCase();
@@ -1735,6 +1897,7 @@ export default function QuestionnaireDetailsPage() {
     const normalized = message.toLowerCase();
     return (
       normalized.includes("approved") ||
+      normalized.includes("applied") ||
       normalized.includes("updated") ||
       normalized.includes("marked") ||
       normalized.includes("removed") ||
@@ -2375,6 +2538,67 @@ export default function QuestionnaireDetailsPage() {
                     </div>
                   </div>
                   <div className={isAnswerExpanded ? "answer-scroll" : "answer-preview"}>{effectiveAnswer}</div>
+
+                  <Card className="card-muted reuse-suggestions-card">
+                    <div className="card-title-row">
+                      <h4 style={{ margin: 0 }}>Approved Answer Suggestions</h4>
+                      {!selectedQuestion.approvedAnswer ? (
+                        <Badge tone="draft">{reuseSuggestions.length} available</Badge>
+                      ) : null}
+                    </div>
+
+                    {selectedQuestion.approvedAnswer ? (
+                      <p className="small muted" style={{ margin: 0 }}>
+                        Suggestions are available for reviewable items only. Unapprove this item first if you want to
+                        apply a different approved answer as a draft.
+                      </p>
+                    ) : isReuseSuggestionsLoading ? (
+                      <p className="small muted" style={{ margin: 0 }}>
+                        Loading fresh approved-answer suggestions...
+                      </p>
+                    ) : reuseSuggestions.length === 0 ? (
+                      <p className="small muted" style={{ margin: 0 }}>
+                        No fresh approved-answer suggestions were found for this question.
+                      </p>
+                    ) : (
+                      <div className="reuse-suggestion-list">
+                        {reuseSuggestions.map((suggestion) => {
+                          const preview =
+                            stripLeadingQuestionEcho(suggestion.answerText, selectedQuestion.text) ||
+                            suggestion.answerText.trim();
+                          return (
+                            <div key={suggestion.approvedAnswerId} className="reuse-suggestion-item">
+                              <div className="toolbar-row compact reuse-suggestion-meta">
+                                <span className="small muted">
+                                  {Math.max(0, Math.min(100, Math.round(suggestion.similarity * 100)))}% match
+                                </span>
+                                <Badge tone="draft">
+                                  {suggestion.citationsCount} citation{suggestion.citationsCount === 1 ? "" : "s"}
+                                </Badge>
+                              </div>
+                              <div className="reuse-suggestion-preview">{preview || "Suggested answer unavailable."}</div>
+                              <div className="toolbar-row compact">
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  onClick={() => void applyReuseSuggestion(selectedQuestion, suggestion)}
+                                  disabled={
+                                    activeSuggestionId === suggestion.approvedAnswerId ||
+                                    activeQuestionActionId === selectedQuestion.id ||
+                                    isBulkApproving ||
+                                    isApprovingReusedExact
+                                  }
+                                  aria-label={`Apply suggested approved answer with ${suggestion.citationsCount} citations`}
+                                >
+                                  {activeSuggestionId === suggestion.approvedAnswerId ? "Applying..." : "Apply"}
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </Card>
                 </div>
               ) : null}
 

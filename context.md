@@ -27,6 +27,7 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 - Stale approvals (evidence fingerprint drift or missing cited chunks) are never reused for autofill/reuse flows
 - Approved-only export is blocked when any approved answers are stale (evidence drift)
 - Review UI surfaces staleness on demand via `GET /api/questionnaires/:id/staleness`, `STALE` queue row badges, and a `Stale` queue filter
+- Review drawer can suggest fresh Approved Answers via semantic similarity; Apply copies answer + citations into the draft without auto-approving
 - No doc-template-specific keyword/canned-answer logic in retrieval/answer path
 
 ## 4) Current Architecture

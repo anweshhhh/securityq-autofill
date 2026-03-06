@@ -1354,6 +1354,38 @@ textarea {
   gap: 8px;
 }
 
+.reuse-suggestions-card {
+  display: grid;
+  gap: 10px;
+}
+
+.reuse-suggestion-list {
+  display: grid;
+  gap: 10px;
+}
+
+.reuse-suggestion-item {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #d9e3f4;
+  border-radius: 12px;
+  background: #fbfdff;
+  padding: 10px 12px;
+}
+
+.reuse-suggestion-meta {
+  justify-content: space-between;
+}
+
+.reuse-suggestion-preview {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: #1f2a3d;
+  line-height: 1.5;
+}
+
 .context-reference-item {
   display: flex;
   align-items: center;
