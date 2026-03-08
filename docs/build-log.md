@@ -1536,3 +1536,32 @@ Current log of implemented MVP work (concise, execution-focused).
   - network failures: `1`
   - DOM assertions: `1/4`
   - audit target was unauthenticated, so the non-axe failures were expected auth-gated `401` responses rather than a reuse-suggestions regression
+
+## 2026-03-06 - test-db-port-resilience-01
+
+- Made the local Postgres host port configurable without changing in-container wiring:
+  - `docker-compose.yml` now maps Postgres as `${POSTGRES_PORT:-5433}:5432`
+  - internal container networking and credentials are unchanged
+- Added a resilient local test runner:
+  - `scripts/run-tests-with-db.js`
+  - `npm run test:db`
+  - behavior:
+    - reuses the existing repo DB container port when already running
+    - otherwise scans `5433..5439` and picks the first available host port
+    - exports a matching `DATABASE_URL`
+    - runs `npx prisma migrate deploy` then `npm test`
+- Updated runbook docs:
+  - `README.md` now documents both the recommended `npm run test:db` flow and the manual `POSTGRES_PORT` + `DATABASE_URL` flow
+  - `context.md` no longer assumes a fixed `5433` test DB port
+- Test-only stabilization:
+  - tightened reuse-suggestion test cleanup to use explicit IDs
+  - split overlapping test org-name prefixes so those suites no longer delete each other’s fixtures during the full run
+- Commands run:
+  - `npm run test:db` => PASS
+    - in this environment, unrelated local Postgres was already occupying `5433`, so the script reused/scanned to `5434`
+  - `npm run build` => PASS
+    - existing Next.js dynamic-server-usage warnings on auth-scoped API routes remain unchanged
+  - `docker compose down` + wildcard listener on `5436` + `POSTGRES_PORT=5436 npm run test:db` => PASS
+    - runner logged `Port 5436 is unavailable; trying next port.`
+    - runner also skipped occupied `5433`
+    - selected `5434` and completed migrations + tests successfully

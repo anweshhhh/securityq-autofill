@@ -594,12 +594,28 @@ Export UX (client):
 
 ## 7) Local Runbook
 
+Recommended:
+
 ```bash
+npm install
+npm run test:db
+npm run dev
+```
+
+Manual:
+
+```bash
+npm install
+export POSTGRES_PORT=5434
 docker compose up -d
+export DATABASE_URL="postgresql://postgres:postgres@localhost:${POSTGRES_PORT}/app?schema=public"
 npx prisma migrate deploy
 npm test
 npm run dev
 ```
+
+- `docker-compose.yml` supports `POSTGRES_PORT` and defaults to `5433`.
+- `npm run test:db` reuses the repo DB container port when present, otherwise auto-selects the first open port in `5433..5439`.
 
 ## 8) Environment Variables
 

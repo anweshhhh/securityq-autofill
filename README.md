@@ -20,13 +20,30 @@ Security Questionnaire Autofill + Evidence Finder (MVP scaffold).
 
 ## Local Runbook
 
+Option A (recommended):
+
 ```bash
-docker compose up -d
 npm install
+npm run test:db
+npm run dev
+```
+
+Option B (manual port selection):
+
+```bash
+npm install
+export POSTGRES_PORT=5434
+docker compose up -d
+export DATABASE_URL="postgresql://postgres:postgres@localhost:${POSTGRES_PORT}/app?schema=public"
 npx prisma migrate deploy
 npm test
 npm run dev
 ```
+
+Troubleshooting:
+
+- If `5433` is already in use, `npm run test:db` automatically selects the first open port in `5434..5439`.
+- Manual runs can pick any port in `5433..5439` by setting `POSTGRES_PORT` before `docker compose up -d`.
 
 Verification:
 
@@ -48,4 +65,5 @@ Then verify:
 ## Running Tests
 
 - Run all tests: `npm test`
+- Run the resilient local DB test runbook: `npm run test:db`
 - MVP tests are fixture-based and mock OpenAI calls, so they do not require network access.

@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
+    "test:db": "node scripts/run-tests-with-db.js",
     "scorecard": "ts-node --compiler-options '{\"module\":\"commonjs\",\"moduleResolution\":\"node\"}' scripts/scorecard.ts",
     "ui:audit": "node scripts/ui_audit_questionnaire.js"
   },

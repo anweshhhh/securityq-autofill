@@ -2,27 +2,26 @@ import { randomUUID } from "node:crypto";
 import { MembershipRole } from "@prisma/client";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createEmbeddingMock, getRequestContextMock } = vi.hoisted(() => ({
-  createEmbeddingMock: vi.fn(),
-  getRequestContextMock: vi.fn()
-}));
-
 vi.mock("@/lib/openai", () => ({
-  createEmbedding: createEmbeddingMock
+  createEmbedding: vi.fn()
 }));
 
 vi.mock("@/lib/requestContext", () => ({
-  getRequestContext: getRequestContextMock
+  getRequestContext: vi.fn()
 }));
 
 import { prisma } from "@/lib/prisma";
+import { createEmbedding } from "@/lib/openai";
+import { getRequestContext } from "@/lib/requestContext";
 import { buildQuestionTextMetadata } from "@/lib/questionText";
 import { embeddingToVectorLiteral } from "@/lib/retrieval";
 import { computeEvidenceFingerprint } from "@/server/evidenceFingerprint";
 import { syncApprovedAnswerEvidenceSnapshots } from "@/server/approvedAnswers/evidenceSnapshots";
 import { GET as reuseSuggestionsRoute } from "@/app/api/questionnaires/[id]/items/[itemId]/reuse-suggestions/route";
 
-const TEST_ORG_PREFIX = "vitest-reuse-suggestions-route-";
+const TEST_ORG_PREFIX = "vitest-reuse-suggestions-api-route-";
+const createEmbeddingMock = vi.mocked(createEmbedding);
+const getRequestContextMock = vi.mocked(getRequestContext);
 
 function sparseEmbedding(primaryIndex: number, secondaryIndex?: number, secondaryWeight = 0.25): number[] {
   const vector = new Array(1536).fill(0);
@@ -50,31 +49,60 @@ async function cleanupTestOrganizations() {
   }
 
   const organizationIds = organizations.map((organization) => organization.id);
+  const questionnaires = await prisma.questionnaire.findMany({
+    where: {
+      organizationId: {
+        in: organizationIds
+      }
+    },
+    select: {
+      id: true
+    }
+  });
+  const questionnaireIds = questionnaires.map((questionnaire) => questionnaire.id);
+  const questions = await prisma.question.findMany({
+    where: {
+      questionnaireId: {
+        in: questionnaireIds
+      }
+    },
+    select: {
+      id: true
+    }
+  });
+  const questionIds = questions.map((question) => question.id);
+  const approvedAnswers = await prisma.approvedAnswer.findMany({
+    where: {
+      organizationId: {
+        in: organizationIds
+      }
+    },
+    select: {
+      id: true
+    }
+  });
+  const approvedAnswerIds = approvedAnswers.map((approvedAnswer) => approvedAnswer.id);
 
   await prisma.approvedAnswerEvidence.deleteMany({
     where: {
-      approvedAnswer: {
-        organizationId: {
-          in: organizationIds
-        }
+      approvedAnswerId: {
+        in: approvedAnswerIds
       }
     }
   });
 
   await prisma.approvedAnswer.deleteMany({
     where: {
-      organizationId: {
-        in: organizationIds
+      id: {
+        in: approvedAnswerIds
       }
     }
   });
 
   await prisma.question.deleteMany({
     where: {
-      questionnaire: {
-        organizationId: {
-          in: organizationIds
-        }
+      id: {
+        in: questionIds
       }
     }
   });
@@ -179,42 +207,32 @@ async function seedApprovedAnswer(params: {
           docName: document.name,
           quotedSnippet: params.chunkText
         }
-      ],
-      approvedAnswer: {
-        create: {
-          organizationId: params.organizationId,
-          normalizedQuestionText: metadata.normalizedQuestionText,
-          questionTextHash: metadata.questionTextHash,
-          answerText: params.answerText,
-          citationChunkIds: [chunk.id],
-          source: "GENERATED"
-        }
-      }
-    },
-    select: {
-      approvedAnswer: {
-        select: {
-          id: true
-        }
-      }
+      ]
     }
   });
 
-  const approvedAnswerId = question.approvedAnswer?.id;
-  if (!approvedAnswerId) {
-    throw new Error("Expected approvedAnswer to be created for seeded question.");
-  }
+  const approvedAnswer = await prisma.approvedAnswer.create({
+    data: {
+      organizationId: params.organizationId,
+      questionId: question.id,
+      normalizedQuestionText: metadata.normalizedQuestionText,
+      questionTextHash: metadata.questionTextHash,
+      answerText: params.answerText,
+      citationChunkIds: [chunk.id],
+      source: "GENERATED"
+    }
+  });
 
-  await attachQuestionEmbedding(approvedAnswerId, params.embedding);
+  await attachQuestionEmbedding(approvedAnswer.id, params.embedding);
   await syncApprovedAnswerEvidenceSnapshots({
     db: prisma,
     organizationId: params.organizationId,
-    approvedAnswerId,
+    approvedAnswerId: approvedAnswer.id,
     citationChunkIds: [chunk.id]
   });
 
   return {
-    approvedAnswerId
+    approvedAnswerId: approvedAnswer.id
   };
 }
 
