@@ -7,6 +7,11 @@ import { ExportModal } from "@/components/ExportModal";
 import { Badge, Button, Card, TextArea, TextInput, cx } from "@/components/ui";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 import { NOT_FOUND_TEXT } from "@/shared/answerTemplates";
+import {
+  parseQuestionnaireStalenessPayload,
+  type ExportBlockedStaleError,
+  type QuestionnaireStaleItem
+} from "@/shared/exportErrors";
 import { can, RbacAction } from "@/server/rbac";
 
 type Citation = {
@@ -73,11 +78,6 @@ type QuestionRailItem = {
   citationCount: number;
   isStale: boolean;
   hasApprovedAnswer: boolean;
-};
-
-type QuestionnaireStaleItem = {
-  questionnaireItemId: string;
-  rowIndex: number | null;
 };
 
 type ReuseSuggestionSummary = {
@@ -748,21 +748,7 @@ export default function QuestionnaireDetailsPage() {
         return null;
       }
 
-      const staleItems: QuestionnaireStaleItem[] = Array.isArray(payload.staleItems)
-        ? payload.staleItems
-            .map((item) => {
-              const typed = item as { questionnaireItemId?: unknown; rowIndex?: unknown };
-              if (typeof typed.questionnaireItemId !== "string") {
-                return null;
-              }
-
-              return {
-                questionnaireItemId: typed.questionnaireItemId,
-                rowIndex: typeof typed.rowIndex === "number" ? typed.rowIndex : null
-              };
-            })
-            .filter((item): item is QuestionnaireStaleItem => item !== null)
-        : [];
+      const staleItems = parseQuestionnaireStalenessPayload(payload)?.staleItems ?? [];
 
       setStaleQuestionnaireItems(staleItems);
       return staleItems;
@@ -972,26 +958,56 @@ export default function QuestionnaireDetailsPage() {
     [questionOrder, staleQuestionIdSet]
   );
 
-  const reviewStaleAction = useCallback(() => {
-    const firstStaleId = staleQuestionIdsInOrder.find((questionId) =>
-      getFilteredQuestionIdsForView(
+  const reviewStaleAction = useCallback(
+    async (override: ExportBlockedStaleError | null = null) => {
+      const staleItems =
+        override?.staleItems.length
+          ? override.staleItems
+          : staleQuestionnaireItems.length
+            ? staleQuestionnaireItems
+            : await loadQuestionnaireStaleness();
+      if (!staleItems || staleItems.length === 0) {
+        return;
+      }
+
+      setStaleQuestionnaireItems(staleItems);
+      const staleIdSet = new Set(staleItems.map((item) => item.questionnaireItemId));
+      const visibleStaleQuestionIds = getFilteredQuestionIdsForView(
         questionOrder.map((id) => questionsById[id]).filter((question): question is QuestionRow => Boolean(question)),
         "STALE",
         deferredSearchText,
-        staleQuestionIdSet
-      ).includes(questionId)
-    );
+        staleIdSet
+      );
+      const staleIdsInOrder = questionOrder.filter((questionId) => staleIdSet.has(questionId));
+      const firstStaleId =
+        staleIdsInOrder.find((questionId) => visibleStaleQuestionIds.includes(questionId)) ??
+        staleIdsInOrder[0] ??
+        staleItems[0]?.questionnaireItemId;
 
-    if (!firstStaleId) {
-      return;
+      if (!firstStaleId) {
+        return;
+      }
+
+      setFilter("STALE");
+      setSelectedQuestionId(firstStaleId);
+      setLastInteractedRowId(firstStaleId);
+      setIsContextOpen(true);
+      scrollQueueRowIntoView(firstStaleId);
+    },
+    [deferredSearchText, loadQuestionnaireStaleness, questionOrder, questionsById, scrollQueueRowIntoView, staleQuestionnaireItems]
+  );
+
+  const approvedOnlyExportPreflight = useCallback(async () => {
+    const staleItems = await loadQuestionnaireStaleness();
+    if (!staleItems || staleItems.length === 0) {
+      return null;
     }
 
-    setFilter("STALE");
-    setSelectedQuestionId(firstStaleId);
-    setLastInteractedRowId(firstStaleId);
-    setIsContextOpen(true);
-    scrollQueueRowIntoView(firstStaleId);
-  }, [deferredSearchText, questionOrder, questionsById, scrollQueueRowIntoView, staleQuestionIdSet, staleQuestionIdsInOrder]);
+    return {
+      staleCount: staleItems.length,
+      staleItems
+    };
+  }, [loadQuestionnaireStaleness]);
 
   const bulkEligibleQuestions = useMemo(() => {
     return visibleQuestions.filter((question) => {
@@ -2314,7 +2330,9 @@ export default function QuestionnaireDetailsPage() {
               <Button
                 type="button"
                 variant="secondary"
-                onClick={reviewStaleAction}
+                onClick={() => {
+                  void reviewStaleAction();
+                }}
                 disabled={!staleQuestionIdsInOrder.length}
                 title="Review stale answers"
                 aria-label="Review stale approved answers"
@@ -2909,6 +2927,8 @@ export default function QuestionnaireDetailsPage() {
         onClose={() => setIsExportModalOpen(false)}
         onSuccess={(nextMessage) => setMessage(nextMessage)}
         onError={(nextMessage) => setMessage(nextMessage)}
+        loadApprovedOnlyPreflight={approvedOnlyExportPreflight}
+        onReviewStale={(details) => reviewStaleAction(details)}
       />
     </div>
   );

@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/useFocusTrap";
+import {
+  buildExportBlockedMessage,
+  parseExportBlockedError,
+  type ExportBlockedStaleError
+} from "@/shared/exportErrors";
 import { Button, cx } from "@/components/ui";
 
 export type ExportMode = "preferApproved" | "approvedOnly" | "generated";
@@ -13,6 +18,8 @@ type ExportModalProps = {
   onClose: () => void;
   onSuccess?: (message: string) => void;
   onError?: (message: string) => void;
+  loadApprovedOnlyPreflight?: () => Promise<ExportBlockedStaleError | null>;
+  onReviewStale?: (details: ExportBlockedStaleError | null) => void | Promise<void>;
 };
 
 const MODE_OPTIONS: Array<{ value: ExportMode; label: string; description: string }> = [
@@ -51,50 +58,56 @@ function buildDownloadFileName(questionnaireName: string, date = new Date()): st
   return `${sanitizeFileName(questionnaireName)}-${buildDateStamp(date)}-export.csv`;
 }
 
-async function extractErrorMessage(response: Response): Promise<string> {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function readExportFailure(response: Response): Promise<{
+  message: string;
+  blocked: ExportBlockedStaleError | null;
+}> {
   try {
     const contentType = response.headers.get("content-type") ?? "";
     if (contentType.includes("application/json")) {
       const payload = (await response.json()) as { error?: unknown };
-      if (typeof payload.error === "string" && payload.error.trim().length > 0) {
-        return payload.error;
+      const blocked = parseExportBlockedError(response.status, payload);
+      if (blocked) {
+        return {
+          message: buildExportBlockedMessage(blocked.staleCount),
+          blocked
+        };
       }
 
-      if (payload.error && typeof payload.error === "object" && !Array.isArray(payload.error)) {
-        const typedError = payload.error as {
-          code?: unknown;
-          message?: unknown;
-          details?: unknown;
+      if (typeof payload.error === "string" && payload.error.trim().length > 0) {
+        return {
+          message: payload.error,
+          blocked: null
         };
-        if (
-          typedError.code === "EXPORT_BLOCKED_STALE_APPROVALS" &&
-          typedError.details &&
-          typeof typedError.details === "object" &&
-          !Array.isArray(typedError.details)
-        ) {
-          const details = typedError.details as { staleCount?: unknown };
-          if (typeof details.staleCount === "number") {
-            return `Export blocked: ${details.staleCount} approved answer${
-              details.staleCount === 1 ? "" : "s"
-            } are stale and need review.`;
-          }
-        }
+      }
 
-        if (typeof typedError.message === "string" && typedError.message.trim().length > 0) {
-          return typedError.message;
-        }
+      if (isRecord(payload.error) && typeof payload.error.message === "string" && payload.error.message.trim().length > 0) {
+        return {
+          message: payload.error.message,
+          blocked: null
+        };
       }
     } else {
       const text = (await response.text()).trim();
       if (text.length > 0) {
-        return text;
+        return {
+          message: text,
+          blocked: null
+        };
       }
     }
   } catch {
     // Fallback message below.
   }
 
-  return "Failed to export questionnaire.";
+  return {
+    message: "Failed to export questionnaire.",
+    blocked: null
+  };
 }
 
 export function ExportModal({
@@ -103,11 +116,16 @@ export function ExportModal({
   questionnaireName,
   onClose,
   onSuccess,
-  onError
+  onError,
+  loadApprovedOnlyPreflight,
+  onReviewStale
 }: ExportModalProps) {
   const [mode, setMode] = useState<ExportMode>("preferApproved");
   const [isExporting, setIsExporting] = useState(false);
+  const [isCheckingApprovedOnly, setIsCheckingApprovedOnly] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [approvedOnlyPreflight, setApprovedOnlyPreflight] = useState<ExportBlockedStaleError | null>(null);
+  const [blockedExport, setBlockedExport] = useState<ExportBlockedStaleError | null>(null);
   const modalRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -118,12 +136,58 @@ export function ExportModal({
     setMode("preferApproved");
     setErrorMessage("");
     setIsExporting(false);
+    setIsCheckingApprovedOnly(false);
+    setApprovedOnlyPreflight(null);
+    setBlockedExport(null);
   }, [isOpen, questionnaireId]);
+
+  useEffect(() => {
+    if (mode !== "approvedOnly") {
+      setBlockedExport(null);
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    if (!isOpen || !questionnaireId || !loadApprovedOnlyPreflight) {
+      setIsCheckingApprovedOnly(false);
+      setApprovedOnlyPreflight(null);
+      return;
+    }
+
+    let cancelled = false;
+    setIsCheckingApprovedOnly(true);
+
+    void loadApprovedOnlyPreflight()
+      .then((details) => {
+        if (cancelled) {
+          return;
+        }
+        setApprovedOnlyPreflight(details && details.staleCount > 0 ? details : null);
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        setApprovedOnlyPreflight(null);
+      })
+      .finally(() => {
+        if (cancelled) {
+          return;
+        }
+        setIsCheckingApprovedOnly(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, questionnaireId, loadApprovedOnlyPreflight]);
 
   const fileName = useMemo(
     () => buildDownloadFileName(questionnaireName || "questionnaire"),
     [questionnaireName]
   );
+  const activeBlockedInfo = mode === "approvedOnly" ? blockedExport ?? approvedOnlyPreflight : null;
+  const approvedOnlyExportBlocked = Boolean(activeBlockedInfo?.staleCount);
 
   useFocusTrap({
     active: isOpen && Boolean(questionnaireId),
@@ -135,14 +199,30 @@ export function ExportModal({
     }
   });
 
+  async function handleReviewStale() {
+    if (!onReviewStale) {
+      return;
+    }
+
+    onClose();
+    await onReviewStale(activeBlockedInfo ?? approvedOnlyPreflight ?? null);
+  }
+
   async function handleExport() {
     if (!questionnaireId) {
       setErrorMessage("Questionnaire ID is missing.");
       return;
     }
 
+    if (mode === "approvedOnly" && approvedOnlyPreflight?.staleCount) {
+      setBlockedExport(approvedOnlyPreflight);
+      setErrorMessage("");
+      return;
+    }
+
     setIsExporting(true);
     setErrorMessage("");
+    setBlockedExport(null);
 
     try {
       const url = new URL(`/api/questionnaires/${questionnaireId}/export`, window.location.origin);
@@ -153,7 +233,13 @@ export function ExportModal({
       });
 
       if (!response.ok) {
-        throw new Error(await extractErrorMessage(response));
+        const failure = await readExportFailure(response);
+        if (failure.blocked) {
+          setBlockedExport(failure.blocked);
+          return;
+        }
+
+        throw new Error(failure.message);
       }
 
       const blob = await response.blob();
@@ -204,16 +290,48 @@ export function ExportModal({
               <span>
                 <span className="export-mode-title">{option.label}</span>
                 <span className="small muted export-mode-description">{option.description}</span>
+                {option.value === "approvedOnly" && approvedOnlyPreflight?.staleCount ? (
+                  <span className="small" style={{ color: "#7f1d1d", display: "block", marginTop: 4 }}>
+                    {`Blocked: ${approvedOnlyPreflight.staleCount} stale approval${
+                      approvedOnlyPreflight.staleCount === 1 ? "" : "s"
+                    }`}
+                  </span>
+                ) : null}
               </span>
             </label>
           ))}
         </div>
 
+        {mode === "approvedOnly" && isCheckingApprovedOnly ? (
+          <div className="message-banner" role="status" aria-live="polite" style={{ marginTop: 12 }}>
+            Checking stale approvals...
+          </div>
+        ) : null}
+
+        {mode === "approvedOnly" && activeBlockedInfo ? (
+          <div className="message-banner error" role="status" aria-live="polite" style={{ marginTop: 12 }}>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>Export blocked</div>
+            <div>{buildExportBlockedMessage(activeBlockedInfo.staleCount)}</div>
+            {onReviewStale ? (
+              <div className="toolbar-row compact" style={{ marginTop: 10 }}>
+                <Button type="button" variant="secondary" onClick={() => void handleReviewStale()}>
+                  Review stale
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         <p className="small muted export-file-hint">Filename: {fileName}</p>
         {errorMessage ? <div className="message-banner error">{errorMessage}</div> : null}
 
         <div className="toolbar-row" style={{ marginTop: 12 }}>
-          <Button type="button" variant="primary" onClick={() => void handleExport()} disabled={isExporting}>
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => void handleExport()}
+            disabled={isExporting || (mode === "approvedOnly" && (isCheckingApprovedOnly || approvedOnlyExportBlocked))}
+          >
             {isExporting ? (
               <>
                 <span className="button-spinner" aria-hidden="true" />

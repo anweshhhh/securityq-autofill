@@ -1565,3 +1565,39 @@ Current log of implemented MVP work (concise, execution-focused).
     - runner logged `Port 5436 is unavailable; trying next port.`
     - runner also skipped occupied `5433`
     - selected `5434` and completed migrations + tests successfully
+
+## 2026-03-06 - export-409-ui-loop-01
+
+- Completed the stale-export UX loop in the questionnaire review workbench:
+  - `src/components/ExportModal.tsx`
+    - approved-only export now preflights `GET /api/questionnaires/:id/staleness` when the export modal opens
+    - approved-only mode shows inline blocked state when stale approvals exist
+    - `409 EXPORT_BLOCKED_STALE_APPROVALS` is parsed into a structured UI state instead of a generic error string
+    - blocked state shows:
+      - title: `Export blocked`
+      - body with `staleCount`
+      - CTA: `Review stale`
+  - `src/app/questionnaires/[id]/page.tsx`
+    - export modal now reuses the existing stale review flow
+    - `Review stale` closes the export modal, activates the `Stale` filter, selects the first stale row, opens context, and scrolls it into view
+    - if the 409 payload lacks stale items, the page falls back to the existing staleness endpoint before jumping
+- Added a small shared parser module:
+  - `src/shared/exportErrors.ts`
+    - normalizes questionnaire staleness payloads
+    - parses `EXPORT_BLOCKED_STALE_APPROVALS` envelopes
+  - `src/shared/exportErrors.test.ts`
+    - regression coverage for 409 parsing and stale-item normalization
+- Commands run:
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npm test` => PASS (`30` passed files, `1` skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run ui:audit -- http://localhost:4010/questionnaires` => completed with artifacts moved to:
+    - `artifacts/ui-audit/2026-03-08T14-13-35-680Z/export-409-ui-loop-01/`
+- UI audit/auth notes:
+  - axe serious/critical: `0/0`
+  - console errors: `6`
+  - network failures: `1`
+  - DOM assertions: `1/4`
+  - audit target was unauthenticated, so the non-axe failures were expected auth-gated `401` responses rather than an export-loop regression
+- Manual auth notes:
+  - a signed-in stale-export smoke test was not possible in this shell session
+  - behavior is covered by parser tests plus the existing stale export API regression coverage
