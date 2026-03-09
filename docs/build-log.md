@@ -1601,3 +1601,40 @@ Current log of implemented MVP work (concise, execution-focused).
 - Manual auth notes:
   - a signed-in stale-export smoke test was not possible in this shell session
   - behavior is covered by parser tests plus the existing stale export API regression coverage
+
+## 2026-03-08 - questionnaire-health-panel-01
+
+- Added a compact questionnaire Health panel at the top of the review page:
+  - new component: `src/components/QuestionnaireHealthPanel.tsx`
+  - shows:
+    - total questions
+    - approved count
+    - needs review count
+    - stale approvals count
+    - reused approvals count with `% of approved`
+    - approved-only export readiness (`Ready` / `Blocked`)
+- Health CTA behavior:
+  - `Fix blockers` now routes reviewers to the highest-priority trust issue already present on the page:
+    - stale approvals first via the existing stale filter + jump flow
+    - otherwise needs-review items via the existing queue filter + first-item selection flow
+  - when no stale or needs-review blockers exist, the CTA is disabled and reads `All set`
+- Data source strategy:
+  - no new API route added
+  - counts are computed locally from the already-loaded questionnaire rows plus the existing staleness state
+  - reused approvals are counted as approved rows with `reusedFromApprovedAnswerId`
+- Added minimal deterministic test coverage:
+  - `src/shared/questionnaireHealth.ts`
+  - `src/shared/questionnaireHealth.test.ts`
+- Commands run:
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npm test` => PASS (`31` passed files, `1` skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run ui:audit -- http://localhost:4010/questionnaires` => completed with artifacts moved to:
+    - `artifacts/ui-audit/2026-03-09T22-25-48-780Z/questionnaire-health-panel-01/`
+- UI audit/auth notes:
+  - axe serious/critical: `0/0`
+  - console errors: `6`
+  - network failures: `1`
+  - DOM assertions: `1/4`
+  - audit target was unauthenticated, so the non-axe failures were expected auth-gated `401` responses
+- Manual auth notes:
+  - a signed-in questionnaire smoke check was not possible in this shell session

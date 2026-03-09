@@ -960,6 +960,30 @@ textarea {
   gap: 8px;
 }
 
+.questionnaire-health-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.questionnaire-health-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.questionnaire-health-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.questionnaire-health-grid {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
 .home-snapshot-grid {
   grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
 }
@@ -2038,6 +2062,15 @@ textarea {
 
   .compact-stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .questionnaire-health-header {
+    flex-direction: column;
+  }
+
+  .questionnaire-health-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .sticky-panel {

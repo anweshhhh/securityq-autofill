@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useAppAuthz } from "@/components/AppAuthzContext";
 import { ExportModal } from "@/components/ExportModal";
+import { QuestionnaireHealthPanel } from "@/components/QuestionnaireHealthPanel";
 import { Badge, Button, Card, TextArea, TextInput, cx } from "@/components/ui";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 import { NOT_FOUND_TEXT } from "@/shared/answerTemplates";
@@ -12,6 +13,7 @@ import {
   type ExportBlockedStaleError,
   type QuestionnaireStaleItem
 } from "@/shared/exportErrors";
+import { computeQuestionnaireHealth } from "@/shared/questionnaireHealth";
 import { can, RbacAction } from "@/server/rbac";
 
 type Citation = {
@@ -997,6 +999,30 @@ export default function QuestionnaireDetailsPage() {
     [deferredSearchText, loadQuestionnaireStaleness, questionOrder, questionsById, scrollQueueRowIntoView, staleQuestionnaireItems]
   );
 
+  const reviewNeedsReviewAction = useCallback(() => {
+    const visibleNeedsReviewQuestionIds = getFilteredQuestionIdsForView(
+      questionOrder.map((id) => questionsById[id]).filter((question): question is QuestionRow => Boolean(question)),
+      "NEEDS_REVIEW",
+      deferredSearchText,
+      staleQuestionIdSet
+    );
+    const needsReviewIdsInOrder = questionOrder.filter((questionId) => questionsById[questionId]?.reviewStatus === "NEEDS_REVIEW");
+    const firstNeedsReviewId =
+      needsReviewIdsInOrder.find((questionId) => visibleNeedsReviewQuestionIds.includes(questionId)) ??
+      needsReviewIdsInOrder[0] ??
+      visibleNeedsReviewQuestionIds[0];
+
+    if (!firstNeedsReviewId) {
+      return;
+    }
+
+    setFilter("NEEDS_REVIEW");
+    setSelectedQuestionId(firstNeedsReviewId);
+    setLastInteractedRowId(firstNeedsReviewId);
+    setIsContextOpen(true);
+    scrollQueueRowIntoView(firstNeedsReviewId);
+  }, [deferredSearchText, questionOrder, questionsById, scrollQueueRowIntoView, staleQuestionIdSet]);
+
   const approvedOnlyExportPreflight = useCallback(async () => {
     const staleItems = await loadQuestionnaireStaleness();
     if (!staleItems || staleItems.length === 0) {
@@ -1008,6 +1034,22 @@ export default function QuestionnaireDetailsPage() {
       staleItems
     };
   }, [loadQuestionnaireStaleness]);
+
+  const questionnaireHealth = useMemo(
+    () => computeQuestionnaireHealth(data?.questions ?? [], staleQuestionnaireItems.length),
+    [data?.questions, staleQuestionnaireItems.length]
+  );
+
+  const fixQuestionnaireBlockers = useCallback(() => {
+    if (questionnaireHealth.staleCount > 0) {
+      void reviewStaleAction();
+      return;
+    }
+
+    if (questionnaireHealth.needsReviewCount > 0) {
+      reviewNeedsReviewAction();
+    }
+  }, [questionnaireHealth.needsReviewCount, questionnaireHealth.staleCount, reviewNeedsReviewAction, reviewStaleAction]);
 
   const bulkEligibleQuestions = useMemo(() => {
     return visibleQuestions.filter((question) => {
@@ -2256,6 +2298,18 @@ export default function QuestionnaireDetailsPage() {
           </div>
         </header>
       </Card>
+
+      {data ? (
+        <QuestionnaireHealthPanel
+          totalCount={questionnaireHealth.totalCount}
+          approvedCount={questionnaireHealth.approvedCount}
+          needsReviewCount={questionnaireHealth.needsReviewCount}
+          staleCount={questionnaireHealth.staleCount}
+          reusedCount={questionnaireHealth.reusedCount}
+          exportApprovedOnlyReady={questionnaireHealth.exportApprovedOnlyReady}
+          onFixBlockers={fixQuestionnaireBlockers}
+        />
+      ) : null}
 
       <Card className="trust-bar queue-metrics-strip">
         <div className="queue-metrics-controls">
