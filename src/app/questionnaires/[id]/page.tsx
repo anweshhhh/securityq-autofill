@@ -168,6 +168,26 @@ type SelectedQuestionStalenessDetails = {
   missingCount: number;
 };
 
+type ApprovalTracePayload = {
+  hasApprovedAnswer?: unknown;
+  trace?: {
+    approvedAt?: unknown;
+    freshness?: unknown;
+    snapshottedCitationsCount?: unknown;
+    reusedFromApprovedAnswer?: unknown;
+    suggestionAssisted?: unknown;
+  } | null;
+  error?: unknown;
+};
+
+type SelectedQuestionApprovalTrace = {
+  approvedAt: string;
+  freshness: "FRESH" | "STALE";
+  snapshottedCitationsCount: number;
+  reusedFromApprovedAnswer: boolean;
+  suggestionAssisted: boolean;
+};
+
 type DrawerTab = "ANSWER" | "EVIDENCE" | "REFERENCES";
 
 const NOT_FOUND_ANSWER = NOT_FOUND_TEXT;
@@ -301,6 +321,38 @@ function normalizeSelectedQuestionStalenessDetails(value: StalenessDetailsPayloa
     changedCount,
     missingCount
   };
+}
+
+function normalizeSelectedQuestionApprovalTrace(value: ApprovalTracePayload["trace"]): SelectedQuestionApprovalTrace | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const approvedAt = typeof value.approvedAt === "string" ? value.approvedAt : "";
+  const freshness = value.freshness === "STALE" ? "STALE" : value.freshness === "FRESH" ? "FRESH" : null;
+  const snapshottedCitationsCount =
+    typeof value.snapshottedCitationsCount === "number" ? value.snapshottedCitationsCount : null;
+
+  if (!approvedAt || !freshness || snapshottedCitationsCount === null) {
+    return null;
+  }
+
+  return {
+    approvedAt,
+    freshness,
+    snapshottedCitationsCount,
+    reusedFromApprovedAnswer: value.reusedFromApprovedAnswer === true,
+    suggestionAssisted: value.suggestionAssisted === true
+  };
+}
+
+function formatTraceTimestamp(value: string): string {
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) {
+    return "Unknown";
+  }
+
+  return new Date(parsed).toLocaleString();
 }
 
 function getApiErrorMessage(payload: unknown, fallback: string): string {
@@ -681,6 +733,9 @@ export default function QuestionnaireDetailsPage() {
   const [selectedQuestionStalenessDetails, setSelectedQuestionStalenessDetails] =
     useState<SelectedQuestionStalenessDetails | null>(null);
   const [isSelectedQuestionStalenessLoading, setIsSelectedQuestionStalenessLoading] = useState(false);
+  const [selectedQuestionApprovalTrace, setSelectedQuestionApprovalTrace] =
+    useState<SelectedQuestionApprovalTrace | null>(null);
+  const [isSelectedQuestionApprovalTraceLoading, setIsSelectedQuestionApprovalTraceLoading] = useState(false);
   const [reuseSuggestions, setReuseSuggestions] = useState<ReuseSuggestionSummary[]>([]);
   const [isReuseSuggestionsLoading, setIsReuseSuggestionsLoading] = useState(false);
   const [activeSuggestionId, setActiveSuggestionId] = useState<string | null>(null);
@@ -1307,6 +1362,64 @@ export default function QuestionnaireDetailsPage() {
   ]);
 
   useEffect(() => {
+    const selectedQuestionIdForApprovalTrace = selectedQuestion?.id ?? null;
+    const selectedApprovedAnswerIdForApprovalTrace = selectedQuestion?.approvedAnswer?.id ?? null;
+
+    if (
+      !questionnaireId ||
+      !isContextOpen ||
+      !selectedQuestionIdForApprovalTrace ||
+      !selectedApprovedAnswerIdForApprovalTrace
+    ) {
+      setSelectedQuestionApprovalTrace(null);
+      setIsSelectedQuestionApprovalTraceLoading(false);
+      return;
+    }
+
+    let active = true;
+    setIsSelectedQuestionApprovalTraceLoading(true);
+
+    async function loadSelectedQuestionApprovalTrace() {
+      try {
+        const response = await fetch(
+          `/api/questionnaires/${questionnaireId}/items/${selectedQuestionIdForApprovalTrace}/approval-trace`,
+          {
+            cache: "no-store"
+          }
+        );
+        const payload = (await response.json().catch(() => ({}))) as ApprovalTracePayload;
+
+        if (!active) {
+          return;
+        }
+
+        if (!response.ok || payload.hasApprovedAnswer !== true) {
+          setSelectedQuestionApprovalTrace(null);
+          return;
+        }
+
+        setSelectedQuestionApprovalTrace(normalizeSelectedQuestionApprovalTrace(payload.trace));
+      } catch {
+        if (!active) {
+          return;
+        }
+
+        setSelectedQuestionApprovalTrace(null);
+      } finally {
+        if (active) {
+          setIsSelectedQuestionApprovalTraceLoading(false);
+        }
+      }
+    }
+
+    void loadSelectedQuestionApprovalTrace();
+
+    return () => {
+      active = false;
+    };
+  }, [isContextOpen, questionnaireId, selectedQuestion?.approvedAnswer?.id, selectedQuestion?.id]);
+
+  useEffect(() => {
     const selectedQuestionIdForSuggestions = selectedQuestion?.id ?? null;
     const selectedApprovedAnswerId = selectedQuestion?.approvedAnswer?.id ?? null;
 
@@ -1929,7 +2042,8 @@ export default function QuestionnaireDetailsPage() {
           },
           body: JSON.stringify({
             answerText,
-            citationChunkIds
+            citationChunkIds,
+            draftSource: "SUGGESTION_APPLY"
           })
         });
         const applyPayload = (await applyResponse.json().catch(() => ({}))) as unknown;
@@ -2721,6 +2835,50 @@ export default function QuestionnaireDetailsPage() {
                             value={selectedQuestionStalenessDetails.missingCount}
                             tone={selectedQuestionStalenessDetails.missingCount > 0 ? "danger" : "neutral"}
                           />
+                        </div>
+                      ) : null}
+                    </Card>
+                  ) : null}
+
+                  {selectedQuestion.approvedAnswer &&
+                  (isSelectedQuestionApprovalTraceLoading || selectedQuestionApprovalTrace) ? (
+                    <Card className="card-muted">
+                      <div className="card-title-row">
+                        <h4 style={{ margin: 0 }}>Approval provenance</h4>
+                        {selectedQuestionApprovalTrace ? (
+                          <Badge tone={selectedQuestionApprovalTrace.freshness === "STALE" ? "review" : "approved"}>
+                            {selectedQuestionApprovalTrace.freshness === "STALE" ? "Stale" : "Fresh"}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      {isSelectedQuestionApprovalTraceLoading ? (
+                        <p className="small muted" style={{ margin: "8px 0 0" }}>
+                          Loading approval trace...
+                        </p>
+                      ) : selectedQuestionApprovalTrace ? (
+                        <div style={{ display: "grid", gap: 8 }}>
+                          <div className="toolbar-row compact" style={{ justifyContent: "space-between" }}>
+                            <span className="small muted">Approved at</span>
+                            <span>{formatTraceTimestamp(selectedQuestionApprovalTrace.approvedAt)}</span>
+                          </div>
+                          <div className="toolbar-row compact" style={{ justifyContent: "space-between" }}>
+                            <span className="small muted">Freshness</span>
+                            <Badge tone={selectedQuestionApprovalTrace.freshness === "STALE" ? "review" : "approved"}>
+                              {selectedQuestionApprovalTrace.freshness === "STALE" ? "Stale" : "Fresh"}
+                            </Badge>
+                          </div>
+                          <div className="toolbar-row compact" style={{ justifyContent: "space-between" }}>
+                            <span className="small muted">Snapshotted citations</span>
+                            <span>{selectedQuestionApprovalTrace.snapshottedCitationsCount}</span>
+                          </div>
+                          <div className="toolbar-row compact" style={{ justifyContent: "space-between" }}>
+                            <span className="small muted">Reused</span>
+                            <span>{selectedQuestionApprovalTrace.reusedFromApprovedAnswer ? "Yes" : "No"}</span>
+                          </div>
+                          <div className="toolbar-row compact" style={{ justifyContent: "space-between" }}>
+                            <span className="small muted">Suggestion-assisted</span>
+                            <span>{selectedQuestionApprovalTrace.suggestionAssisted ? "Yes" : "No"}</span>
+                          </div>
                         </div>
                       ) : null}
                     </Card>

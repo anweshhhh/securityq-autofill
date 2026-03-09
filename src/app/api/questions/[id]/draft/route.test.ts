@@ -201,7 +201,8 @@ describe.sequential("POST /api/questions/[id]/draft", () => {
         },
         body: JSON.stringify({
           answerText: "TLS 1.2 or higher is required.",
-          citationChunkIds: [seeded.chunkId]
+          citationChunkIds: [seeded.chunkId],
+          draftSource: "SUGGESTION_APPLY"
         })
       }),
       {
@@ -226,6 +227,17 @@ describe.sequential("POST /api/questions/[id]/draft", () => {
         chunkId: seeded.chunkId
       })
     ]);
+
+    const persisted = await prisma.question.findUnique({
+      where: {
+        id: seeded.questionId
+      },
+      select: {
+        draftSuggestionApplied: true
+      }
+    });
+
+    expect(persisted?.draftSuggestionApplied).toBe(true);
   });
 
   it("blocks applying a suggestion to an already approved question", async () => {

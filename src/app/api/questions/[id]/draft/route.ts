@@ -16,6 +16,7 @@ type DraftAnswerBody = {
   answerText?: unknown;
   citationChunkIds?: unknown;
   citations?: unknown;
+  draftSource?: unknown;
 };
 
 type PersistedCitation = {
@@ -92,6 +93,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const citationChunkIds = citationChunkIdsFromPayload(payload);
+    const draftSuggestionApplied = payload?.draftSource === "SUGGESTION_APPLY";
     if (answerText === NOT_FOUND_TEXT && citationChunkIds.length > 0) {
       throw new ApiRouteError({
         status: 400,
@@ -203,6 +205,7 @@ export async function POST(request: Request, context: RouteContext) {
         answer: answerText,
         citations,
         reviewStatus: "NEEDS_REVIEW",
+        draftSuggestionApplied,
         reusedFromApprovedAnswerId: null,
         reuseMatchType: null,
         reusedAt: null

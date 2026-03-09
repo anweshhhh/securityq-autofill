@@ -186,6 +186,7 @@ model Question {
   answer          String?
   citations       Json
   reviewStatus    QuestionReviewStatus @default(DRAFT)
+  draftSuggestionApplied Boolean       @default(false)
   reusedFromApprovedAnswerId String?
   reuseMatchType ReuseMatchType?
   reusedAt       DateTime?

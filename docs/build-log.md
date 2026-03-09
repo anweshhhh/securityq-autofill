@@ -1684,3 +1684,65 @@ Current log of implemented MVP work (concise, execution-focused).
   - audit target was unauthenticated, so the non-axe failures were expected auth-gated `401` responses rather than a stale-details regression
 - Manual auth notes:
   - a signed-in stale-details smoke test was not possible in this shell session
+
+## 2026-03-09 - evidence-trace-panel-01
+
+- Added item-scoped approval provenance support for approved questionnaire answers:
+  - new helper: `src/server/approvedAnswers/getApprovalTrace.ts`
+    - returns:
+      - `approvedAt`
+      - `freshness` (`FRESH` / `STALE`)
+      - `snapshottedCitationsCount`
+      - `reusedFromApprovedAnswer`
+      - `suggestionAssisted`
+    - freshness reuses the existing approved-answer staleness helper
+    - snapshotted citations are counted from `ApprovedAnswerEvidence`
+- Added a new review API route:
+  - `src/app/api/questionnaires/[id]/items/[itemId]/approval-trace/route.ts`
+    - RBAC-protected via questionnaire read permission
+    - org-scoped by questionnaire item lookup
+    - returns `404 NOT_FOUND` for missing/out-of-org items
+    - returns only provenance metadata; no answer text, chunk text, document names, or internal IDs
+- Added deterministic API coverage:
+  - `src/app/api/questionnaires/[id]/items/[itemId]/approval-trace/route.test.ts`
+    - fresh approved item
+    - stale approved item
+    - reused approval provenance
+    - suggestion-assisted provenance
+    - item with no approved answer
+    - out-of-org access
+- Persisted minimal suggestion-assisted provenance metadata:
+  - `prisma/schema.prisma`
+  - migration: `prisma/migrations/20260309225500_question_draft_suggestion_applied/`
+  - added `Question.draftSuggestionApplied Boolean @default(false)`
+  - `src/app/api/questions/[id]/draft/route.ts`
+    - suggestion apply can now persist `draftSource: "SUGGESTION_APPLY"`
+  - `src/app/api/questions/[id]/draft/route.test.ts`
+    - verifies the suggestion apply path persists the draft provenance flag
+  - `src/lib/questionnaireService.ts`
+    - autofill now clears the suggestion-applied draft flag when pipeline-generated answers overwrite a question draft
+- Updated the review drawer:
+  - `src/app/questionnaires/[id]/page.tsx`
+    - `Apply` on a reuse suggestion now posts `draftSource: "SUGGESTION_APPLY"`
+    - approved items lazily fetch `GET /api/questionnaires/:id/items/:itemId/approval-trace`
+    - new compact `Approval provenance` card shows:
+      - approved timestamp
+      - freshness badge
+      - snapshotted citation count
+      - reused yes/no
+      - suggestion-assisted yes/no
+- Commands run:
+  - `npx prisma generate` => PASS
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npx prisma migrate deploy` => PASS
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npm test` => PASS (`33` passed files, `1` skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run ui:audit -- http://localhost:4010/questionnaires` => completed with artifacts copied to:
+    - `artifacts/ui-audit/2026-03-09T22-57-31-283Z/evidence-trace-panel-01/`
+- UI audit/auth notes:
+  - axe serious/critical: `0/0`
+  - console errors: `6`
+  - network failures: `1`
+  - DOM assertions: `1/4`
+  - audit target was unauthenticated, so the non-axe failures were expected auth-gated `401` responses rather than an approval-trace regression
+- Manual auth notes:
+  - a signed-in approval provenance smoke test was not possible in this shell session

@@ -402,6 +402,7 @@ export async function processQuestionnaireAutofillBatch(params: {
       data: {
         answer: answer.answer,
         citations: answer.citations,
+        draftSuggestionApplied: false,
         ...(answer.reusedFromApprovedAnswerId
           ? {
               reusedFromApprovedAnswerId: answer.reusedFromApprovedAnswerId,
