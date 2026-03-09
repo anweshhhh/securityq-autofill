@@ -9,12 +9,51 @@ export type StaleQuestionnaireItem = {
   rowIndex: number | null;
 };
 
-export async function isApprovedAnswerStale(
+export type ApprovedAnswerStalenessReasonCode = "FINGERPRINT_MISMATCH" | "MISSING_CHUNK";
+
+export type ApprovedAnswerStalenessReason = {
+  chunkId: string;
+  reason: ApprovedAnswerStalenessReasonCode;
+};
+
+export type ApprovedAnswerStalenessDetails = {
+  isStale: boolean;
+  details: null | {
+    affectedCitationsCount: number;
+    changedCount: number;
+    missingCount: number;
+    reasons: ApprovedAnswerStalenessReason[];
+  };
+};
+
+function summarizeStalenessReasons(reasons: ApprovedAnswerStalenessReason[]): ApprovedAnswerStalenessDetails {
+  if (reasons.length === 0) {
+    return {
+      isStale: false,
+      details: null
+    };
+  }
+
+  const changedCount = reasons.filter((reason) => reason.reason === "FINGERPRINT_MISMATCH").length;
+  const missingCount = reasons.filter((reason) => reason.reason === "MISSING_CHUNK").length;
+
+  return {
+    isStale: true,
+    details: {
+      affectedCitationsCount: reasons.length,
+      changedCount,
+      missingCount,
+      reasons
+    }
+  };
+}
+
+export async function getApprovedAnswerStalenessDetails(
   approvedAnswerId: string,
   ctx: {
     orgId: string;
   }
-): Promise<boolean> {
+): Promise<ApprovedAnswerStalenessDetails> {
   const approvedAnswer = await prisma.approvedAnswer.findFirst({
     where: {
       id: approvedAnswerId,
@@ -26,12 +65,15 @@ export async function isApprovedAnswerStale(
   });
 
   if (!approvedAnswer) {
-    return true;
+    return summarizeStalenessReasons([]);
   }
 
   const citationChunkIds = normalizeChunkIds(approvedAnswer.citationChunkIds);
   if (citationChunkIds.length === 0) {
-    return false;
+    return {
+      isStale: false,
+      details: null
+    };
   }
 
   const snapshots = await prisma.approvedAnswerEvidence.findMany({
@@ -44,15 +86,24 @@ export async function isApprovedAnswerStale(
     }
   });
 
-  if (snapshots.length !== citationChunkIds.length) {
-    return true;
-  }
-
-  const snapshotByChunkId = new Map(snapshots.map((snapshot) => [snapshot.chunkId, snapshot.fingerprintAtApproval]));
+  const snapshotFingerprintByChunkId = new Map(snapshots.map((snapshot) => [snapshot.chunkId, snapshot.fingerprintAtApproval]));
+  const reasonsByChunkId = new Map<string, ApprovedAnswerStalenessReason>();
 
   for (const chunkId of citationChunkIds) {
-    if (!snapshotByChunkId.has(chunkId)) {
-      return true;
+    if (!snapshotFingerprintByChunkId.has(chunkId)) {
+      reasonsByChunkId.set(chunkId, {
+        chunkId,
+        reason: "MISSING_CHUNK"
+      });
+    }
+  }
+
+  for (const snapshot of snapshots) {
+    if (!citationChunkIds.includes(snapshot.chunkId)) {
+      reasonsByChunkId.set(snapshot.chunkId, {
+        chunkId: snapshot.chunkId,
+        reason: "MISSING_CHUNK"
+      });
     }
   }
 
@@ -70,19 +121,56 @@ export async function isApprovedAnswerStale(
       evidenceFingerprint: true
     }
   });
+  const currentChunkById = new Map(currentChunks.map((chunk) => [chunk.id, chunk.evidenceFingerprint]));
 
-  if (currentChunks.length !== citationChunkIds.length) {
-    return true;
-  }
+  for (const chunkId of citationChunkIds) {
+    if (reasonsByChunkId.has(chunkId)) {
+      continue;
+    }
 
-  for (const currentChunk of currentChunks) {
-    const snapshotFingerprint = snapshotByChunkId.get(currentChunk.id);
-    if (!snapshotFingerprint || snapshotFingerprint !== currentChunk.evidenceFingerprint) {
-      return true;
+    const currentFingerprint = currentChunkById.get(chunkId);
+    if (!currentFingerprint) {
+      reasonsByChunkId.set(chunkId, {
+        chunkId,
+        reason: "MISSING_CHUNK"
+      });
+      continue;
+    }
+
+    const snapshotFingerprint = snapshotFingerprintByChunkId.get(chunkId);
+    if (!snapshotFingerprint || snapshotFingerprint !== currentFingerprint) {
+      reasonsByChunkId.set(chunkId, {
+        chunkId,
+        reason: "FINGERPRINT_MISMATCH"
+      });
     }
   }
 
-  return false;
+  return summarizeStalenessReasons(Array.from(reasonsByChunkId.values()));
+}
+
+export async function isApprovedAnswerStale(
+  approvedAnswerId: string,
+  ctx: {
+    orgId: string;
+  }
+): Promise<boolean> {
+  const approvedAnswer = await prisma.approvedAnswer.findFirst({
+    where: {
+      id: approvedAnswerId,
+      organizationId: ctx.orgId
+    },
+    select: {
+      id: true
+    }
+  });
+
+  if (!approvedAnswer) {
+    return true;
+  }
+
+  const staleness = await getApprovedAnswerStalenessDetails(approvedAnswerId, ctx);
+  return staleness.isStale;
 }
 
 export async function findStaleApprovedItemsForQuestionnaire(params: {

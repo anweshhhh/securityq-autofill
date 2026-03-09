@@ -1638,3 +1638,49 @@ Current log of implemented MVP work (concise, execution-focused).
   - audit target was unauthenticated, so the non-axe failures were expected auth-gated `401` responses
 - Manual auth notes:
   - a signed-in questionnaire smoke check was not possible in this shell session
+
+## 2026-03-09 - stale-reason-details-01
+
+- Added structured stale-reason classification to the approved-answer drift helper:
+  - `src/server/approvedAnswers/staleness.ts`
+    - new `getApprovedAnswerStalenessDetails(approvedAnswerId, ctx)` helper returns:
+      - `isStale`
+      - `affectedCitationsCount`
+      - `changedCount`
+      - `missingCount`
+      - per-citation reason codes (`FINGERPRINT_MISMATCH` / `MISSING_CHUNK`)
+    - existing `isApprovedAnswerStale(...)` now reuses the detailed helper internally without changing its external behavior
+- Added an item-scoped stale-details API route:
+  - `src/app/api/questionnaires/[id]/items/[itemId]/staleness-details/route.ts`
+    - RBAC-protected via the questionnaire read permission
+    - org-scoped by questionnaire + item lookup
+    - out-of-org or missing item returns `404 NOT_FOUND`
+    - returns only structured reason counts/codes; no raw evidence text, document names, or org identifiers
+- Added deterministic regression coverage:
+  - `src/app/api/questionnaires/[id]/items/[itemId]/staleness-details/route.test.ts`
+    - missing evidence classification
+    - fingerprint mismatch classification
+    - fresh approval
+    - item with no approved answer
+    - out-of-org access
+- Updated the questionnaire review drawer:
+  - `src/app/questionnaires/[id]/page.tsx`
+    - on-demand fetch of stale details only when the drawer opens on a stale approved item
+    - new compact `Why stale` card in the Answer tab showing:
+      - affected citations
+      - changed evidence
+      - missing evidence
+    - stale-details fetch failures fail quietly and do not block normal drawer use
+- Commands run:
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npm test` => PASS (`32` passed files, `1` skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run ui:audit -- http://localhost:4010/questionnaires` => completed with artifacts copied to:
+    - `artifacts/ui-audit/2026-03-09T22-41-00-590Z/stale-reason-details-01/`
+- UI audit/auth notes:
+  - axe serious/critical: `0/0`
+  - console errors: `6`
+  - network failures: `1`
+  - DOM assertions: `1/4`
+  - audit target was unauthenticated, so the non-axe failures were expected auth-gated `401` responses rather than a stale-details regression
+- Manual auth notes:
+  - a signed-in stale-details smoke test was not possible in this shell session

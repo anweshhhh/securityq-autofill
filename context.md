@@ -27,6 +27,7 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 - Stale approvals (evidence fingerprint drift or missing cited chunks) are never reused for autofill/reuse flows
 - Approved-only export is blocked when any approved answers are stale (evidence drift)
 - Review UI surfaces staleness on demand via `GET /api/questionnaires/:id/staleness`, `STALE` queue row badges, and a `Stale` queue filter
+- Review drawer surfaces structured stale reasons via on-demand item-scoped details from `GET /api/questionnaires/:id/items/:itemId/staleness-details` (changed vs missing evidence counts)
 - Questionnaire export UI surfaces `EXPORT_BLOCKED_STALE_APPROVALS` with stale-count messaging and a `Review stale` CTA that reuses the stale filter/jump flow
 - Questionnaire page includes a Health panel summarizing readiness and a `Fix blockers` CTA that routes reviewers to stale items first, then needs-review items
 - Review drawer can suggest fresh Approved Answers via semantic similarity; Apply copies answer + citations into the draft without auto-approving

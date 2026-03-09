@@ -3,6 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useAppAuthz } from "@/components/AppAuthzContext";
+import { CompactStatCard } from "@/components/CompactStatCard";
 import { ExportModal } from "@/components/ExportModal";
 import { QuestionnaireHealthPanel } from "@/components/QuestionnaireHealthPanel";
 import { Badge, Button, Card, TextArea, TextInput, cx } from "@/components/ui";
@@ -148,6 +149,25 @@ type ApprovedAnswerDetailsPayload = {
   error?: unknown;
 };
 
+type StalenessDetailsPayload = {
+  isStale?: unknown;
+  details?: {
+    affectedCitationsCount?: unknown;
+    changedCount?: unknown;
+    missingCount?: unknown;
+    reasons?: Array<{
+      reason?: unknown;
+    }>;
+  } | null;
+  error?: unknown;
+};
+
+type SelectedQuestionStalenessDetails = {
+  affectedCitationsCount: number;
+  changedCount: number;
+  missingCount: number;
+};
+
 type DrawerTab = "ANSWER" | "EVIDENCE" | "REFERENCES";
 
 const NOT_FOUND_ANSWER = NOT_FOUND_TEXT;
@@ -259,6 +279,27 @@ function normalizeApprovedAnswer(value: unknown): ApprovedAnswer | null {
     source: typed.source === "MANUAL_EDIT" ? "MANUAL_EDIT" : "GENERATED",
     note: typeof typed.note === "string" ? typed.note : null,
     updatedAt: typeof typed.updatedAt === "string" ? typed.updatedAt : new Date(0).toISOString()
+  };
+}
+
+function normalizeSelectedQuestionStalenessDetails(value: StalenessDetailsPayload["details"]): SelectedQuestionStalenessDetails | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const affectedCitationsCount =
+    typeof value.affectedCitationsCount === "number" ? value.affectedCitationsCount : null;
+  const changedCount = typeof value.changedCount === "number" ? value.changedCount : null;
+  const missingCount = typeof value.missingCount === "number" ? value.missingCount : null;
+
+  if (affectedCitationsCount === null || changedCount === null || missingCount === null) {
+    return null;
+  }
+
+  return {
+    affectedCitationsCount,
+    changedCount,
+    missingCount
   };
 }
 
@@ -637,6 +678,9 @@ export default function QuestionnaireDetailsPage() {
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [documentIdByName, setDocumentIdByName] = useState<Record<string, string>>({});
   const [staleQuestionnaireItems, setStaleQuestionnaireItems] = useState<QuestionnaireStaleItem[]>([]);
+  const [selectedQuestionStalenessDetails, setSelectedQuestionStalenessDetails] =
+    useState<SelectedQuestionStalenessDetails | null>(null);
+  const [isSelectedQuestionStalenessLoading, setIsSelectedQuestionStalenessLoading] = useState(false);
   const [reuseSuggestions, setReuseSuggestions] = useState<ReuseSuggestionSummary[]>([]);
   const [isReuseSuggestionsLoading, setIsReuseSuggestionsLoading] = useState(false);
   const [activeSuggestionId, setActiveSuggestionId] = useState<string | null>(null);
@@ -848,6 +892,9 @@ export default function QuestionnaireDetailsPage() {
   const selectedQuestion = useMemo(
     () => (selectedQuestionId ? questionsById[selectedQuestionId] ?? null : null),
     [questionsById, selectedQuestionId]
+  );
+  const selectedQuestionIsStale = Boolean(
+    selectedQuestion?.id && selectedQuestion.approvedAnswer && staleQuestionIdSet.has(selectedQuestion.id)
   );
 
   const closeContextDrawer = useCallback(() => {
@@ -1188,6 +1235,76 @@ export default function QuestionnaireDetailsPage() {
       setShowGeneratedDraft(false);
     }
   }, [selectedQuestion?.approvedAnswer, selectedQuestion?.id]);
+
+  useEffect(() => {
+    const selectedQuestionIdForStaleness = selectedQuestion?.id ?? null;
+    const selectedApprovedAnswerIdForStaleness = selectedQuestion?.approvedAnswer?.id ?? null;
+
+    if (
+      !questionnaireId ||
+      !isContextOpen ||
+      !selectedQuestionIdForStaleness ||
+      !selectedApprovedAnswerIdForStaleness ||
+      !selectedQuestionIsStale
+    ) {
+      setSelectedQuestionStalenessDetails(null);
+      setIsSelectedQuestionStalenessLoading(false);
+      return;
+    }
+
+    let active = true;
+    setIsSelectedQuestionStalenessLoading(true);
+
+    async function loadSelectedQuestionStalenessDetails() {
+      try {
+        const response = await fetch(
+          `/api/questionnaires/${questionnaireId}/items/${selectedQuestionIdForStaleness}/staleness-details`,
+          {
+            cache: "no-store"
+          }
+        );
+        const payload = (await response.json().catch(() => ({}))) as StalenessDetailsPayload;
+
+        if (!active) {
+          return;
+        }
+
+        if (!response.ok) {
+          setSelectedQuestionStalenessDetails(null);
+          return;
+        }
+
+        if (!payload.isStale) {
+          setSelectedQuestionStalenessDetails(null);
+          return;
+        }
+
+        setSelectedQuestionStalenessDetails(normalizeSelectedQuestionStalenessDetails(payload.details));
+      } catch {
+        if (!active) {
+          return;
+        }
+
+        setSelectedQuestionStalenessDetails(null);
+      } finally {
+        if (active) {
+          setIsSelectedQuestionStalenessLoading(false);
+        }
+      }
+    }
+
+    void loadSelectedQuestionStalenessDetails();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    isContextOpen,
+    questionnaireId,
+    selectedQuestion?.id,
+    selectedQuestion?.approvedAnswer?.id,
+    selectedQuestionIsStale
+  ]);
 
   useEffect(() => {
     const selectedQuestionIdForSuggestions = selectedQuestion?.id ?? null;
@@ -2575,6 +2692,39 @@ export default function QuestionnaireDetailsPage() {
                       {selectedQuestion.text || "No question text available."}
                     </p>
                   </Card>
+
+                  {selectedQuestionIsStale &&
+                  (isSelectedQuestionStalenessLoading || selectedQuestionStalenessDetails) ? (
+                    <Card className="card-muted">
+                      <div className="card-title-row">
+                        <h4 style={{ margin: 0 }}>Why stale</h4>
+                        <Badge tone="review">Stale approval</Badge>
+                      </div>
+                      {isSelectedQuestionStalenessLoading ? (
+                        <p className="small muted" style={{ margin: "8px 0 0" }}>
+                          Loading stale details...
+                        </p>
+                      ) : selectedQuestionStalenessDetails ? (
+                        <div className="compact-stats-grid" style={{ marginTop: 12 }}>
+                          <CompactStatCard
+                            label="Affected citations"
+                            value={selectedQuestionStalenessDetails.affectedCitationsCount}
+                            tone="warning"
+                          />
+                          <CompactStatCard
+                            label="Changed evidence"
+                            value={selectedQuestionStalenessDetails.changedCount}
+                            tone={selectedQuestionStalenessDetails.changedCount > 0 ? "warning" : "neutral"}
+                          />
+                          <CompactStatCard
+                            label="Missing evidence"
+                            value={selectedQuestionStalenessDetails.missingCount}
+                            tone={selectedQuestionStalenessDetails.missingCount > 0 ? "danger" : "neutral"}
+                          />
+                        </div>
+                      ) : null}
+                    </Card>
+                  ) : null}
 
                   <div className="card-title-row">
                     <h4 style={{ margin: 0 }}>
