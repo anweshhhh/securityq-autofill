@@ -12,6 +12,7 @@ import {
   syncApprovedAnswerEvidenceSnapshots
 } from "@/server/approvedAnswers/evidenceSnapshots";
 import { isApprovedAnswerStale } from "@/server/approvedAnswers/staleness";
+import { recordQuestionHistoryEvent } from "@/server/questionHistory/recordQuestionHistoryEvent";
 import { assertCan, RbacAction } from "@/server/rbac";
 
 type RouteContext = {
@@ -161,7 +162,8 @@ export async function PATCH(request: Request, context: RouteContext) {
         approvedBy: true,
         question: {
           select: {
-            text: true
+            text: true,
+            questionnaireId: true
           }
         }
       }
@@ -245,6 +247,15 @@ export async function PATCH(request: Request, context: RouteContext) {
         data: {
           reviewStatus: "APPROVED"
         }
+      });
+
+      await recordQuestionHistoryEvent({
+        db: tx,
+        organizationId: ctx.orgId,
+        questionnaireId: existing.question.questionnaireId,
+        questionId: existing.questionId,
+        type: "APPROVED",
+        approvedAnswerId: updated.id
       });
 
       return updated;

@@ -29,6 +29,7 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 - Review UI surfaces staleness on demand via `GET /api/questionnaires/:id/staleness`, `STALE` queue row badges, and a `Stale` queue filter
 - Review drawer surfaces structured stale reasons via on-demand item-scoped details from `GET /api/questionnaires/:id/items/:itemId/staleness-details` (changed vs missing evidence counts)
 - Review drawer surfaces approval provenance via on-demand item-scoped details from `GET /api/questionnaires/:id/items/:itemId/approval-trace` (approvedAt, freshness, snapshotted citations, reuse, suggestion-assisted)
+- Review drawer includes an item-scoped Approval history timeline built from minimal durable events plus current stale state via `GET /api/questionnaires/:id/items/:itemId/approval-history`
 - Questionnaire export UI surfaces `EXPORT_BLOCKED_STALE_APPROVALS` with stale-count messaging and a `Review stale` CTA that reuses the stale filter/jump flow
 - Questionnaire page includes a Health panel summarizing readiness and a `Fix blockers` CTA that routes reviewers to stale items first, then needs-review items
 - Review drawer can suggest fresh Approved Answers via semantic similarity; Apply copies answer + citations into the draft without auto-approving
@@ -37,7 +38,7 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 ## 4) Current Architecture
 
 - Stack: Next.js App Router + TypeScript + Prisma + Postgres (`pgvector`)
-- Core Prisma models: `User`, `Account`, `Session`, `VerificationToken`, `Organization`, `Membership`, `Document`, `DocumentChunk`, `Questionnaire`, `Question`, `ApprovedAnswer`, `ApprovedAnswerEvidence`
+- Core Prisma models: `User`, `Account`, `Session`, `VerificationToken`, `Organization`, `Membership`, `Document`, `DocumentChunk`, `Questionnaire`, `Question`, `ApprovedAnswer`, `ApprovedAnswerEvidence`, `QuestionHistoryEvent`
 - Shared answering pipeline in `src/server/answerEngine.ts` used by:
   - `POST /api/questions/answer`
   - `POST /api/questionnaires/:id/autofill`

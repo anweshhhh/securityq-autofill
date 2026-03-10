@@ -1746,3 +1746,75 @@ Current log of implemented MVP work (concise, execution-focused).
   - audit target was unauthenticated, so the non-axe failures were expected auth-gated `401` responses rather than an approval-trace regression
 - Manual auth notes:
   - a signed-in approval provenance smoke test was not possible in this shell session
+
+## 2026-03-09 - approval-history-timeline-01
+
+- Added a minimal durable item history model:
+  - `prisma/schema.prisma`
+    - new enum: `QuestionHistoryEventType`
+    - new model: `QuestionHistoryEvent`
+    - event types are intentionally limited to:
+      - `DRAFT_UPDATED`
+      - `SUGGESTION_APPLIED`
+      - `APPROVED`
+  - migration:
+    - `prisma/migrations/20260309233000_question_history_events/`
+- Added server-side history write/read helpers:
+  - `src/server/questionHistory/recordQuestionHistoryEvent.ts`
+    - appends a single durable event for a successful authoritative mutation
+  - `src/server/questionHistory/getApprovalHistoryForItem.ts`
+    - returns item-scoped history
+    - derives:
+      - `REAPPROVED` from later `APPROVED` events
+      - `BECAME_STALE` as a current-state marker when the item is presently stale
+    - the stale marker uses the latest approval timestamp as a deterministic proxy because exact stale transition time is not persisted
+- Wired history writes into authoritative mutation paths only:
+  - `src/app/api/questions/[id]/draft/route.ts`
+    - writes `DRAFT_UPDATED` for ordinary draft saves
+    - writes `SUGGESTION_APPLIED` for `draftSource: "SUGGESTION_APPLY"`
+  - `src/app/api/approved-answers/route.ts`
+    - writes `APPROVED`
+  - `src/app/api/approved-answers/[id]/route.ts`
+    - writes `APPROVED` for approved-answer refresh/edit paths so the timeline can derive `REAPPROVED`
+  - `src/app/api/questionnaires/[id]/approve-reused/route.ts`
+    - writes `APPROVED` for successfully bulk-approved exact reused items
+- Added item-scoped approval history API:
+  - `src/app/api/questionnaires/[id]/items/[itemId]/approval-history/route.ts`
+    - RBAC-protected via questionnaire read permission
+    - org-scoped by questionnaire item lookup
+    - returns `404 NOT_FOUND` for out-of-org/missing items
+    - returns only `{ hasItem, history }`
+- Added deterministic API coverage:
+  - `src/app/api/questionnaires/[id]/items/[itemId]/approval-history/route.test.ts`
+    - draft updated then approved
+    - suggestion applied then approved
+    - re-approved after approval refresh
+    - currently stale approved item
+    - item with no history
+    - out-of-org access
+- Updated the review drawer:
+  - `src/app/questionnaires/[id]/page.tsx`
+    - lazily fetches `GET /api/questionnaires/:id/items/:itemId/approval-history`
+    - shows a compact `Approval history` timeline with:
+      - Draft updated
+      - Suggestion applied
+      - Approved
+      - Currently stale
+      - Re-approved
+    - omits the panel when history is empty
+    - history fetch failures fail quietly and do not block the drawer
+- Commands run:
+  - `npx prisma generate` => PASS
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npx prisma migrate deploy` => PASS
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npm test` => PASS (`34` passed files, `1` skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run ui:audit -- http://localhost:4010/questionnaires` => completed with artifacts copied to:
+    - `artifacts/ui-audit/2026-03-09T23-53-17-435Z/approval-history-timeline-01/`
+- UI audit/auth notes:
+  - axe serious/critical: `0/0`
+  - console errors: `6`
+  - network failures: `1`
+  - DOM assertions: `1/4`
+  - audit target was unauthenticated, so the non-axe failures were expected auth-gated `401` responses rather than an approval-history regression
+- Manual auth notes:
+  - a signed-in approval history smoke test was not possible in this shell session

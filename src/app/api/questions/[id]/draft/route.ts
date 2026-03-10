@@ -3,6 +3,7 @@ import { ApiRouteError } from "@/lib/approvalValidation";
 import { jsonError, toApiErrorResponse } from "@/lib/apiResponse";
 import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/requestContext";
+import { recordQuestionHistoryEvent } from "@/server/questionHistory/recordQuestionHistoryEvent";
 import { assertCan, RbacAction } from "@/server/rbac";
 import { normalizeTemplateText, NOT_FOUND_TEXT } from "@/shared/answerTemplates";
 
@@ -122,6 +123,7 @@ export async function POST(request: Request, context: RouteContext) {
       },
       select: {
         id: true,
+        questionnaireId: true,
         approvedAnswer: {
           select: {
             id: true
@@ -197,25 +199,37 @@ export async function POST(request: Request, context: RouteContext) {
       })
       .filter((citation): citation is PersistedCitation => citation !== null);
 
-    const updated = await prisma.question.update({
-      where: {
-        id: question.id
-      },
-      data: {
-        answer: answerText,
-        citations,
-        reviewStatus: "NEEDS_REVIEW",
-        draftSuggestionApplied,
-        reusedFromApprovedAnswerId: null,
-        reuseMatchType: null,
-        reusedAt: null
-      },
-      select: {
-        id: true,
-        answer: true,
-        citations: true,
-        reviewStatus: true
-      }
+    const updated = await prisma.$transaction(async (tx) => {
+      const nextQuestion = await tx.question.update({
+        where: {
+          id: question.id
+        },
+        data: {
+          answer: answerText,
+          citations,
+          reviewStatus: "NEEDS_REVIEW",
+          draftSuggestionApplied,
+          reusedFromApprovedAnswerId: null,
+          reuseMatchType: null,
+          reusedAt: null
+        },
+        select: {
+          id: true,
+          answer: true,
+          citations: true,
+          reviewStatus: true
+        }
+      });
+
+      await recordQuestionHistoryEvent({
+        db: tx,
+        organizationId: ctx.orgId,
+        questionnaireId: question.questionnaireId,
+        questionId: question.id,
+        type: draftSuggestionApplied ? "SUGGESTION_APPLIED" : "DRAFT_UPDATED"
+      });
+
+      return nextQuestion;
     });
 
     return NextResponse.json({

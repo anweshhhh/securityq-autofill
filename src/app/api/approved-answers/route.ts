@@ -15,6 +15,7 @@ import {
   normalizeApprovalAnswerAndCitations,
   syncApprovedAnswerEvidenceSnapshots
 } from "@/server/approvedAnswers/evidenceSnapshots";
+import { recordQuestionHistoryEvent } from "@/server/questionHistory/recordQuestionHistoryEvent";
 import { assertCan, RbacAction } from "@/server/rbac";
 
 type CreateApprovedAnswerBody = {
@@ -50,6 +51,7 @@ export async function POST(request: Request) {
       },
       select: {
         id: true,
+        questionnaireId: true,
         text: true,
         answer: true,
         citations: true
@@ -148,6 +150,15 @@ export async function POST(request: Request) {
         data: {
           reviewStatus: "APPROVED"
         }
+      });
+
+      await recordQuestionHistoryEvent({
+        db: tx,
+        organizationId: ctx.orgId,
+        questionnaireId: question.questionnaireId,
+        questionId: question.id,
+        type: "APPROVED",
+        approvedAnswerId: upserted.id
       });
 
       return upserted;

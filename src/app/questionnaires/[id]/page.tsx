@@ -188,6 +188,20 @@ type SelectedQuestionApprovalTrace = {
   suggestionAssisted: boolean;
 };
 
+type ApprovalHistoryPayload = {
+  hasItem?: unknown;
+  history?: Array<{
+    type?: unknown;
+    occurredAt?: unknown;
+  }>;
+  error?: unknown;
+};
+
+type SelectedQuestionApprovalHistoryEntry = {
+  type: "DRAFT_UPDATED" | "SUGGESTION_APPLIED" | "APPROVED" | "BECAME_STALE" | "REAPPROVED";
+  occurredAt: string;
+};
+
 type DrawerTab = "ANSWER" | "EVIDENCE" | "REFERENCES";
 
 const NOT_FOUND_ANSWER = NOT_FOUND_TEXT;
@@ -353,6 +367,56 @@ function formatTraceTimestamp(value: string): string {
   }
 
   return new Date(parsed).toLocaleString();
+}
+
+function normalizeSelectedQuestionApprovalHistory(value: ApprovalHistoryPayload["history"]): SelectedQuestionApprovalHistoryEntry[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+      }
+
+      const occurredAt = typeof item.occurredAt === "string" ? item.occurredAt : "";
+      const type =
+        item.type === "DRAFT_UPDATED" ||
+        item.type === "SUGGESTION_APPLIED" ||
+        item.type === "APPROVED" ||
+        item.type === "BECAME_STALE" ||
+        item.type === "REAPPROVED"
+          ? item.type
+          : null;
+
+      if (!type || !occurredAt) {
+        return null;
+      }
+
+      return {
+        type,
+        occurredAt
+      };
+    })
+    .filter((entry): entry is SelectedQuestionApprovalHistoryEntry => entry !== null);
+}
+
+function approvalHistoryLabel(type: SelectedQuestionApprovalHistoryEntry["type"]): string {
+  switch (type) {
+    case "DRAFT_UPDATED":
+      return "Draft updated";
+    case "SUGGESTION_APPLIED":
+      return "Suggestion applied";
+    case "APPROVED":
+      return "Approved";
+    case "BECAME_STALE":
+      return "Currently stale";
+    case "REAPPROVED":
+      return "Re-approved";
+    default:
+      return type;
+  }
 }
 
 function getApiErrorMessage(payload: unknown, fallback: string): string {
@@ -736,6 +800,10 @@ export default function QuestionnaireDetailsPage() {
   const [selectedQuestionApprovalTrace, setSelectedQuestionApprovalTrace] =
     useState<SelectedQuestionApprovalTrace | null>(null);
   const [isSelectedQuestionApprovalTraceLoading, setIsSelectedQuestionApprovalTraceLoading] = useState(false);
+  const [selectedQuestionApprovalHistory, setSelectedQuestionApprovalHistory] = useState<
+    SelectedQuestionApprovalHistoryEntry[]
+  >([]);
+  const [isSelectedQuestionApprovalHistoryLoading, setIsSelectedQuestionApprovalHistoryLoading] = useState(false);
   const [reuseSuggestions, setReuseSuggestions] = useState<ReuseSuggestionSummary[]>([]);
   const [isReuseSuggestionsLoading, setIsReuseSuggestionsLoading] = useState(false);
   const [activeSuggestionId, setActiveSuggestionId] = useState<string | null>(null);
@@ -1418,6 +1486,58 @@ export default function QuestionnaireDetailsPage() {
       active = false;
     };
   }, [isContextOpen, questionnaireId, selectedQuestion?.approvedAnswer?.id, selectedQuestion?.id]);
+
+  useEffect(() => {
+    const selectedQuestionIdForApprovalHistory = selectedQuestion?.id ?? null;
+
+    if (!questionnaireId || !isContextOpen || !selectedQuestionIdForApprovalHistory) {
+      setSelectedQuestionApprovalHistory([]);
+      setIsSelectedQuestionApprovalHistoryLoading(false);
+      return;
+    }
+
+    let active = true;
+    setIsSelectedQuestionApprovalHistoryLoading(true);
+
+    async function loadSelectedQuestionApprovalHistory() {
+      try {
+        const response = await fetch(
+          `/api/questionnaires/${questionnaireId}/items/${selectedQuestionIdForApprovalHistory}/approval-history`,
+          {
+            cache: "no-store"
+          }
+        );
+        const payload = (await response.json().catch(() => ({}))) as ApprovalHistoryPayload;
+
+        if (!active) {
+          return;
+        }
+
+        if (!response.ok || payload.hasItem !== true) {
+          setSelectedQuestionApprovalHistory([]);
+          return;
+        }
+
+        setSelectedQuestionApprovalHistory(normalizeSelectedQuestionApprovalHistory(payload.history));
+      } catch {
+        if (!active) {
+          return;
+        }
+
+        setSelectedQuestionApprovalHistory([]);
+      } finally {
+        if (active) {
+          setIsSelectedQuestionApprovalHistoryLoading(false);
+        }
+      }
+    }
+
+    void loadSelectedQuestionApprovalHistory();
+
+    return () => {
+      active = false;
+    };
+  }, [isContextOpen, questionnaireId, selectedQuestion?.id]);
 
   useEffect(() => {
     const selectedQuestionIdForSuggestions = selectedQuestion?.id ?? null;
@@ -2881,6 +3001,58 @@ export default function QuestionnaireDetailsPage() {
                           </div>
                         </div>
                       ) : null}
+                    </Card>
+                  ) : null}
+
+                  {(isSelectedQuestionApprovalHistoryLoading || selectedQuestionApprovalHistory.length > 0) ? (
+                    <Card className="card-muted">
+                      <div className="card-title-row">
+                        <h4 style={{ margin: 0 }}>Approval history</h4>
+                        {selectedQuestionApprovalHistory.length > 0 ? (
+                          <Badge tone="draft">
+                            {selectedQuestionApprovalHistory.length} event
+                            {selectedQuestionApprovalHistory.length === 1 ? "" : "s"}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      {isSelectedQuestionApprovalHistoryLoading ? (
+                        <p className="small muted" style={{ margin: "8px 0 0" }}>
+                          Loading approval history...
+                        </p>
+                      ) : (
+                        <div style={{ display: "grid", gap: 10 }}>
+                          {selectedQuestionApprovalHistory.map((entry, index) => (
+                            <div
+                              key={`${entry.type}-${entry.occurredAt}-${index}`}
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "12px minmax(0, 1fr)",
+                                gap: 12,
+                                alignItems: "start"
+                              }}
+                            >
+                              <span
+                                aria-hidden="true"
+                                style={{
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: "999px",
+                                  background:
+                                    entry.type === "BECAME_STALE"
+                                      ? "#d08b16"
+                                      : entry.type === "REAPPROVED" || entry.type === "APPROVED"
+                                        ? "#157347"
+                                        : "#7a8699"
+                                }}
+                              />
+                              <div style={{ minWidth: 0 }}>
+                                <div>{approvalHistoryLabel(entry.type)}</div>
+                                <div className="small muted">{formatTraceTimestamp(entry.occurredAt)}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </Card>
                   ) : null}
 

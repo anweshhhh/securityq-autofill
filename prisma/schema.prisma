@@ -29,6 +29,12 @@ enum ReuseMatchType {
   SEMANTIC
 }
 
+enum QuestionHistoryEventType {
+  DRAFT_UPDATED
+  SUGGESTION_APPLIED
+  APPROVED
+}
+
 enum MembershipRole {
   OWNER
   ADMIN
@@ -53,6 +59,7 @@ model Organization {
   documents       Document[]
   questionnaires  Questionnaire[]
   approvedAnswers ApprovedAnswer[]
+  questionHistoryEvents QuestionHistoryEvent[]
 }
 
 model User {
@@ -174,6 +181,7 @@ model Questionnaire {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   questions      Question[]
+  questionHistoryEvents QuestionHistoryEvent[]
 }
 
 model Question {
@@ -193,6 +201,7 @@ model Question {
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
   approvedAnswer  ApprovedAnswer?
+  historyEvents   QuestionHistoryEvent[]
 
   @@unique([questionnaireId, rowIndex])
   @@index([questionnaireId, reuseMatchType])
@@ -233,4 +242,21 @@ model ApprovedAnswerEvidence {
   @@unique([approvedAnswerId, chunkId])
   @@index([approvedAnswerId])
   @@index([chunkId])
+}
+
+model QuestionHistoryEvent {
+  id             String                   @id @default(cuid())
+  organizationId String
+  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  questionnaireId String
+  questionnaire  Questionnaire            @relation(fields: [questionnaireId], references: [id], onDelete: Cascade)
+  questionId     String
+  question       Question                 @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  type           QuestionHistoryEventType
+  approvedAnswerId String?
+  createdAt      DateTime                 @default(now())
+
+  @@index([organizationId, questionId, createdAt])
+  @@index([questionnaireId, createdAt])
+  @@index([questionId, createdAt])
 }

@@ -161,17 +161,27 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     if (questionIdsToApprove.length > 0) {
-      await prisma.question.updateMany({
-        where: {
-          questionnaireId: questionnaire.id,
-          id: {
-            in: questionIdsToApprove
+      await prisma.$transaction([
+        prisma.question.updateMany({
+          where: {
+            questionnaireId: questionnaire.id,
+            id: {
+              in: questionIdsToApprove
+            }
+          },
+          data: {
+            reviewStatus: "APPROVED"
           }
-        },
-        data: {
-          reviewStatus: "APPROVED"
-        }
-      });
+        }),
+        prisma.questionHistoryEvent.createMany({
+          data: questionIdsToApprove.map((questionId) => ({
+            organizationId: ctx.orgId,
+            questionnaireId: questionnaire.id,
+            questionId,
+            type: "APPROVED"
+          }))
+        })
+      ]);
     }
 
     return NextResponse.json({
