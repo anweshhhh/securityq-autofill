@@ -31,6 +31,7 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 - Review drawer surfaces approval provenance via on-demand item-scoped details from `GET /api/questionnaires/:id/items/:itemId/approval-trace` (approvedAt, freshness, snapshotted citations, reuse, suggestion-assisted)
 - Review drawer includes an item-scoped Approval history timeline built from minimal durable events plus current stale state via `GET /api/questionnaires/:id/items/:itemId/approval-history`
 - Workspace includes an Approved Answers Library page at `/approved-answers` for browsing reusable claims with freshness and provenance metadata
+- Approved Answers Library rows are inspectable via an on-demand detail drawer backed by `GET /api/approved-answers/:id?detail=library`, exposing freshness, provenance, and stale-summary metadata without enabling mutations
 - Questionnaire export UI surfaces `EXPORT_BLOCKED_STALE_APPROVALS` with stale-count messaging and a `Review stale` CTA that reuses the stale filter/jump flow
 - Questionnaire page includes a Health panel summarizing readiness and a `Fix blockers` CTA that routes reviewers to stale items first, then needs-review items
 - Review drawer can suggest fresh Approved Answers via semantic similarity; Apply copies answer + citations into the draft without auto-approving

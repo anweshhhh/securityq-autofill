@@ -1881,3 +1881,60 @@ Current log of implemented MVP work (concise, execution-focused).
   - audit target was unauthenticated, so the route correctly redirected to login after the server-page auth fix
 - Manual auth notes:
   - a signed-in `/approved-answers` smoke test was not possible in this shell session
+
+## 2026-03-10 - approved-answers-detail-drawer-01
+
+- Added an inspectable detail drawer for Approved Answers Library rows:
+  - `src/components/ApprovedAnswerDetailDrawer.tsx`
+    - on-demand right-side overlay drawer for `/approved-answers`
+    - shows:
+      - full approved answer text
+      - freshness
+      - approved-at timestamp
+      - snapshotted citation count
+      - reused yes/no
+      - suggestion-assisted yes/no
+      - stale reason summary (`affected citations`, `changed evidence`, `missing evidence`) when stale
+    - uses the existing focus-trap + overlay modal pattern and closes via backdrop / ESC / close button
+- Added an org-scoped server helper for drawer metadata:
+  - `src/server/approvedAnswers/getApprovedAnswerLibraryDetail.ts`
+    - scopes by `ctx.orgId`
+    - reuses existing staleness logic instead of reimplementing drift rules
+    - returns the drawer-ready detail payload plus safe persisted source linkage IDs
+- Extended the existing approved-answer API route with a library-detail mode:
+  - `src/app/api/approved-answers/[id]/route.ts`
+    - default `GET` behavior remains unchanged for suggestion/apply flows:
+      - returns `answerText + citations`
+      - still blocks stale approved answers with `409 STALE_APPROVED_ANSWER`
+    - `GET /api/approved-answers/:id?detail=library` now returns read-only drawer metadata for the library page
+    - out-of-org / missing answers still return `404 NOT_FOUND`
+    - errors remain JSON-only envelopes
+- Updated the Approved Answers Library list interaction:
+  - `src/components/ApprovedAnswersLibraryTable.tsx`
+    - rows are now keyboard-accessible buttons that open the detail drawer
+    - the library list remains read-only; no edit/delete/merge actions were added
+    - source navigation is kept low-risk via an `Open source questionnaire` link in the drawer when linkage exists
+- Added deterministic regression coverage:
+  - `src/server/approvedAnswers/getApprovedAnswerLibraryDetail.test.ts`
+    - fresh detail
+    - stale detail summary
+    - org scoping
+  - `src/app/api/approved-answers/[id]/route.test.ts`
+    - library detail happy path
+    - stale library detail payload
+    - default stale-apply blocking regression
+    - out-of-org `404`
+    - unauthenticated `401`
+- Commands run:
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npm test` => PASS (`37` passed files, `1` skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run ui:audit -- http://localhost:4010/approved-answers` => completed with artifacts copied to:
+    - `artifacts/ui-audit/2026-03-11T17-20-04-183Z/approved-answers-detail-drawer-01/`
+- UI audit/auth notes:
+  - axe serious/critical: `0/0`
+  - console errors/warnings: `0/0`
+  - network failures: `0`
+  - DOM assertions: `1/4`
+  - audit target was the unauthenticated route surface, so the DOM assertion mismatches reflect questionnaire-specific selectors in the shared audit script rather than a library drawer issue
+- Manual auth notes:
+  - a signed-in `/approved-answers` drawer smoke test was not possible in this shell session

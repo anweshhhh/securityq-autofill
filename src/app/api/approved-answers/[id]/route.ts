@@ -11,6 +11,7 @@ import {
   normalizeApprovalAnswerAndCitations,
   syncApprovedAnswerEvidenceSnapshots
 } from "@/server/approvedAnswers/evidenceSnapshots";
+import { getApprovedAnswerLibraryDetail } from "@/server/approvedAnswers/getApprovedAnswerLibraryDetail";
 import { isApprovedAnswerStale } from "@/server/approvedAnswers/staleness";
 import { recordQuestionHistoryEvent } from "@/server/questionHistory/recordQuestionHistoryEvent";
 import { assertCan, RbacAction } from "@/server/rbac";
@@ -37,6 +38,8 @@ type ApprovedAnswerCitation = {
 export async function GET(_request: Request, context: RouteContext) {
   try {
     const approvedAnswerId = context.params.id.trim();
+    const requestUrl = new URL(_request.url);
+    const isLibraryDetailRequest = requestUrl.searchParams.get("detail") === "library";
 
     if (!approvedAnswerId) {
       return jsonError({
@@ -48,6 +51,19 @@ export async function GET(_request: Request, context: RouteContext) {
 
     const ctx = await getRequestContext(_request);
     assertCan(ctx.role, RbacAction.VIEW_QUESTIONNAIRES);
+
+    if (isLibraryDetailRequest) {
+      const detail = await getApprovedAnswerLibraryDetail(ctx, approvedAnswerId);
+      if (!detail) {
+        throw new ApiRouteError({
+          status: 404,
+          code: "NOT_FOUND",
+          message: "Approved answer not found."
+        });
+      }
+
+      return NextResponse.json(detail);
+    }
 
     const approvedAnswer = await prisma.approvedAnswer.findFirst({
       where: {
