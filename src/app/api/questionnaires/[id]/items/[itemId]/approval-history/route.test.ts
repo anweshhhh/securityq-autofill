@@ -362,7 +362,7 @@ describe.sequential("GET /api/questionnaires/[id]/items/[itemId]/approval-histor
 
     expect(response.status).toBe(200);
     expect(payload.history?.map((event) => event.type)).toEqual(["SUGGESTION_APPLIED", "APPROVED"]);
-  });
+  }, 15000);
 
   it("returns re-approval history after an approved answer is refreshed", async () => {
     const organization = await prisma.organization.create({
@@ -437,7 +437,7 @@ describe.sequential("GET /api/questionnaires/[id]/items/[itemId]/approval-histor
 
     expect(response.status).toBe(200);
     expect(payload.history?.map((event) => event.type)).toEqual(["APPROVED", "REAPPROVED"]);
-  });
+  }, 15000);
 
   it("returns a current stale marker for a drifted approved item", async () => {
     const organization = await prisma.organization.create({
@@ -494,7 +494,7 @@ describe.sequential("GET /api/questionnaires/[id]/items/[itemId]/approval-histor
     expect(response.status).toBe(200);
     expect(payload.history?.map((event) => event.type)).toEqual(["APPROVED", "BECAME_STALE"]);
     expect(typeof payload.history?.[1]?.occurredAt).toBe("string");
-  });
+  }, 15000);
 
   it("returns an empty history for an item with no history events", async () => {
     const organization = await prisma.organization.create({

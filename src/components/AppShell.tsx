@@ -66,6 +66,13 @@ function getPageHeader(pathname: string): { title: string; subtitle: string } {
     };
   }
 
+  if (pathname.startsWith("/approved-answers")) {
+    return {
+      title: "Approved Answers",
+      subtitle: "Browse reusable claims with freshness and provenance metadata."
+    };
+  }
+
   if (pathname === "/questionnaires") {
     return {
       title: "Questionnaire Pipeline",
@@ -120,6 +127,10 @@ function getPrimaryAction(pathname: string, role: Role | null): { href: string; 
       href: "/documents#upload",
       label: "Upload Evidence"
     };
+  }
+
+  if (pathname.startsWith("/approved-answers")) {
+    return null;
   }
 
   if (pathname.startsWith("/questionnaires/")) {

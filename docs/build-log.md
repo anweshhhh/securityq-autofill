@@ -1818,3 +1818,66 @@ Current log of implemented MVP work (concise, execution-focused).
   - audit target was unauthenticated, so the non-axe failures were expected auth-gated `401` responses rather than an approval-history regression
 - Manual auth notes:
   - a signed-in approval history smoke test was not possible in this shell session
+
+## 2026-03-10 - approved-answers-library-v1-01
+
+- Added a workspace-scoped Approved Answers Library page:
+  - `src/app/approved-answers/page.tsx`
+    - server-rendered page for `/approved-answers`
+    - reads `q` and `freshness` search params
+    - renders compact summary cards for `Total`, `Fresh`, and `Stale`
+    - renders search + freshness filters
+    - redirects unauthenticated requests to `/login?callbackUrl=...` instead of throwing a server error
+- Added a minimal library list component:
+  - `src/components/ApprovedAnswersLibraryTable.tsx`
+    - renders approved answer preview rows with:
+      - freshness
+      - approved-at timestamp
+      - snapshotted citation count
+      - reused yes/no
+      - suggestion-assisted yes/no
+    - includes a low-risk `Open source questionnaire` link using the persisted question -> questionnaire linkage
+- Added an org-scoped approved-answer listing helper:
+  - `src/server/approvedAnswers/listApprovedAnswers.ts`
+    - returns page-ready rows plus `total` / `fresh` / `stale` counts
+    - scopes strictly to `ctx.orgId`
+    - supports:
+      - case-insensitive search on answer text and question text
+      - freshness filter (`ALL` / `FRESH` / `STALE`)
+      - bounded row output (`limit=50` for the page)
+    - derives metadata from existing persisted state only:
+      - `ApprovedAnswer.createdAt`
+      - `ApprovedAnswerEvidence` snapshot counts
+      - `Question.reusedFromApprovedAnswerId`
+      - `Question.draftSuggestionApplied`
+- Reused the existing drift rules without adding new trust logic:
+  - `src/server/approvedAnswers/staleness.ts`
+    - added a small batch helper for stale approved-answer ID detection
+    - `findStaleApprovedItemsForQuestionnaire(...)` now reuses the same batch path
+- Added deterministic server coverage:
+  - `src/server/approvedAnswers/listApprovedAnswers.test.ts`
+    - org scoping
+    - freshness filtering
+    - search filtering
+    - metadata derivation
+    - count accuracy
+- Route/shell wiring:
+  - `middleware.ts`
+    - protects `/approved-answers`
+  - `src/components/AppShell.tsx`
+    - adds route-specific page title/subtitle and suppresses the generic top-bar CTA for this route
+- Verification:
+  - `npm test` => PASS (`35` passed files, `1` skipped)
+    - note: an existing approval-history route test was timing out under full-suite DB load, so its timeout was raised to keep the suite deterministic
+  - `npm run build` => PASS
+    - with existing Next.js dynamic-server-usage warnings on auth-scoped API routes
+  - `npm run ui:audit -- http://localhost:4010/approved-answers` => completed with artifacts copied to:
+    - `artifacts/ui-audit/2026-03-11T05-28-38-806Z/approved-answers-library-v1-01/`
+- UI audit/auth notes:
+  - axe serious/critical: `0/0`
+  - console errors/warnings: `0/0`
+  - network failures: `0`
+  - DOM assertions: `1/4`
+  - audit target was unauthenticated, so the route correctly redirected to login after the server-page auth fix
+- Manual auth notes:
+  - a signed-in `/approved-answers` smoke test was not possible in this shell session

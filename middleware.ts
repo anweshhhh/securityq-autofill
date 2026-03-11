@@ -15,6 +15,7 @@ function isProtectedApiPath(pathname: string): boolean {
 
 function isProtectedPagePath(pathname: string): boolean {
   return (
+    pathname.startsWith("/approved-answers") ||
     pathname.startsWith("/documents") ||
     pathname.startsWith("/questionnaires") ||
     pathname.startsWith("/settings") ||
@@ -57,6 +58,7 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
+    "/approved-answers/:path*",
     "/documents/:path*",
     "/questionnaires/:path*",
     "/settings/:path*",
