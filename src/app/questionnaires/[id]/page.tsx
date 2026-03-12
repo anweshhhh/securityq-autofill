@@ -2,6 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { ApprovedAnswerPicker } from "@/components/ApprovedAnswerPicker";
 import { useAppAuthz } from "@/components/AppAuthzContext";
 import { CompactStatCard } from "@/components/CompactStatCard";
 import { ExportModal } from "@/components/ExportModal";
@@ -439,6 +440,20 @@ function getApiErrorMessage(payload: unknown, fallback: string): string {
   return fallback;
 }
 
+function getApiErrorCode(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const typed = payload as { error?: unknown };
+  if (!typed.error || typeof typed.error !== "object" || Array.isArray(typed.error)) {
+    return null;
+  }
+
+  const nested = typed.error as { code?: unknown };
+  return typeof nested.code === "string" && nested.code.trim() ? nested.code : null;
+}
+
 function isNotFoundAnswer(answer: string | null | undefined): boolean {
   return (answer ?? "").trim() === NOT_FOUND_ANSWER;
 }
@@ -807,6 +822,8 @@ export default function QuestionnaireDetailsPage() {
   const [reuseSuggestions, setReuseSuggestions] = useState<ReuseSuggestionSummary[]>([]);
   const [isReuseSuggestionsLoading, setIsReuseSuggestionsLoading] = useState(false);
   const [activeSuggestionId, setActiveSuggestionId] = useState<string | null>(null);
+  const [isApprovedAnswerPickerOpen, setIsApprovedAnswerPickerOpen] = useState(false);
+  const [activeLibraryApprovedAnswerId, setActiveLibraryApprovedAnswerId] = useState<string | null>(null);
   const [isDocumentModalOpen, setIsDocumentModalOpen] = useState(false);
   const [isDocumentLoading, setIsDocumentLoading] = useState(false);
   const [documentModalTitle, setDocumentModalTitle] = useState("");
@@ -1621,6 +1638,14 @@ export default function QuestionnaireDetailsPage() {
   }, [questionnaireId, selectedQuestion?.approvedAnswer?.id, selectedQuestion?.id]);
 
   useEffect(() => {
+    const selectedApprovedAnswerId = selectedQuestion?.approvedAnswer?.id ?? null;
+
+    if (!isContextOpen || !selectedQuestion?.id || selectedApprovedAnswerId) {
+      setIsApprovedAnswerPickerOpen(false);
+    }
+  }, [isContextOpen, selectedQuestion?.approvedAnswer?.id, selectedQuestion?.id]);
+
+  useEffect(() => {
     let active = true;
 
     async function loadDocumentLookup() {
@@ -2131,60 +2156,125 @@ export default function QuestionnaireDetailsPage() {
     await copyText(answerToCopy, "Answer copied.");
   }, [copyText, selectedQuestion]);
 
-  const applyReuseSuggestion = useCallback(
-    async (question: QuestionRow, suggestion: ReuseSuggestionSummary) => {
+  const applyApprovedAnswerToDraft = useCallback(
+    async (
+      question: QuestionRow,
+      approvedAnswerId: string,
+      options: {
+        draftSource?: "SUGGESTION_APPLY";
+        successMessage: string;
+        failurePrefix: string;
+        staleMessage: string;
+        alreadyApprovedMessage: string;
+        onStart?: () => void;
+        onFinish?: () => void;
+      }
+    ): Promise<{ ok: boolean; message?: string }> => {
       if (question.approvedAnswer) {
-        setMessage("Unapprove the current answer before applying a suggestion.");
-        return;
+        setMessage(options.alreadyApprovedMessage);
+        return {
+          ok: false,
+          message: options.alreadyApprovedMessage
+        };
       }
 
       setMessage("");
-      setActiveSuggestionId(suggestion.approvedAnswerId);
+      options.onStart?.();
 
       try {
-        const suggestionResponse = await fetch(`/api/approved-answers/${suggestion.approvedAnswerId}`, {
+        const approvedAnswerResponse = await fetch(`/api/approved-answers/${approvedAnswerId}`, {
           cache: "no-store"
         });
-        const suggestionPayload = (await suggestionResponse.json().catch(() => ({}))) as ApprovedAnswerDetailsPayload;
-        if (!suggestionResponse.ok) {
-          throw new Error(getApiErrorMessage(suggestionPayload, "Failed to load suggestion details."));
+        const approvedAnswerPayload = (await approvedAnswerResponse.json().catch(() => ({}))) as ApprovedAnswerDetailsPayload;
+        if (!approvedAnswerResponse.ok) {
+          if (
+            approvedAnswerResponse.status === 409 &&
+            getApiErrorCode(approvedAnswerPayload) === "STALE_APPROVED_ANSWER"
+          ) {
+            throw new Error(options.staleMessage);
+          }
+
+          throw new Error(getApiErrorMessage(approvedAnswerPayload, "Failed to load approved answer details."));
         }
 
         const answerText =
-          typeof suggestionPayload.answerText === "string" ? suggestionPayload.answerText.trim() : "";
-        const citations = normalizeCitations(suggestionPayload.citations);
+          typeof approvedAnswerPayload.answerText === "string" ? approvedAnswerPayload.answerText.trim() : "";
+        const citations = normalizeCitations(approvedAnswerPayload.citations);
         const citationChunkIds = citations.map((citation) => citation.chunkId);
+        const draftBody: {
+          answerText: string;
+          citationChunkIds: string[];
+          draftSource?: "SUGGESTION_APPLY";
+        } = {
+          answerText,
+          citationChunkIds
+        };
+
+        if (options.draftSource) {
+          draftBody.draftSource = options.draftSource;
+        }
 
         const applyResponse = await fetch(`/api/questions/${question.id}/draft`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json"
           },
-          body: JSON.stringify({
-            answerText,
-            citationChunkIds,
-            draftSource: "SUGGESTION_APPLY"
-          })
+          body: JSON.stringify(draftBody)
         });
         const applyPayload = (await applyResponse.json().catch(() => ({}))) as unknown;
         if (!applyResponse.ok) {
-          throw new Error(getApiErrorMessage(applyPayload, "Failed to apply approved-answer suggestion."));
+          throw new Error(getApiErrorMessage(applyPayload, "Failed to update the draft answer."));
         }
 
-        setMessage("Suggestion applied to draft. Review and approve when ready.");
+        setMessage(options.successMessage);
         setShowGeneratedDraft(false);
         await refreshQuestionnaireData();
+        return {
+          ok: true,
+          message: options.successMessage
+        };
       } catch (error) {
-        setMessage(
-          `Unable to apply approved-answer suggestion: ${
-            error instanceof Error ? error.message : "Unknown error."
-          }`
-        );
+        const failureMessage = `${options.failurePrefix}${
+          error instanceof Error ? error.message : "Unknown error."
+        }`;
+        setMessage(failureMessage);
+        return {
+          ok: false,
+          message: failureMessage
+        };
       } finally {
-        setActiveSuggestionId(null);
+        options.onFinish?.();
       }
     },
     [refreshQuestionnaireData]
+  );
+
+  const applyReuseSuggestion = useCallback(
+    async (question: QuestionRow, suggestion: ReuseSuggestionSummary) => {
+      await applyApprovedAnswerToDraft(question, suggestion.approvedAnswerId, {
+        draftSource: "SUGGESTION_APPLY",
+        successMessage: "Suggestion applied to draft. Review and approve when ready.",
+        failurePrefix: "Unable to apply approved-answer suggestion: ",
+        staleMessage: "This approved-answer suggestion is no longer fresh. Refresh suggestions and try again.",
+        alreadyApprovedMessage: "Unapprove the current answer before applying a suggestion.",
+        onStart: () => setActiveSuggestionId(suggestion.approvedAnswerId),
+        onFinish: () => setActiveSuggestionId(null)
+      });
+    },
+    [applyApprovedAnswerToDraft]
+  );
+
+  const applyApprovedAnswerFromLibrary = useCallback(
+    async (question: QuestionRow, approvedAnswerId: string): Promise<{ ok: boolean; message?: string }> =>
+      applyApprovedAnswerToDraft(question, approvedAnswerId, {
+        successMessage: "Approved answer applied to draft. Review and approve when ready.",
+        failurePrefix: "Unable to apply library answer: ",
+        staleMessage: "This approved answer is no longer fresh. Refresh the library picker.",
+        alreadyApprovedMessage: "Unapprove the current answer before applying from the library.",
+        onStart: () => setActiveLibraryApprovedAnswerId(approvedAnswerId),
+        onFinish: () => setActiveLibraryApprovedAnswerId(null)
+      }),
+    [applyApprovedAnswerToDraft]
   );
 
   const openDocumentModal = useCallback(
@@ -3094,15 +3184,26 @@ export default function QuestionnaireDetailsPage() {
                   <Card className="card-muted reuse-suggestions-card">
                     <div className="card-title-row">
                       <h4 style={{ margin: 0 }}>Approved Answer Suggestions</h4>
-                      {!selectedQuestion.approvedAnswer ? (
-                        <Badge tone="draft">{reuseSuggestions.length} available</Badge>
-                      ) : null}
+                      <div className="toolbar-row compact">
+                        {!selectedQuestion.approvedAnswer ? (
+                          <Badge tone="draft">{reuseSuggestions.length} available</Badge>
+                        ) : null}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => setIsApprovedAnswerPickerOpen(true)}
+                          disabled={Boolean(selectedQuestion.approvedAnswer)}
+                          aria-haspopup="dialog"
+                        >
+                          Browse library
+                        </Button>
+                      </div>
                     </div>
 
                     {selectedQuestion.approvedAnswer ? (
                       <p className="small muted" style={{ margin: 0 }}>
                         Suggestions are available for reviewable items only. Unapprove this item first if you want to
-                        apply a different approved answer as a draft.
+                        apply a different approved answer as a draft, including from the library.
                       </p>
                     ) : isReuseSuggestionsLoading ? (
                       <p className="small muted" style={{ margin: 0 }}>
@@ -3365,6 +3466,20 @@ export default function QuestionnaireDetailsPage() {
           </div>
         </div>
       ) : null}
+
+      <ApprovedAnswerPicker
+        isOpen={isApprovedAnswerPickerOpen && Boolean(selectedQuestion)}
+        onClose={() => setIsApprovedAnswerPickerOpen(false)}
+        onApply={(approvedAnswerId) =>
+          selectedQuestion
+            ? applyApprovedAnswerFromLibrary(selectedQuestion, approvedAnswerId)
+            : Promise.resolve({
+                ok: false,
+                message: "Question no longer available."
+              })
+        }
+        applyingApprovedAnswerId={activeLibraryApprovedAnswerId}
+      />
 
       {isBulkConfirmOpen ? (
         <div className="overlay-modal" role="dialog" aria-modal="true" aria-label="Confirm bulk approval">

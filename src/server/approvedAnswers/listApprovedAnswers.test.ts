@@ -472,4 +472,64 @@ describe.sequential("listApprovedAnswersForOrg", () => {
       stale: 1
     });
   });
+
+  it("defaults picker mode to fresh-only rows with a capped result size", async () => {
+    const organization = await createOrganization("picker");
+    const questionnaire = await createQuestionnaire(organization.id, "Picker Questionnaire");
+
+    const fresh = await seedApprovedAnswer({
+      organizationId: organization.id,
+      questionnaireId: questionnaire.id,
+      rowIndex: 0,
+      questionText: "How do you rotate keys?",
+      answerText: "Encryption keys are rotated annually.",
+      chunkText: "Encryption keys are rotated annually.",
+      draftSuggestionApplied: true
+    });
+
+    const stale = await seedApprovedAnswer({
+      organizationId: organization.id,
+      questionnaireId: questionnaire.id,
+      rowIndex: 1,
+      questionText: "How do you harden endpoints?",
+      answerText: "Endpoints are hardened using CIS baselines.",
+      chunkText: "Endpoints are hardened using CIS baselines."
+    });
+
+    await prisma.documentChunk.update({
+      where: {
+        id: stale.chunkId
+      },
+      data: {
+        content: "Endpoints are hardened using CIS benchmarks and device posture checks.",
+        evidenceFingerprint: computeEvidenceFingerprint(
+          "Endpoints are hardened using CIS benchmarks and device posture checks."
+        )
+      }
+    });
+
+    const result = await listApprovedAnswersForOrg(
+      {
+        orgId: organization.id
+      },
+      {
+        mode: "PICKER",
+        query: "rotated"
+      }
+    );
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({
+      approvedAnswerId: fresh.approvedAnswerId,
+      freshness: "FRESH",
+      snapshottedCitationsCount: 1,
+      suggestionAssisted: true,
+      reused: false
+    });
+    expect(result.counts).toEqual({
+      total: 1,
+      fresh: 1,
+      stale: 0
+    });
+  });
 });

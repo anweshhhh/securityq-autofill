@@ -1938,3 +1938,65 @@ Current log of implemented MVP work (concise, execution-focused).
   - audit target was the unauthenticated route surface, so the DOM assertion mismatches reflect questionnaire-specific selectors in the shared audit script rather than a library drawer issue
 - Manual auth notes:
   - a signed-in `/approved-answers` drawer smoke test was not possible in this shell session
+
+## 2026-03-10 - library-manual-reuse-picker-01
+
+- Added a manual Browse library picker to the questionnaire review drawer:
+  - `src/components/ApprovedAnswerPicker.tsx`
+    - compact modal for fresh Approved Answers from the active workspace
+    - supports search via `GET /api/approved-answers?q=...&freshness=fresh&limit=20`
+    - shows:
+      - answer preview
+      - approved-at timestamp
+      - snapshotted citation count
+      - reused badge
+      - suggestion-assisted badge
+      - `Apply` action
+    - keeps failures quiet in unauthenticated contexts and surfaces inline apply errors without crashing the drawer
+- Wired Browse library into the existing questionnaire review drawer:
+  - `src/app/questionnaires/[id]/page.tsx`
+    - adds `Browse library` next to the existing Approved Answer Suggestions UI
+    - reuses the existing safe content fetch path:
+      - `GET /api/approved-answers/:id`
+    - reuses the existing safe draft update path:
+      - `POST /api/questions/:id/draft`
+    - preserves existing protection for already-approved items:
+      - library apply is blocked until the item is unapproved
+    - library apply does **not** send `draftSource: "SUGGESTION_APPLY"`, so manually-picked library answers remain drafts / `NEEDS_REVIEW` without being marked as semantic-suggestion-assisted
+    - stale-at-apply is handled through the existing `409 STALE_APPROVED_ANSWER` guard with a picker-specific refresh message
+- Extended approved-answer listing for picker usage:
+  - `src/server/approvedAnswers/listApprovedAnswers.ts`
+    - added `mode: "PICKER"` support
+    - picker mode defaults to `freshness=FRESH`
+    - picker mode caps results at `20`
+    - org scoping and stale filtering continue to reuse the existing trust rules
+- Added a minimal list/search API for the picker:
+  - `src/app/api/approved-answers/route.ts`
+    - new `GET` handler for picker search/listing
+    - requires questionnaire/library read permission
+    - defaults to fresh results only
+    - keeps JSON-only error envelopes
+    - existing `POST /api/approved-answers` approval-create behavior is unchanged
+- Added deterministic regression coverage:
+  - `src/server/approvedAnswers/listApprovedAnswers.test.ts`
+    - picker-mode defaults to fresh-only rows
+    - picker-mode metadata remains intact
+  - `src/app/api/approved-answers/route.test.ts`
+    - same-org default fresh listing
+    - explicit stale listing
+    - search filtering
+    - unauthenticated `401`
+    - forbidden-role JSON path
+- Commands run:
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npm test` => PASS (`38` passed files, `1` skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run ui:audit -- http://localhost:4010/questionnaires` => completed with artifacts copied to:
+    - `artifacts/ui-audit/2026-03-12T01-40-09-082Z/library-manual-reuse-picker-01/`
+- UI audit/auth notes:
+  - axe serious/critical: `0/0`
+  - console errors: `6`
+  - network failures: `1`
+  - DOM assertions: `1/4`
+  - audit target was unauthenticated, so the console/network noise remained the expected auth-gated `401` behavior from the shared questionnaire audit route rather than a picker regression
+- Manual auth notes:
+  - a signed-in library-picker smoke test was not possible in this shell session

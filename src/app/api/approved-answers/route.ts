@@ -15,6 +15,7 @@ import {
   normalizeApprovalAnswerAndCitations,
   syncApprovedAnswerEvidenceSnapshots
 } from "@/server/approvedAnswers/evidenceSnapshots";
+import { listApprovedAnswersForOrg, type ApprovedAnswersLibraryFreshness } from "@/server/approvedAnswers/listApprovedAnswers";
 import { recordQuestionHistoryEvent } from "@/server/questionHistory/recordQuestionHistoryEvent";
 import { assertCan, RbacAction } from "@/server/rbac";
 
@@ -26,6 +27,51 @@ type CreateApprovedAnswerBody = {
   approvedBy?: unknown;
   note?: unknown;
 };
+
+function parseFreshness(value: string | null): ApprovedAnswersLibraryFreshness {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "all") {
+    return "ALL";
+  }
+
+  if (normalized === "stale") {
+    return "STALE";
+  }
+
+  return "FRESH";
+}
+
+function parseLimit(value: string | null): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return 20;
+  }
+
+  return Math.min(parsed, 20);
+}
+
+export async function GET(request: Request) {
+  try {
+    const ctx = await getRequestContext(request);
+    assertCan(ctx.role, RbacAction.VIEW_QUESTIONNAIRES);
+
+    const requestUrl = new URL(request.url);
+    const q = requestUrl.searchParams.get("q");
+    const freshness = parseFreshness(requestUrl.searchParams.get("freshness"));
+    const limit = parseLimit(requestUrl.searchParams.get("limit"));
+
+    const approvedAnswers = await listApprovedAnswersForOrg(ctx, {
+      mode: "PICKER",
+      query: q,
+      freshness,
+      limit
+    });
+
+    return NextResponse.json(approvedAnswers);
+  } catch (error) {
+    return toApiErrorResponse(error, "Failed to list approved answers.");
+  }
+}
 
 export async function POST(request: Request) {
   try {

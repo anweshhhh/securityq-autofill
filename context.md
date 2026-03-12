@@ -35,6 +35,7 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 - Questionnaire export UI surfaces `EXPORT_BLOCKED_STALE_APPROVALS` with stale-count messaging and a `Review stale` CTA that reuses the stale filter/jump flow
 - Questionnaire page includes a Health panel summarizing readiness and a `Fix blockers` CTA that routes reviewers to stale items first, then needs-review items
 - Review drawer can suggest fresh Approved Answers via semantic similarity; Apply copies answer + citations into the draft without auto-approving
+- Review drawer includes a Browse library picker for manually applying fresh Approved Answers into draft without auto-approving, using `GET /api/approved-answers` for search/listing and the existing approved-answer content + draft-save paths for guarded apply
 - No doc-template-specific keyword/canned-answer logic in retrieval/answer path
 
 ## 4) Current Architecture

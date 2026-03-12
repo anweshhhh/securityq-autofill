@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { findStaleApprovedAnswerIds } from "@/server/approvedAnswers/staleness";
 
 export type ApprovedAnswersLibraryFreshness = "ALL" | "FRESH" | "STALE";
+export type ApprovedAnswersListMode = "LIBRARY" | "PICKER";
 
 export type ApprovedAnswersLibraryRow = {
   approvedAnswerId: string;
@@ -53,11 +54,15 @@ export async function listApprovedAnswersForOrg(
     query?: string | null;
     freshness?: ApprovedAnswersLibraryFreshness | string | null;
     limit?: number;
+    mode?: ApprovedAnswersListMode | null;
   }
 ): Promise<ApprovedAnswersLibraryResult> {
+  const mode = params?.mode === "PICKER" ? "PICKER" : "LIBRARY";
   const query = normalizeQuery(params?.query);
-  const freshness = normalizeFreshness(params?.freshness);
-  const limit = Math.max(1, Math.min(params?.limit ?? 50, 100));
+  const freshness = normalizeFreshness(params?.freshness ?? (mode === "PICKER" ? "FRESH" : "ALL"));
+  const defaultLimit = mode === "PICKER" ? 20 : 50;
+  const maxLimit = mode === "PICKER" ? 20 : 100;
+  const limit = Math.max(1, Math.min(params?.limit ?? defaultLimit, maxLimit));
 
   const approvedAnswers = await prisma.approvedAnswer.findMany({
     where: {
