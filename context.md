@@ -39,6 +39,7 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 - Browse library picker supports read-only preview of approved answers before apply, showing the current question text plus freshness, provenance, stale-summary, and source-questionnaire metadata via the existing `GET /api/approved-answers/:id?detail=library` route
 - Manual library browse relies on preview plus freshness/provenance metadata; question-match hints and other relevance-style guidance are intentionally omitted to reduce noisy trust signals
 - Workspace includes a Trust Queue page at `/trust-queue` for cross-questionnaire review work, summarizing stale approvals, needs-review items, and blocked questionnaires while linking reviewers back to questionnaire review pages
+- Questionnaire page supports stable item deep links via `/questionnaires/:id?itemId=<id>&filter=all|stale|needs-review`; Trust Queue rows and safe approved-answer source links use this contract to open review context without adding new backend APIs
 - No doc-template-specific keyword/canned-answer logic in retrieval/answer path
 
 ## 4) Current Architecture

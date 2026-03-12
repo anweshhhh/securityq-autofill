@@ -2111,3 +2111,43 @@ Current log of implemented MVP work (concise, execution-focused).
   - audit target was unauthenticated, so the route correctly redirected to login and the remaining DOM assertion mismatch reflects the shared questionnaire-oriented audit script rather than a Trust Queue regression
 - Manual auth notes:
   - a signed-in `/trust-queue` smoke test was not possible in this shell session
+
+## 2026-03-12 - questionnaire-item-deeplink-01
+
+- Added a stable deep-link contract for questionnaire review pages:
+  - `/questionnaires/:id?itemId=<questionnaireItemId>&filter=all|stale|needs-review`
+  - invalid filters now noop safely
+  - invalid or out-of-scope `itemId` values are ignored without breaking page load
+- Updated the questionnaire review page state bootstrap:
+  - `src/shared/questionnaireDeepLink.ts`
+    - parses deep-link params deterministically for initial-load handling
+  - `src/app/questionnaires/[id]/page.tsx`
+    - applies valid deep-link filters on load
+    - opens/selects the requested item when it exists in the questionnaire dataset
+    - falls back to `ALL` when a requested filter would hide the requested item
+    - reuses existing queue scroll behavior to jump the selected row into view
+    - waits for staleness data before honoring `filter=stale`
+- Updated safe cross-page links to use the new contract:
+  - `src/components/TrustQueueTable.tsx`
+    - `Review item` now links directly to the questionnaire item and adds `filter=stale` or `filter=needs-review` when that aligns with the row state
+  - `src/components/ApprovedAnswerDetailContent.tsx`
+    - safe source links now open `/questionnaires/:id?itemId=:itemId` when both persisted ids exist
+    - questionnaire-only fallback remains unchanged when only questionnaire scope is available
+- Added deterministic parser coverage:
+  - `src/shared/questionnaireDeepLink.test.ts`
+    - valid/invalid filters
+    - item-only and filter-only links
+    - empty value normalization
+- Commands run:
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npm test` => PASS (`40` passed files, `1` skipped; `121` passed tests, `1` skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run ui:audit -- http://localhost:4010/questionnaires` => completed with artifacts copied to:
+    - `artifacts/ui-audit/2026-03-12T21-59-45Z/questionnaire-item-deeplink-01/`
+- UI audit/auth notes:
+  - axe serious/critical: `0/0`
+  - console errors: `6`
+  - network failures: `1`
+  - DOM assertions: `1/4`
+  - audit target was unauthenticated, so the console/network noise remained the expected auth-gated `401` behavior from the shared questionnaire audit route rather than a deep-link regression
+- Manual auth notes:
+  - a signed-in deep-link smoke test was not possible in this shell session

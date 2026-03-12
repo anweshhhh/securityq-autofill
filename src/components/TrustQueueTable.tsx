@@ -43,6 +43,20 @@ function statusLabel(status: TrustQueueRow["reviewStatus"]): string {
   return "Open";
 }
 
+function buildReviewHref(row: TrustQueueRow): string {
+  const params = new URLSearchParams({
+    itemId: row.itemId
+  });
+
+  if (row.freshness === "STALE") {
+    params.set("filter", "stale");
+  } else if (row.reviewStatus === "NEEDS_REVIEW") {
+    params.set("filter", "needs-review");
+  }
+
+  return `/questionnaires/${row.questionnaireId}?${params.toString()}`;
+}
+
 export function TrustQueueTable({ rows }: TrustQueueTableProps) {
   if (rows.length === 0) {
     return (
@@ -87,7 +101,7 @@ export function TrustQueueTable({ rows }: TrustQueueTableProps) {
                     {row.freshness === "STALE" ? "Stale" : "Fresh"}
                   </Badge>
                 ) : null}
-                <Link href={`/questionnaires/${row.questionnaireId}`} className="btn btn-secondary">
+                <Link href={buildReviewHref(row)} className="btn btn-secondary">
                   Review item
                 </Link>
               </div>

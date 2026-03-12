@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { ApprovedAnswerPicker } from "@/components/ApprovedAnswerPicker";
 import { useAppAuthz } from "@/components/AppAuthzContext";
@@ -15,6 +15,7 @@ import {
   type ExportBlockedStaleError,
   type QuestionnaireStaleItem
 } from "@/shared/exportErrors";
+import { parseQuestionnaireDeepLink } from "@/shared/questionnaireDeepLink";
 import { computeQuestionnaireHealth } from "@/shared/questionnaireHealth";
 import { can, RbacAction } from "@/server/rbac";
 
@@ -259,6 +260,22 @@ const QUESTION_TERM_STOPWORDS = new Set([
   "were",
   "will"
 ]);
+
+function mapQuestionnaireDeepLinkFilter(filter: "all" | "stale" | "needs-review" | null): QuestionFilter | null {
+  if (filter === "all") {
+    return "ALL";
+  }
+
+  if (filter === "stale") {
+    return "STALE";
+  }
+
+  if (filter === "needs-review") {
+    return "NEEDS_REVIEW";
+  }
+
+  return null;
+}
 
 function normalizeCitations(value: unknown): Citation[] {
   if (!Array.isArray(value)) {
@@ -781,13 +798,19 @@ const QuestionRailItemButton = memo(function QuestionRailItemButton({
 export default function QuestionnaireDetailsPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const questionnaireId = params.id;
   const { role, orgId } = useAppAuthz();
+  const deepLink = useMemo(() => parseQuestionnaireDeepLink(searchParams), [searchParams]);
+  const deepLinkFilter = useMemo(
+    () => mapQuestionnaireDeepLinkFilter(deepLink.filter),
+    [deepLink.filter]
+  );
 
   const [data, setData] = useState<QuestionnaireDetailsPayload | null>(null);
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [filter, setFilter] = useState<QuestionFilter>("ALL");
+  const [filter, setFilter] = useState<QuestionFilter>(deepLinkFilter ?? "ALL");
   const [searchText, setSearchText] = useState("");
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [isContextOpen, setIsContextOpen] = useState(false);
@@ -809,6 +832,7 @@ export default function QuestionnaireDetailsPage() {
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [documentIdByName, setDocumentIdByName] = useState<Record<string, string>>({});
   const [staleQuestionnaireItems, setStaleQuestionnaireItems] = useState<QuestionnaireStaleItem[]>([]);
+  const [hasLoadedQuestionnaireStaleness, setHasLoadedQuestionnaireStaleness] = useState(false);
   const [selectedQuestionStalenessDetails, setSelectedQuestionStalenessDetails] =
     useState<SelectedQuestionStalenessDetails | null>(null);
   const [isSelectedQuestionStalenessLoading, setIsSelectedQuestionStalenessLoading] = useState(false);
@@ -834,6 +858,8 @@ export default function QuestionnaireDetailsPage() {
   const bulkModalRef = useRef<HTMLDivElement | null>(null);
   const documentModalRef = useRef<HTMLDivElement | null>(null);
   const shortcutHelpModalRef = useRef<HTMLDivElement | null>(null);
+  const appliedDeepLinkSignatureRef = useRef<string | null>(null);
+  const pendingDeepLinkScrollIdRef = useRef<string | null>(null);
   const deferredSearchText = useDeferredValue(searchText);
   const canRunAutofill = role ? can(role, RbacAction.RUN_AUTOFILL) : false;
   const canApproveAnswers = role ? can(role, RbacAction.APPROVE_ANSWERS) : false;
@@ -914,6 +940,7 @@ export default function QuestionnaireDetailsPage() {
   const loadQuestionnaireStaleness = useCallback(async () => {
     if (!questionnaireId) {
       setStaleQuestionnaireItems([]);
+      setHasLoadedQuestionnaireStaleness(false);
       return null;
     }
 
@@ -928,6 +955,7 @@ export default function QuestionnaireDetailsPage() {
       };
 
       if (!response.ok) {
+        setHasLoadedQuestionnaireStaleness(true);
         if (response.status === 401) {
           return null;
         }
@@ -937,8 +965,10 @@ export default function QuestionnaireDetailsPage() {
       const staleItems = parseQuestionnaireStalenessPayload(payload)?.staleItems ?? [];
 
       setStaleQuestionnaireItems(staleItems);
+      setHasLoadedQuestionnaireStaleness(true);
       return staleItems;
     } catch {
+      setHasLoadedQuestionnaireStaleness(true);
       return null;
     }
   }, [questionnaireId]);
@@ -952,6 +982,9 @@ export default function QuestionnaireDetailsPage() {
 
   useEffect(() => {
     setStaleQuestionnaireItems([]);
+    setHasLoadedQuestionnaireStaleness(false);
+    appliedDeepLinkSignatureRef.current = null;
+    pendingDeepLinkScrollIdRef.current = null;
   }, [questionnaireId]);
 
   const questionsById = useMemo(() => {
@@ -1029,6 +1062,87 @@ export default function QuestionnaireDetailsPage() {
     });
   }, [filteredQuestionIds]);
 
+  useEffect(() => {
+    if (!data) {
+      return;
+    }
+
+    const requestedItemId = deepLink.itemId;
+    const requestedFilter = deepLinkFilter;
+    if (!requestedItemId && !requestedFilter) {
+      return;
+    }
+
+    if ((requestedItemId || requestedFilter) && searchText.length > 0) {
+      setSearchText("");
+      return;
+    }
+
+    if (deferredSearchText.length > 0) {
+      return;
+    }
+
+    if (requestedFilter === "STALE" && !hasLoadedQuestionnaireStaleness) {
+      return;
+    }
+
+    const signature = `${questionnaireId}:${requestedItemId ?? ""}:${requestedFilter ?? ""}`;
+    if (appliedDeepLinkSignatureRef.current === signature) {
+      return;
+    }
+
+    appliedDeepLinkSignatureRef.current = signature;
+
+    const orderedQuestions = questionOrder
+      .map((questionId) => questionsById[questionId])
+      .filter((question): question is QuestionRow => Boolean(question));
+    const requestedQuestion = requestedItemId ? questionsById[requestedItemId] ?? null : null;
+
+    let nextFilter = requestedFilter;
+    if (requestedFilter && requestedQuestion) {
+      const visibleWithRequestedFilter = getFilteredQuestionIdsForView(
+        orderedQuestions,
+        requestedFilter,
+        "",
+        staleQuestionIdSet
+      );
+
+      if (!visibleWithRequestedFilter.includes(requestedQuestion.id)) {
+        nextFilter = "ALL";
+      }
+    }
+
+    if (nextFilter) {
+      setFilter(nextFilter);
+    }
+
+    if (requestedQuestion) {
+      setSelectedQuestionId(requestedQuestion.id);
+      setIsContextOpen(true);
+      setDrawerTab("ANSWER");
+      setLastInteractedRowId(requestedQuestion.id);
+      pendingDeepLinkScrollIdRef.current = requestedQuestion.id;
+      return;
+    }
+
+    if (requestedFilter) {
+      setIsContextOpen(false);
+      setSelectedQuestionId(null);
+      setLastInteractedRowId(null);
+    }
+  }, [
+    data,
+    deepLink.itemId,
+    deepLinkFilter,
+    deferredSearchText,
+    hasLoadedQuestionnaireStaleness,
+    questionOrder,
+    questionnaireId,
+    questionsById,
+    searchText,
+    staleQuestionIdSet
+  ]);
+
   const selectedQuestion = useMemo(
     () => (selectedQuestionId ? questionsById[selectedQuestionId] ?? null : null),
     [questionsById, selectedQuestionId]
@@ -1080,6 +1194,16 @@ export default function QuestionnaireDetailsPage() {
       });
     });
   }, []);
+
+  useEffect(() => {
+    const pendingQuestionId = pendingDeepLinkScrollIdRef.current;
+    if (!pendingQuestionId || !filteredQuestionIds.includes(pendingQuestionId)) {
+      return;
+    }
+
+    pendingDeepLinkScrollIdRef.current = null;
+    scrollQueueRowIntoView(pendingQuestionId);
+  }, [filteredQuestionIds, scrollQueueRowIntoView]);
 
   const moveSelection = useCallback(
     (direction: -1 | 1) => {

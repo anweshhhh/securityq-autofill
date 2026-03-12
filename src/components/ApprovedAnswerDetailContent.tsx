@@ -98,6 +98,13 @@ export function ApprovedAnswerDetailContent({
   currentQuestionText,
   applyAction
 }: ApprovedAnswerDetailContentProps) {
+  const sourceItemHref =
+    detail.sourceQuestionnaireId && detail.sourceItemId
+      ? `/questionnaires/${detail.sourceQuestionnaireId}?itemId=${detail.sourceItemId}`
+      : detail.sourceQuestionnaireId
+        ? `/questionnaires/${detail.sourceQuestionnaireId}`
+        : null;
+
   return (
     <>
       {currentQuestionText ? (
@@ -122,9 +129,9 @@ export function ApprovedAnswerDetailContent({
           <Badge tone={detail.freshness === "STALE" ? "review" : "approved"}>
             {detail.freshness === "STALE" ? "Stale" : "Fresh"}
           </Badge>
-          {detail.sourceQuestionnaireId ? (
-            <Link href={`/questionnaires/${detail.sourceQuestionnaireId}`} className="btn btn-ghost">
-              Open source questionnaire
+          {sourceItemHref ? (
+            <Link href={sourceItemHref} className="btn btn-ghost">
+              {detail.sourceItemId ? "Open source item" : "Open source questionnaire"}
             </Link>
           ) : null}
         </div>
