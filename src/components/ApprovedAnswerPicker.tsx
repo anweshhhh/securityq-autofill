@@ -363,7 +363,7 @@ export function ApprovedAnswerPicker({
                 <div style={{ display: "grid", gap: 4 }}>
                   <strong>Preview</strong>
                   <span className="small muted">
-                    Compare this approved answer against the question you are reviewing before applying it.
+                    Inspect this approved answer in context before applying it to the current draft.
                   </span>
                 </div>
                 <Button

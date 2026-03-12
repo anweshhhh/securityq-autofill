@@ -2033,3 +2033,25 @@ Current log of implemented MVP work (concise, execution-focused).
   - audit target was unauthenticated, so the console/network noise remained the expected auth-gated `401` behavior from the shared questionnaire audit route rather than a picker-preview regression
 - Manual auth notes:
   - a signed-in preview/apply smoke test was not possible in this shell session
+
+## 2026-03-12 - remove-question-match-ui-01
+
+- Removed the remaining comparison-style helper copy from the manual Browse library preview:
+  - `src/components/ApprovedAnswerPicker.tsx`
+    - preview guidance now stays neutral and trust-focused instead of implying question-match or relevance quality
+- No picker ranking, result ordering, apply guards, or backend/API behavior changed in this cleanup PR
+- Testing notes:
+  - no new tests were added because this is a display-copy cleanup only; existing picker/detail/apply coverage remains the guardrail
+- Commands run:
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npm test` => PASS (`38` passed files, `1` skipped; `112` passed tests, `1` skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run ui:audit -- http://localhost:4010/questionnaires` => completed with artifacts copied to:
+    - `artifacts/ui-audit/2026-03-12T18-32-44-051Z/remove-question-match-ui-01/`
+- UI audit/auth notes:
+  - axe serious/critical: `0/0`
+  - console errors: `6`
+  - network failures: `1`
+  - DOM assertions: `1/4`
+  - audit target was unauthenticated, so the console/network noise remained the expected auth-gated `401` behavior from the shared questionnaire audit route rather than a question-match cleanup regression
+- Manual auth notes:
+  - a signed-in picker smoke test was not possible in this shell session
