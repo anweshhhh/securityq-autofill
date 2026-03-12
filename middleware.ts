@@ -18,6 +18,7 @@ function isProtectedPagePath(pathname: string): boolean {
     pathname.startsWith("/approved-answers") ||
     pathname.startsWith("/documents") ||
     pathname.startsWith("/questionnaires") ||
+    pathname.startsWith("/trust-queue") ||
     pathname.startsWith("/settings") ||
     pathname.startsWith("/ask")
   );
@@ -61,6 +62,7 @@ export const config = {
     "/approved-answers/:path*",
     "/documents/:path*",
     "/questionnaires/:path*",
+    "/trust-queue/:path*",
     "/settings/:path*",
     "/ask/:path*",
     "/api/documents/:path*",

@@ -2055,3 +2055,59 @@ Current log of implemented MVP work (concise, execution-focused).
   - audit target was unauthenticated, so the console/network noise remained the expected auth-gated `401` behavior from the shared questionnaire audit route rather than a question-match cleanup regression
 - Manual auth notes:
   - a signed-in picker smoke test was not possible in this shell session
+
+## 2026-03-12 - workspace-trust-queue-01
+
+- Added a workspace-level Trust Queue page for cross-questionnaire review work:
+  - `src/app/trust-queue/page.tsx`
+    - server-rendered protected page using the existing request-context + RBAC pattern
+    - supports questionnaire-name search and `All` / `Stale` / `Needs review` filters
+    - shows compact summary cards for:
+      - stale approvals
+      - needs review
+      - blocked questionnaires
+  - `src/components/TrustQueueTable.tsx`
+    - renders actionable queue rows with:
+      - question preview
+      - questionnaire name
+      - review status
+      - freshness when applicable
+      - approved-at timestamp when relevant
+      - `Review item` CTA
+    - links back to the questionnaire review page at questionnaire scope because there is not yet a stable item deep-link contract on `/questionnaires/[id]`
+- Added an org-scoped trust-queue helper:
+  - `src/server/trustQueue/listTrustQueueItems.ts`
+    - derives actionable rows from existing persisted questionnaire state only
+    - reuses existing stale approved-answer batching via `findStaleApprovedAnswerIds(...)`
+    - returns summary counts plus filtered rows without adding a new API route
+    - ordering:
+      - stale items first
+      - then needs-review items
+      - then most recent approval/update timestamps
+- Added deterministic server coverage:
+  - `src/server/trustQueue/listTrustQueueItems.test.ts`
+    - org scoping
+    - stale filter
+    - needs-review filter
+    - blocked questionnaire count
+    - questionnaire-name search
+- Added minimal shell wiring for discoverability and protected-route consistency:
+  - `middleware.ts`
+    - protects `/trust-queue`
+  - `src/components/AppShell.tsx`
+    - adds route title/subtitle
+    - adds a low-risk nav item for Trust Queue
+    - suppresses the generic top-bar primary action on this route
+- Commands run:
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npm test` => PASS (`39` passed files, `1` skipped; `117` passed tests, `1` skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run ui:audit -- http://localhost:4010/trust-queue` => completed with artifacts copied to:
+    - `artifacts/ui-audit/2026-03-12T18-53-08-653Z/workspace-trust-queue-01/`
+- UI audit/auth notes:
+  - axe serious/critical: `0/0`
+  - console errors/warnings: `0/0`
+  - network failures: `0`
+  - DOM assertions: `1/4`
+  - audit target was unauthenticated, so the route correctly redirected to login and the remaining DOM assertion mismatch reflects the shared questionnaire-oriented audit script rather than a Trust Queue regression
+- Manual auth notes:
+  - a signed-in `/trust-queue` smoke test was not possible in this shell session

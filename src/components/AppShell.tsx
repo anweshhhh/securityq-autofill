@@ -73,6 +73,13 @@ function getPageHeader(pathname: string): { title: string; subtitle: string } {
     };
   }
 
+  if (pathname.startsWith("/trust-queue")) {
+    return {
+      title: "Trust Queue",
+      subtitle: "Review stale approvals and needs-review items across the active workspace."
+    };
+  }
+
   if (pathname === "/questionnaires") {
     return {
       title: "Questionnaire Pipeline",
@@ -130,6 +137,10 @@ function getPrimaryAction(pathname: string, role: Role | null): { href: string; 
   }
 
   if (pathname.startsWith("/approved-answers")) {
+    return null;
+  }
+
+  if (pathname.startsWith("/trust-queue")) {
     return null;
   }
 
@@ -209,7 +220,8 @@ export function AppShell({ devMode, children }: AppShellProps) {
     const items: NavItem[] = [
       { href: "/", label: "Home", short: "H" },
       { href: "/documents", label: "Documents", short: "D" },
-      { href: "/questionnaires", label: "Questionnaires", short: "Q" }
+      { href: "/questionnaires", label: "Questionnaires", short: "Q" },
+      { href: "/trust-queue", label: "Trust Queue", short: "T" }
     ];
 
     if (authzState.role && can(authzState.role, RbacAction.INVITE_MEMBERS)) {

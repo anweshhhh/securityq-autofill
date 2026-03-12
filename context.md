@@ -38,6 +38,7 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 - Review drawer includes a Browse library picker for manually applying fresh Approved Answers into draft without auto-approving, using `GET /api/approved-answers` for search/listing and the existing approved-answer content + draft-save paths for guarded apply
 - Browse library picker supports read-only preview of approved answers before apply, showing the current question text plus freshness, provenance, stale-summary, and source-questionnaire metadata via the existing `GET /api/approved-answers/:id?detail=library` route
 - Manual library browse relies on preview plus freshness/provenance metadata; question-match hints and other relevance-style guidance are intentionally omitted to reduce noisy trust signals
+- Workspace includes a Trust Queue page at `/trust-queue` for cross-questionnaire review work, summarizing stale approvals, needs-review items, and blocked questionnaires while linking reviewers back to questionnaire review pages
 - No doc-template-specific keyword/canned-answer logic in retrieval/answer path
 
 ## 4) Current Architecture

@@ -1,0 +1,213 @@
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { CompactStatCard } from "@/components/CompactStatCard";
+import { TrustQueueTable } from "@/components/TrustQueueTable";
+import { Button, Card, TextInput, cx } from "@/components/ui";
+import { getRequestContext, RequestContextError } from "@/lib/requestContext";
+import {
+  listTrustQueueItemsForOrg,
+  type TrustQueueFilter
+} from "@/server/trustQueue/listTrustQueueItems";
+import { assertCan, RbacAction } from "@/server/rbac";
+
+type TrustQueueSearchParams = {
+  q?: string | string[];
+  filter?: string | string[];
+};
+
+const FILTER_OPTIONS: Array<{ value: "all" | "stale" | "needs-review"; label: string }> = [
+  {
+    value: "all",
+    label: "All"
+  },
+  {
+    value: "stale",
+    label: "Stale"
+  },
+  {
+    value: "needs-review",
+    label: "Needs review"
+  }
+];
+
+function readSearchParam(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) {
+    return value[0] ?? "";
+  }
+
+  return value ?? "";
+}
+
+function normalizeFilter(value: string): TrustQueueFilter {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "stale") {
+    return "STALE";
+  }
+
+  if (normalized === "needs-review") {
+    return "NEEDS_REVIEW";
+  }
+
+  return "ALL";
+}
+
+function buildFilterHref(query: string, filter: "all" | "stale" | "needs-review"): string {
+  const params = new URLSearchParams();
+  if (query) {
+    params.set("q", query);
+  }
+
+  if (filter !== "all") {
+    params.set("filter", filter);
+  }
+
+  const next = params.toString();
+  return next ? `/trust-queue?${next}` : "/trust-queue";
+}
+
+export default async function TrustQueuePage({
+  searchParams
+}: {
+  searchParams?: TrustQueueSearchParams | Promise<TrustQueueSearchParams>;
+}) {
+  const resolvedSearchParams = await Promise.resolve(searchParams ?? {});
+  const query = readSearchParam(resolvedSearchParams.q).trim();
+  const filterParam = readSearchParam(resolvedSearchParams.filter).trim().toLowerCase();
+  const filter = normalizeFilter(filterParam);
+  const activeFilter =
+    filterParam === "stale" || filterParam === "needs-review" ? filterParam : "all";
+
+  let ctx;
+  try {
+    ctx = await getRequestContext();
+  } catch (error) {
+    if (error instanceof RequestContextError && error.status === 401) {
+      const callbackParams = new URLSearchParams();
+      if (query) {
+        callbackParams.set("q", query);
+      }
+      if (activeFilter !== "all") {
+        callbackParams.set("filter", activeFilter);
+      }
+
+      const callbackPath = callbackParams.toString()
+        ? `/trust-queue?${callbackParams.toString()}`
+        : "/trust-queue";
+      redirect(`/login?callbackUrl=${encodeURIComponent(callbackPath)}`);
+    }
+
+    throw error;
+  }
+
+  assertCan(ctx.role, RbacAction.VIEW_QUESTIONNAIRES);
+
+  const queue = await listTrustQueueItemsForOrg(ctx, {
+    query,
+    filter,
+    limit: 100
+  });
+
+  return (
+    <div style={{ display: "grid", gap: 20 }}>
+      <section style={{ display: "grid", gap: 8 }}>
+        <h1 style={{ margin: 0 }}>Trust Queue</h1>
+        <p style={{ margin: 0, color: "var(--muted-text)", maxWidth: "72ch" }}>
+          Review stale approvals and needs-review items across the active workspace without opening each
+          questionnaire first.
+        </p>
+      </section>
+
+      <section
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: 12
+        }}
+      >
+        <CompactStatCard
+          label="Stale approvals"
+          value={queue.summary.staleApprovalsCount}
+          tone={queue.summary.staleApprovalsCount > 0 ? "danger" : "neutral"}
+        />
+        <CompactStatCard
+          label="Needs review"
+          value={queue.summary.needsReviewCount}
+          tone={queue.summary.needsReviewCount > 0 ? "warning" : "neutral"}
+        />
+        <CompactStatCard
+          label="Blocked questionnaires"
+          value={queue.summary.blockedQuestionnairesCount}
+          tone={queue.summary.blockedQuestionnairesCount > 0 ? "danger" : "neutral"}
+        />
+      </section>
+
+      <Card>
+        <div style={{ display: "grid", gap: 14 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              alignItems: "center",
+              flexWrap: "wrap"
+            }}
+          >
+            <div style={{ display: "grid", gap: 4 }}>
+              <strong>Filter queue</strong>
+              <span style={{ color: "var(--muted-text)" }}>
+                Search by questionnaire name and focus the queue on stale approvals or needs-review work.
+              </span>
+            </div>
+            <div style={{ color: "var(--muted-text)", fontSize: "0.95rem" }}>
+              Showing {queue.rows.length} actionable item{queue.rows.length === 1 ? "" : "s"}
+            </div>
+          </div>
+
+          <form method="GET" action="/trust-queue" style={{ display: "grid", gap: 12 }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 12,
+                flexWrap: "wrap",
+                alignItems: "center"
+              }}
+            >
+              <TextInput
+                type="search"
+                name="q"
+                defaultValue={query}
+                placeholder="Search questionnaires"
+                style={{ flex: "1 1 280px", minWidth: 0 }}
+              />
+              <input type="hidden" name="filter" value={activeFilter} />
+              <Button type="submit" variant="primary">
+                Apply
+              </Button>
+              <Link href="/trust-queue" className="btn btn-ghost">
+                Clear
+              </Link>
+            </div>
+          </form>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} aria-label="Trust queue filters">
+            {FILTER_OPTIONS.map((option) => {
+              const active = option.value === activeFilter;
+              return (
+                <Link
+                  key={option.value}
+                  href={buildFilterHref(query, option.value)}
+                  className={cx("btn", active ? "btn-primary" : "btn-ghost")}
+                  aria-current={active ? "page" : undefined}
+                >
+                  {option.label}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      </Card>
+
+      <TrustQueueTable rows={queue.rows} />
+    </div>
+  );
+}
