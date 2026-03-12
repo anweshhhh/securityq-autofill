@@ -14,6 +14,14 @@ export type TrustQueueRow = {
   isBlockedForApprovedOnlyExport: boolean;
 };
 
+export type TrustQueueQuestionnaireGroup = {
+  questionnaireId: string;
+  questionnaireName: string;
+  staleCount: number;
+  needsReviewCount: number;
+  blocked: boolean;
+};
+
 export type TrustQueueResult = {
   rows: TrustQueueRow[];
   summary: {
@@ -21,6 +29,7 @@ export type TrustQueueResult = {
     needsReviewCount: number;
     blockedQuestionnairesCount: number;
   };
+  questionnaireGroups: TrustQueueQuestionnaireGroup[];
 };
 
 function normalizeQuery(value?: string | null): string {
@@ -54,6 +63,57 @@ function normalizeReviewStatus(value: string): TrustQueueRow["reviewStatus"] {
   }
 
   return "OTHER";
+}
+
+function buildQuestionnaireGroups(
+  rows: Array<
+    TrustQueueRow & {
+      rowIndex: number;
+      sortTimestamp: number;
+    }
+  >
+): TrustQueueQuestionnaireGroup[] {
+  const groups = new Map<string, TrustQueueQuestionnaireGroup>();
+
+  for (const row of rows) {
+    const existing = groups.get(row.questionnaireId);
+    const next: TrustQueueQuestionnaireGroup = existing ?? {
+      questionnaireId: row.questionnaireId,
+      questionnaireName: row.questionnaireName,
+      staleCount: 0,
+      needsReviewCount: 0,
+      blocked: false
+    };
+
+    if (row.freshness === "STALE") {
+      next.staleCount += 1;
+      next.blocked = true;
+    }
+
+    if (row.reviewStatus === "NEEDS_REVIEW") {
+      next.needsReviewCount += 1;
+    }
+
+    groups.set(row.questionnaireId, next);
+  }
+
+  return Array.from(groups.values())
+    .filter((group) => group.staleCount > 0 || group.needsReviewCount > 0)
+    .sort((left, right) => {
+      if (left.blocked !== right.blocked) {
+        return left.blocked ? -1 : 1;
+      }
+
+      if (left.staleCount !== right.staleCount) {
+        return right.staleCount - left.staleCount;
+      }
+
+      if (left.needsReviewCount !== right.needsReviewCount) {
+        return right.needsReviewCount - left.needsReviewCount;
+      }
+
+      return left.questionnaireName.localeCompare(right.questionnaireName);
+    });
 }
 
 export async function listTrustQueueItemsForOrg(
@@ -123,7 +183,8 @@ export async function listTrustQueueItemsForOrg(
         staleApprovalsCount: 0,
         needsReviewCount: 0,
         blockedQuestionnairesCount: 0
-      }
+      },
+      questionnaireGroups: []
     };
   }
 
@@ -201,6 +262,7 @@ export async function listTrustQueueItemsForOrg(
 
   const staleRows = actionableRows.filter((row) => row.freshness === "STALE");
   const needsReviewRows = actionableRows.filter((row) => row.reviewStatus === "NEEDS_REVIEW");
+  const questionnaireGroups = buildQuestionnaireGroups(actionableRows);
 
   return {
     rows: rows.slice(0, limit).map(({ rowIndex: _rowIndex, sortTimestamp: _sortTimestamp, ...row }) => row),
@@ -208,6 +270,7 @@ export async function listTrustQueueItemsForOrg(
       staleApprovalsCount: staleRows.length,
       needsReviewCount: needsReviewRows.length,
       blockedQuestionnairesCount: new Set(staleRows.map((row) => row.questionnaireId)).size
-    }
+    },
+    questionnaireGroups
   };
 }

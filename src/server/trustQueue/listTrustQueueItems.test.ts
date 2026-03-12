@@ -289,6 +289,15 @@ describe.sequential("listTrustQueueItemsForOrg", () => {
       needsReviewCount: 1,
       blockedQuestionnairesCount: 0
     });
+    expect(queue.questionnaireGroups).toEqual([
+      {
+        questionnaireId: questionnaireA.id,
+        questionnaireName: "Org A Questionnaire",
+        staleCount: 0,
+        needsReviewCount: 1,
+        blocked: false
+      }
+    ]);
   });
 
   it("returns only stale approved items in the stale filter", async () => {
@@ -343,6 +352,15 @@ describe.sequential("listTrustQueueItemsForOrg", () => {
       needsReviewCount: 0,
       blockedQuestionnairesCount: 1
     });
+    expect(queue.questionnaireGroups).toEqual([
+      {
+        questionnaireId: questionnaire.id,
+        questionnaireName: "Stale filter questionnaire",
+        staleCount: 1,
+        needsReviewCount: 0,
+        blocked: true
+      }
+    ]);
   });
 
   it("returns only needs-review items in the needs-review filter", async () => {
@@ -382,6 +400,15 @@ describe.sequential("listTrustQueueItemsForOrg", () => {
       needsReviewCount: 1,
       blockedQuestionnairesCount: 0
     });
+    expect(queue.questionnaireGroups).toEqual([
+      {
+        questionnaireId: questionnaire.id,
+        questionnaireName: "Needs review questionnaire",
+        staleCount: 0,
+        needsReviewCount: 1,
+        blocked: false
+      }
+    ]);
   });
 
   it("counts blocked questionnaires from stale approved items", async () => {
@@ -437,6 +464,15 @@ describe.sequential("listTrustQueueItemsForOrg", () => {
       blockedQuestionnairesCount: 1
     });
     expect(queue.rows.map((row) => row.questionnaireId)).toEqual([blockedQuestionnaire.id, blockedQuestionnaire.id]);
+    expect(queue.questionnaireGroups).toEqual([
+      {
+        questionnaireId: blockedQuestionnaire.id,
+        questionnaireName: "Blocked questionnaire",
+        staleCount: 2,
+        needsReviewCount: 0,
+        blocked: true
+      }
+    ]);
   });
 
   it("filters rows by questionnaire name search", async () => {
@@ -473,5 +509,103 @@ describe.sequential("listTrustQueueItemsForOrg", () => {
       needsReviewCount: 1,
       blockedQuestionnairesCount: 0
     });
+    expect(queue.questionnaireGroups).toEqual([
+      {
+        questionnaireId: matchedQuestionnaire.id,
+        questionnaireName: "Vendor Alpha Review",
+        staleCount: 0,
+        needsReviewCount: 1,
+        blocked: false
+      }
+    ]);
+  });
+
+  it("builds questionnaire groups for blocked and at-risk questionnaires in priority order", async () => {
+    const organization = await createOrganization("questionnaire-groups");
+    const blockedQuestionnaire = await createQuestionnaire(organization.id, "Vendor Zeta");
+    const alsoBlockedQuestionnaire = await createQuestionnaire(organization.id, "Vendor Alpha");
+    const needsReviewQuestionnaire = await createQuestionnaire(organization.id, "Vendor Gamma");
+    const cleanQuestionnaire = await createQuestionnaire(organization.id, "Vendor Clean");
+
+    const staleSingle = await seedApprovedQuestion({
+      organizationId: organization.id,
+      questionnaireId: blockedQuestionnaire.id,
+      rowIndex: 0,
+      questionText: "Do you sign logs?",
+      answerText: "Logs are signed.",
+      chunkText: "All audit logs are signed before archival."
+    });
+
+    const staleA = await seedApprovedQuestion({
+      organizationId: organization.id,
+      questionnaireId: alsoBlockedQuestionnaire.id,
+      rowIndex: 0,
+      questionText: "Do you perform annual pen tests?",
+      answerText: "Annual pen tests are performed.",
+      chunkText: "Independent annual penetration tests are completed."
+    });
+
+    const staleB = await seedApprovedQuestion({
+      organizationId: organization.id,
+      questionnaireId: alsoBlockedQuestionnaire.id,
+      rowIndex: 1,
+      questionText: "Do you segment production networks?",
+      answerText: "Production networks are segmented.",
+      chunkText: "Production systems are segmented from corporate endpoints."
+    });
+
+    await createNeedsReviewQuestion({
+      questionnaireId: needsReviewQuestionnaire.id,
+      rowIndex: 0,
+      questionText: "Do you review privileged access quarterly?"
+    });
+
+    await seedApprovedQuestion({
+      organizationId: organization.id,
+      questionnaireId: cleanQuestionnaire.id,
+      rowIndex: 0,
+      questionText: "Do you enable disk encryption?",
+      answerText: "Disk encryption is enabled.",
+      chunkText: "All managed devices use full-disk encryption."
+    });
+
+    for (const chunkId of [staleSingle.chunkId, staleA.chunkId, staleB.chunkId]) {
+      const driftedText = `Drifted questionnaire group evidence ${randomUUID()}`;
+      await prisma.documentChunk.update({
+        where: {
+          id: chunkId
+        },
+        data: {
+          content: driftedText,
+          evidenceFingerprint: computeEvidenceFingerprint(driftedText)
+        }
+      });
+    }
+
+    const queue = await listTrustQueueItemsForOrg({ orgId: organization.id });
+
+    expect(queue.questionnaireGroups).toEqual([
+      {
+        questionnaireId: alsoBlockedQuestionnaire.id,
+        questionnaireName: "Vendor Alpha",
+        staleCount: 2,
+        needsReviewCount: 0,
+        blocked: true
+      },
+      {
+        questionnaireId: blockedQuestionnaire.id,
+        questionnaireName: "Vendor Zeta",
+        staleCount: 1,
+        needsReviewCount: 0,
+        blocked: true
+      },
+      {
+        questionnaireId: needsReviewQuestionnaire.id,
+        questionnaireName: "Vendor Gamma",
+        staleCount: 0,
+        needsReviewCount: 1,
+        blocked: false
+      }
+    ]);
   });
 });

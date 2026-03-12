@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CompactStatCard } from "@/components/CompactStatCard";
+import { TrustQueueQuestionnaireGroups } from "@/components/TrustQueueQuestionnaireGroups";
 import { TrustQueueTable } from "@/components/TrustQueueTable";
 import { Button, Card, TextInput, cx } from "@/components/ui";
 import { getRequestContext, RequestContextError } from "@/lib/requestContext";
@@ -140,6 +141,8 @@ export default async function TrustQueuePage({
           tone={queue.summary.blockedQuestionnairesCount > 0 ? "danger" : "neutral"}
         />
       </section>
+
+      <TrustQueueQuestionnaireGroups groups={queue.questionnaireGroups} />
 
       <Card>
         <div style={{ display: "grid", gap: 14 }}>

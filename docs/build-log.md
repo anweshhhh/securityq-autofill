@@ -2151,3 +2151,43 @@ Current log of implemented MVP work (concise, execution-focused).
   - audit target was unauthenticated, so the console/network noise remained the expected auth-gated `401` behavior from the shared questionnaire audit route rather than a deep-link regression
 - Manual auth notes:
   - a signed-in deep-link smoke test was not possible in this shell session
+
+## 2026-03-12 - trust-queue-questionnaire-groups-01
+
+- Extended the Trust Queue helper to expose questionnaire-level actionable groups without adding a second query path:
+  - `src/server/trustQueue/listTrustQueueItems.ts`
+    - now returns `questionnaireGroups` alongside the existing actionable item rows and summary counts
+    - groups are derived from the same org-scoped actionable row set already used for stale / needs-review summaries
+    - grouping rules:
+      - include only questionnaires with stale or needs-review work
+      - `blocked = staleCount > 0`
+      - ordering: blocked first, then higher stale count, then higher needs-review count, then questionnaire name
+- Added deterministic coverage for questionnaire groups:
+  - `src/server/trustQueue/listTrustQueueItems.test.ts`
+    - verifies blocked vs needs-review-only grouping
+    - verifies per-questionnaire stale and needs-review counts
+    - verifies org scoping
+    - verifies actionable-only behavior
+    - verifies questionnaire-group ordering
+- Added a compact questionnaire-level triage section to `/trust-queue`:
+  - `src/components/TrustQueueQuestionnaireGroups.tsx`
+    - renders questionnaire name
+    - stale item count
+    - needs-review item count
+    - blocked state badge
+    - `Open questionnaire` CTA
+  - `src/app/trust-queue/page.tsx`
+    - renders the new section above the existing item-level queue while leaving the item filters and queue behavior unchanged
+- Commands run:
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npm test` => PASS (`40` passed files, `1` skipped; `122` passed tests, `1` skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run ui:audit -- http://localhost:4010/trust-queue` => completed with artifacts copied to:
+    - `artifacts/ui-audit/2026-03-12T22-47-20Z/trust-queue-questionnaire-groups-01/`
+- UI audit/auth notes:
+  - axe serious/critical: `0/0`
+  - console errors/warnings: `0/0`
+  - network failures: `0`
+  - DOM assertions: `1/4`
+  - audit target was unauthenticated, so the route redirected to login and the remaining DOM assertion mismatch reflects the shared questionnaire-oriented audit script rather than a Trust Queue regression
+- Manual auth notes:
+  - a signed-in `/trust-queue` questionnaire-group smoke test was not possible in this shell session
