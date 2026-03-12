@@ -36,6 +36,7 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 - Questionnaire page includes a Health panel summarizing readiness and a `Fix blockers` CTA that routes reviewers to stale items first, then needs-review items
 - Review drawer can suggest fresh Approved Answers via semantic similarity; Apply copies answer + citations into the draft without auto-approving
 - Review drawer includes a Browse library picker for manually applying fresh Approved Answers into draft without auto-approving, using `GET /api/approved-answers` for search/listing and the existing approved-answer content + draft-save paths for guarded apply
+- Browse library picker supports read-only preview of approved answers before apply, showing the current question text plus freshness, provenance, stale-summary, and source-questionnaire metadata via the existing `GET /api/approved-answers/:id?detail=library` route
 - No doc-template-specific keyword/canned-answer logic in retrieval/answer path
 
 ## 4) Current Architecture

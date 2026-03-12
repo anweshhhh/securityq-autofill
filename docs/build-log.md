@@ -2000,3 +2000,36 @@ Current log of implemented MVP work (concise, execution-focused).
   - audit target was unauthenticated, so the console/network noise remained the expected auth-gated `401` behavior from the shared questionnaire audit route rather than a picker regression
 - Manual auth notes:
   - a signed-in library-picker smoke test was not possible in this shell session
+
+## 2026-03-12 - library-picker-preview-01
+
+- Added read-only preview inside the questionnaire review drawer's Browse library picker:
+  - `src/components/ApprovedAnswerPicker.tsx`
+    - adds `Preview` beside `Apply` for each fresh approved-answer row
+    - opens an inline preview panel without replacing the picker search/list experience
+    - shows the current question text being reviewed above the selected approved-answer detail
+    - keeps guarded `Apply` behavior unchanged from the existing manual library picker flow
+- Extracted shared approved-answer detail presentation for reuse across library surfaces:
+  - `src/components/ApprovedAnswerDetailContent.tsx`
+    - renders full answer text, freshness, approved-at timestamp, snapshotted citations, reused, suggestion-assisted, stale summary, and optional source-questionnaire link
+    - also supports an optional apply action so the picker preview can apply the currently previewed answer through the same guarded flow
+  - `src/components/ApprovedAnswerDetailDrawer.tsx`
+    - now reuses the shared detail presenter rather than maintaining a separate rendering path
+- Wired current question text into the picker from the questionnaire review page:
+  - `src/app/questionnaires/[id]/page.tsx`
+    - passes the selected question text into the Browse library preview so reviewers can compare candidate approved answers against the question in context
+- Testing notes:
+  - no new pure helper or route was introduced in this PR, so verification relies on existing approved-answer route coverage plus build/UI audit rather than adding a new UI test harness
+- Commands run:
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npm test` => PASS (`38` passed files, `1` skipped; `112` passed tests, `1` skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run ui:audit -- http://localhost:4010/questionnaires` => completed with artifacts copied to:
+    - `artifacts/ui-audit/2026-03-12T02-59-12-677Z/library-picker-preview-01/`
+- UI audit/auth notes:
+  - axe serious/critical: `0/0`
+  - console errors: `6`
+  - network failures: `1`
+  - DOM assertions: `1/4`
+  - audit target was unauthenticated, so the console/network noise remained the expected auth-gated `401` behavior from the shared questionnaire audit route rather than a picker-preview regression
+- Manual auth notes:
+  - a signed-in preview/apply smoke test was not possible in this shell session

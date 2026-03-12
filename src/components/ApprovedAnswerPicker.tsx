@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  ApprovedAnswerDetailContent,
+  parseApprovedAnswerDetail,
+  type ApprovedAnswerDetail
+} from "@/components/ApprovedAnswerDetailContent";
 import { Badge, Button, Card, TextInput } from "@/components/ui";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 
@@ -35,6 +40,7 @@ type ApprovedAnswerPickerProps = {
   onClose: () => void;
   onApply: (approvedAnswerId: string) => Promise<{ ok: boolean; message?: string }>;
   applyingApprovedAnswerId: string | null;
+  currentQuestionText: string;
 };
 
 function formatApprovedAt(value: string): string {
@@ -78,7 +84,8 @@ export function ApprovedAnswerPicker({
   isOpen,
   onClose,
   onApply,
-  applyingApprovedAnswerId
+  applyingApprovedAnswerId,
+  currentQuestionText
 }: ApprovedAnswerPickerProps) {
   const modalRef = useRef<HTMLDivElement | null>(null);
   const [searchText, setSearchText] = useState("");
@@ -87,6 +94,10 @@ export function ApprovedAnswerPicker({
   const [resultCount, setResultCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [previewApprovedAnswerId, setPreviewApprovedAnswerId] = useState<string | null>(null);
+  const [previewDetail, setPreviewDetail] = useState<ApprovedAnswerDetail | null>(null);
+  const [previewErrorMessage, setPreviewErrorMessage] = useState("");
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
 
   useFocusTrap({
     active: isOpen,
@@ -102,6 +113,10 @@ export function ApprovedAnswerPicker({
       setResultCount(0);
       setErrorMessage("");
       setIsLoading(false);
+      setPreviewApprovedAnswerId(null);
+      setPreviewDetail(null);
+      setPreviewErrorMessage("");
+      setIsPreviewLoading(false);
       return;
     }
 
@@ -175,6 +190,85 @@ export function ApprovedAnswerPicker({
     };
   }, [isOpen, submittedQuery]);
 
+  useEffect(() => {
+    if (!isOpen || !previewApprovedAnswerId) {
+      setPreviewDetail(null);
+      setPreviewErrorMessage("");
+      setIsPreviewLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+
+    setPreviewDetail(null);
+    setPreviewErrorMessage("");
+    setIsPreviewLoading(true);
+
+    async function loadPreview() {
+      try {
+        const response = await fetch(`/api/approved-answers/${previewApprovedAnswerId}?detail=library`, {
+          cache: "no-store",
+          signal: controller.signal
+        });
+        const payload = (await response.json().catch(() => null)) as
+          | {
+              error?: {
+                message?: unknown;
+              };
+            }
+          | null;
+
+        if (!active) {
+          return;
+        }
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            setPreviewErrorMessage("Approved answer is no longer available.");
+          } else if (response.status === 401 || response.status === 403) {
+            setPreviewErrorMessage("Approved answer details are unavailable.");
+          } else {
+            setPreviewErrorMessage(
+              typeof payload?.error?.message === "string"
+                ? payload.error.message
+                : "Failed to load approved answer details."
+            );
+          }
+          setPreviewDetail(null);
+          return;
+        }
+
+        const parsedDetail = parseApprovedAnswerDetail(payload);
+        if (!parsedDetail) {
+          setPreviewErrorMessage("Approved answer details are unavailable.");
+          setPreviewDetail(null);
+          return;
+        }
+
+        setPreviewDetail(parsedDetail);
+      } catch (error) {
+        if (!active || controller.signal.aborted) {
+          return;
+        }
+
+        setPreviewDetail(null);
+        setPreviewErrorMessage(error instanceof Error ? error.message : "Failed to load approved answer details.");
+      } finally {
+        if (active) {
+          setIsPreviewLoading(false);
+        }
+      }
+    }
+
+    void loadPreview();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [isOpen, previewApprovedAnswerId]);
+
   if (!isOpen) {
     return null;
   }
@@ -196,10 +290,10 @@ export function ApprovedAnswerPicker({
         ref={modalRef}
         tabIndex={-1}
         style={{
-          width: "min(760px, 100%)",
+          width: "min(920px, 100%)",
           display: "grid",
           gap: 16,
-          maxHeight: "min(720px, calc(100vh - 32px))"
+          maxHeight: "min(780px, calc(100vh - 32px))"
         }}
       >
         <div
@@ -215,7 +309,7 @@ export function ApprovedAnswerPicker({
               Browse library
             </h3>
             <span className="small muted">
-              Search fresh approved answers in the current workspace and apply one to this draft.
+              Search fresh approved answers in the current workspace, preview them, and apply one to this draft.
             </span>
           </div>
           <Button type="button" variant="ghost" onClick={onClose}>
@@ -254,6 +348,70 @@ export function ApprovedAnswerPicker({
           <div className="small muted">Showing {rows.length} of {resultCount} fresh approved answers.</div>
         )}
 
+        {previewApprovedAnswerId ? (
+          <Card>
+            <div style={{ display: "grid", gap: 14 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  alignItems: "flex-start",
+                  flexWrap: "wrap"
+                }}
+              >
+                <div style={{ display: "grid", gap: 4 }}>
+                  <strong>Preview</strong>
+                  <span className="small muted">
+                    Compare this approved answer against the question you are reviewing before applying it.
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setPreviewApprovedAnswerId(null);
+                    setPreviewDetail(null);
+                    setPreviewErrorMessage("");
+                    setIsPreviewLoading(false);
+                  }}
+                >
+                  Close preview
+                </Button>
+              </div>
+
+              {isPreviewLoading ? <div className="small muted">Loading approved answer details...</div> : null}
+              {!isPreviewLoading && previewErrorMessage ? (
+                <div className="message-banner error">{previewErrorMessage}</div>
+              ) : null}
+              {!isPreviewLoading && !previewErrorMessage && previewDetail ? (
+                <ApprovedAnswerDetailContent
+                  detail={previewDetail}
+                  currentQuestionText={currentQuestionText}
+                  applyAction={{
+                    label: "Apply this answer",
+                    pendingLabel: "Applying...",
+                    onApply: async () => {
+                      setErrorMessage("");
+                      const result = await onApply(previewDetail.approvedAnswerId);
+                      if (result.ok) {
+                        onClose();
+                        return;
+                      }
+
+                      if (result.message) {
+                        setErrorMessage(result.message);
+                      }
+                    },
+                    disabled: Boolean(applyingApprovedAnswerId),
+                    pending: applyingApprovedAnswerId === previewDetail.approvedAnswerId
+                  }}
+                />
+              ) : null}
+            </div>
+          </Card>
+        ) : null}
+
         <div style={{ display: "grid", gap: 10, overflowY: "auto", paddingRight: 4 }}>
           {!isLoading && rows.length === 0 ? (
             <Card>
@@ -284,26 +442,39 @@ export function ApprovedAnswerPicker({
                       {row.suggestionAssisted ? <Badge tone="draft">Suggestion-assisted</Badge> : null}
                     </div>
                   </div>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={async () => {
-                      setErrorMessage("");
-                      const result = await onApply(row.approvedAnswerId);
-                      if (result.ok) {
-                        onClose();
-                        return;
-                      }
+                  <div className="toolbar-row compact">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        setPreviewApprovedAnswerId(row.approvedAnswerId);
+                        setPreviewErrorMessage("");
+                      }}
+                      disabled={Boolean(applyingApprovedAnswerId)}
+                    >
+                      Preview
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={async () => {
+                        setErrorMessage("");
+                        const result = await onApply(row.approvedAnswerId);
+                        if (result.ok) {
+                          onClose();
+                          return;
+                        }
 
-                      if (result.message) {
-                        setErrorMessage(result.message);
-                      }
-                    }}
-                    disabled={Boolean(applyingApprovedAnswerId)}
-                    aria-label={`Apply approved answer with ${row.snapshottedCitationsCount} citations`}
-                  >
-                    {applyingApprovedAnswerId === row.approvedAnswerId ? "Applying..." : "Apply"}
-                  </Button>
+                        if (result.message) {
+                          setErrorMessage(result.message);
+                        }
+                      }}
+                      disabled={Boolean(applyingApprovedAnswerId)}
+                      aria-label={`Apply approved answer with ${row.snapshottedCitationsCount} citations`}
+                    >
+                      {applyingApprovedAnswerId === row.approvedAnswerId ? "Applying..." : "Apply"}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </Card>

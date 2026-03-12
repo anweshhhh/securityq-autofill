@@ -3479,6 +3479,7 @@ export default function QuestionnaireDetailsPage() {
               })
         }
         applyingApprovedAnswerId={activeLibraryApprovedAnswerId}
+        currentQuestionText={selectedQuestion?.text ?? ""}
       />
 
       {isBulkConfirmOpen ? (
