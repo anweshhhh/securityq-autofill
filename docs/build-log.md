@@ -2268,3 +2268,61 @@ Current log of implemented MVP work (concise, execution-focused).
   - audit target was unauthenticated, so the route redirected to login and the remaining DOM assertion mismatch reflects the shared questionnaire-oriented audit script rather than a group-deeplink regression
 - Manual auth notes:
   - a signed-in `/trust-queue` group deeplink smoke test was not possible in this shell session
+
+## 2026-03-13 - trust-queue-review-session-01
+
+- Added a lightweight Trust Queue review session flow without introducing a new API route:
+  - `src/server/trustQueue/getTrustQueueSession.ts`
+    - reuses the existing sorted Trust Queue rows to resolve:
+      - `firstItem`
+      - `current`
+      - `next`
+      - `totalCount`
+    - keeps session order tied to current Trust Queue filter/search instead of inventing a second ranking system
+  - `src/shared/trustQueueSessionLinks.ts`
+    - centralizes Trust Queue session href construction with:
+      - questionnaire deep-link params: `itemId` + row-level `filter`
+      - session params: `source=trust-queue`, `queueFilter`, `queueQuery`
+- Added deterministic coverage:
+  - `src/server/trustQueue/getTrustQueueSession.test.ts`
+    - verifies first-item selection, current/next resolution, end-of-session behavior, filter/query scoping, and org scoping
+  - `src/shared/trustQueueSessionLinks.test.ts`
+    - verifies safe filter normalization and session href construction
+- Updated Trust Queue entry points to preserve session context:
+  - `src/app/trust-queue/page.tsx`
+    - adds `Start review` for the highest-priority actionable item in the current filtered queue
+    - passes the current queue filter/search through Trust Queue row and questionnaire-group links so opening work from Trust Queue can stay in-session
+  - `src/components/TrustQueueTable.tsx`
+  - `src/components/TrustQueueQuestionnaireGroups.tsx`
+    - keep their visible UI unchanged while upgrading link targets to the Trust Queue session contract
+- Split questionnaire routing into a thin server wrapper plus the existing client workbench:
+  - `src/app/questionnaires/[id]/page.tsx`
+    - resolves Trust Queue session state from URL params and current org context
+    - omits the session UI safely when params are missing, invalid, or no longer resolve to a current queue row
+  - `src/components/QuestionnaireDetailsPageClient.tsx`
+    - preserves existing questionnaire review behavior while accepting optional session-banner props
+  - `src/components/TrustQueueReviewSessionBanner.tsx`
+    - renders `Reviewing from Trust Queue`, the current `P1/P2/P3` badge, and `Next item` / end-of-session state
+- Commands run:
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npm test -- src/server/trustQueue/getTrustQueueSession.test.ts src/shared/trustQueueSessionLinks.test.ts` => PASS (`2` files, `9` tests)
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npm test` => PASS (`42` passed files, `1` skipped; `132` passed tests, `1` skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run ui:audit -- http://localhost:4010/trust-queue` => completed
+  - `npm run ui:audit -- http://localhost:4010/questionnaires` => completed
+  - consolidated UI audit artifacts copied to:
+    - `artifacts/ui-audit/2026-03-13T03-19-45Z/trust-queue-review-session-01/`
+- UI audit/auth notes:
+  - Trust Queue audit:
+    - axe serious/critical: `0/0`
+    - console errors/warnings: `0/0`
+    - network failures: `0`
+    - DOM assertions: `1/4`
+    - unauthenticated run redirected to login; remaining DOM mismatch comes from the shared questionnaire-oriented audit script rather than this Trust Queue change
+  - Questionnaire audit:
+    - axe serious/critical: `0/0`
+    - console errors: `6`
+    - network failures: `1`
+    - DOM assertions: `1/4`
+    - unauthenticated run hit the expected auth-gated `401` questionnaire fetches while still reporting no serious/critical axe issues
+- Manual auth notes:
+  - a signed-in Trust Queue review-session smoke test was not possible in this shell session

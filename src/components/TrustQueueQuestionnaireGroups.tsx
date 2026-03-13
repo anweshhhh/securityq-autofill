@@ -1,9 +1,15 @@
 import Link from "next/link";
 import type { TrustQueueQuestionnaireGroup } from "@/server/trustQueue/listTrustQueueItems";
+import {
+  buildTrustQueueSessionHref,
+  type TrustQueueSessionFilterParam
+} from "@/shared/trustQueueSessionLinks";
 import { Badge, Card } from "@/components/ui";
 
 type TrustQueueQuestionnaireGroupsProps = {
   groups: TrustQueueQuestionnaireGroup[];
+  queueFilter?: TrustQueueSessionFilterParam;
+  queueQuery?: string;
 };
 
 function groupTone(group: TrustQueueQuestionnaireGroup): "review" | "draft" {
@@ -14,20 +20,29 @@ function groupLabel(group: TrustQueueQuestionnaireGroup): string {
   return group.blocked ? "Blocked" : "Needs review";
 }
 
-function buildQuestionnaireHref(group: TrustQueueQuestionnaireGroup): string {
+function buildQuestionnaireHref(
+  group: TrustQueueQuestionnaireGroup,
+  queueFilter: TrustQueueSessionFilterParam,
+  queueQuery?: string
+): string {
   if (!group.firstActionableItemId || !group.firstActionableFilter) {
     return `/questionnaires/${group.questionnaireId}`;
   }
 
-  const params = new URLSearchParams({
+  return buildTrustQueueSessionHref({
+    questionnaireId: group.questionnaireId,
     itemId: group.firstActionableItemId,
-    filter: group.firstActionableFilter
+    rowFilter: group.firstActionableFilter,
+    queueFilter,
+    queueQuery
   });
-
-  return `/questionnaires/${group.questionnaireId}?${params.toString()}`;
 }
 
-export function TrustQueueQuestionnaireGroups({ groups }: TrustQueueQuestionnaireGroupsProps) {
+export function TrustQueueQuestionnaireGroups({
+  groups,
+  queueFilter = "all",
+  queueQuery
+}: TrustQueueQuestionnaireGroupsProps) {
   if (groups.length === 0) {
     return null;
   }
@@ -72,7 +87,10 @@ export function TrustQueueQuestionnaireGroups({ groups }: TrustQueueQuestionnair
                 </div>
                 <div className="toolbar-row compact">
                   <Badge tone={groupTone(group)}>{groupLabel(group)}</Badge>
-                  <Link href={buildQuestionnaireHref(group)} className="btn btn-secondary">
+                  <Link
+                    href={buildQuestionnaireHref(group, queueFilter, queueQuery)}
+                    className="btn btn-secondary"
+                  >
                     Open questionnaire
                   </Link>
                 </div>

@@ -1,9 +1,15 @@
 import Link from "next/link";
 import type { TrustQueueRow } from "@/server/trustQueue/listTrustQueueItems";
+import {
+  buildTrustQueueSessionHref,
+  type TrustQueueSessionFilterParam
+} from "@/shared/trustQueueSessionLinks";
 import { Badge, Card } from "@/components/ui";
 
 type TrustQueueTableProps = {
   rows: TrustQueueRow[];
+  queueFilter?: TrustQueueSessionFilterParam;
+  queueQuery?: string;
 };
 
 function formatApprovedAt(value: string | null): string {
@@ -47,21 +53,25 @@ function priorityTone(priority: TrustQueueRow["priority"]): "review" | "draft" {
   return priority === "P1" ? "review" : "draft";
 }
 
-function buildReviewHref(row: TrustQueueRow): string {
-  const params = new URLSearchParams({
-    itemId: row.itemId
+function buildReviewHref(
+  row: TrustQueueRow,
+  queueFilter: TrustQueueSessionFilterParam,
+  queueQuery?: string
+): string {
+  return buildTrustQueueSessionHref({
+    questionnaireId: row.questionnaireId,
+    itemId: row.itemId,
+    rowFilter: row.freshness === "STALE" ? "stale" : "needs-review",
+    queueFilter,
+    queueQuery
   });
-
-  if (row.freshness === "STALE") {
-    params.set("filter", "stale");
-  } else if (row.reviewStatus === "NEEDS_REVIEW") {
-    params.set("filter", "needs-review");
-  }
-
-  return `/questionnaires/${row.questionnaireId}?${params.toString()}`;
 }
 
-export function TrustQueueTable({ rows }: TrustQueueTableProps) {
+export function TrustQueueTable({
+  rows,
+  queueFilter = "all",
+  queueQuery
+}: TrustQueueTableProps) {
   if (rows.length === 0) {
     return (
       <Card>
@@ -109,7 +119,7 @@ export function TrustQueueTable({ rows }: TrustQueueTableProps) {
                     {row.freshness === "STALE" ? "Stale" : "Fresh"}
                   </Badge>
                 ) : null}
-                <Link href={buildReviewHref(row)} className="btn btn-secondary">
+                <Link href={buildReviewHref(row, queueFilter, queueQuery)} className="btn btn-secondary">
                   Review item
                 </Link>
               </div>

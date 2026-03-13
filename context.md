@@ -43,6 +43,7 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 - Trust Queue item rows use deterministic priority buckets to drive review order: `P1` stale approved items, `P2` needs-review items inside blocked questionnaires, `P3` other needs-review items
 - Trust Queue questionnaire-group links now deep-link to the first actionable blocker for that questionnaire, preferring stale items and otherwise falling back to the first needs-review item via the existing questionnaire item deep-link contract
 - Questionnaire page supports stable item deep links via `/questionnaires/:id?itemId=<id>&filter=all|stale|needs-review`; Trust Queue rows and safe approved-answer source links use this contract to open review context without adding new backend APIs
+- Trust Queue supports a lightweight review session: `Start review` opens the highest-priority actionable item for the current Trust Queue filter/search, and questionnaire pages opened with `source=trust-queue` show a session banner with the current priority plus `Next item` navigation using the same sorted queue order
 - No doc-template-specific keyword/canned-answer logic in retrieval/answer path
 
 ## 4) Current Architecture

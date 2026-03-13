@@ -9,7 +9,9 @@ import {
   listTrustQueueItemsForOrg,
   type TrustQueueFilter
 } from "@/server/trustQueue/listTrustQueueItems";
+import { getTrustQueueSessionForOrg } from "@/server/trustQueue/getTrustQueueSession";
 import { assertCan, RbacAction } from "@/server/rbac";
+import { buildTrustQueueSessionHref } from "@/shared/trustQueueSessionLinks";
 
 type TrustQueueSearchParams = {
   q?: string | string[];
@@ -107,15 +109,44 @@ export default async function TrustQueuePage({
     filter,
     limit: 100
   });
+  const reviewSession = await getTrustQueueSessionForOrg(ctx, {
+    query,
+    filter: activeFilter,
+    currentItemId: null
+  });
+  const startReviewHref = reviewSession.firstItem
+    ? buildTrustQueueSessionHref({
+        questionnaireId: reviewSession.firstItem.questionnaireId,
+        itemId: reviewSession.firstItem.itemId,
+        rowFilter: reviewSession.firstItem.rowFilter,
+        queueFilter: activeFilter,
+        queueQuery: query
+      })
+    : null;
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
-      <section style={{ display: "grid", gap: 8 }}>
-        <h1 style={{ margin: 0 }}>Trust Queue</h1>
-        <p style={{ margin: 0, color: "var(--muted-text)", maxWidth: "72ch" }}>
-          Review stale approvals and needs-review items across the active workspace without opening each
-          questionnaire first.
-        </p>
+      <section
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 12,
+          alignItems: "flex-start",
+          flexWrap: "wrap"
+        }}
+      >
+        <div style={{ display: "grid", gap: 8 }}>
+          <h1 style={{ margin: 0 }}>Trust Queue</h1>
+          <p style={{ margin: 0, color: "var(--muted-text)", maxWidth: "72ch" }}>
+            Review stale approvals and needs-review items across the active workspace without opening each
+            questionnaire first.
+          </p>
+        </div>
+        {startReviewHref ? (
+          <Link href={startReviewHref} className="btn btn-primary">
+            Start review
+          </Link>
+        ) : null}
       </section>
 
       <section
@@ -142,7 +173,11 @@ export default async function TrustQueuePage({
         />
       </section>
 
-      <TrustQueueQuestionnaireGroups groups={queue.questionnaireGroups} />
+      <TrustQueueQuestionnaireGroups
+        groups={queue.questionnaireGroups}
+        queueFilter={activeFilter}
+        queueQuery={query}
+      />
 
       <Card>
         <div style={{ display: "grid", gap: 14 }}>
@@ -210,7 +245,7 @@ export default async function TrustQueuePage({
         </div>
       </Card>
 
-      <TrustQueueTable rows={queue.rows} />
+      <TrustQueueTable rows={queue.rows} queueFilter={activeFilter} queueQuery={query} />
     </div>
   );
 }
