@@ -367,10 +367,45 @@ export default function QuestionnairesPage() {
 
   return (
     <div className="page-stack">
+      <Card className="hero-panel hero-panel-compact">
+        <div className="hero-panel-copy">
+          <span className="eyebrow">Pipeline overview</span>
+          <h2 style={{ margin: 0 }}>Keep imports, review runs, and exports on one surface.</h2>
+          <p className="muted hero-panel-text" style={{ margin: 0 }}>
+            Parse CSVs, launch autofill, and jump straight back into the questionnaires that still need decisions.
+          </p>
+          <div className="toolbar-row hero-action-row">
+            <Link href="#import" className="btn btn-primary">
+              Import Questionnaire
+            </Link>
+            <Button type="button" variant="secondary" onClick={() => void fetchQuestionnaires()} disabled={isLoadingList}>
+              {isLoadingList ? "Refreshing..." : "Refresh list"}
+            </Button>
+          </div>
+        </div>
+        <div className="hero-panel-insights">
+          <div className="hero-mini-stat">
+            <span className="hero-mini-label">Questionnaires</span>
+            <strong>{questionnaireSummary.totalQuestionnaires}</strong>
+            <span className="hero-mini-helper">Saved runs</span>
+          </div>
+          <div className="hero-mini-stat">
+            <span className="hero-mini-label">Questions</span>
+            <strong>{questionnaireSummary.totalQuestions}</strong>
+            <span className="hero-mini-helper">Imported rows</span>
+          </div>
+          <div className="hero-mini-stat">
+            <span className="hero-mini-label">Answered</span>
+            <strong>{questionnaireSummary.totalAnswered}</strong>
+            <span className="hero-mini-helper">Draft or approved answers</span>
+          </div>
+        </div>
+      </Card>
+
       <CollapsibleInputSection
         id="import"
         title="Import new questionnaire"
-        helperText="Upload a CSV and select the question column."
+        helperText="Upload a CSV, map the question column, and stage a new review run."
         className={cx("questionnaire-import-section", hasQuestionnaires && "repeat-mode")}
         expanded={isImportSectionExpanded}
         onToggle={() => setIsImportSectionExpanded((value) => !value)}
@@ -381,8 +416,8 @@ export default function QuestionnairesPage() {
         collapseLabel="Collapse"
       >
         <form onSubmit={handleImport} className="page-stack">
-          <div className="two-col">
-            <div className="card card-muted">
+          <div className="two-col form-grid-two">
+            <div className="card card-muted intake-panel">
               <label className="small muted" htmlFor="questionnaire-file">
                 CSV file
               </label>
@@ -402,7 +437,7 @@ export default function QuestionnairesPage() {
               </p>
             </div>
 
-            <div className="card card-muted">
+            <div className="card card-muted intake-panel">
               <label className="small muted" htmlFor="question-column">
                 Question column
               </label>
@@ -491,17 +526,29 @@ export default function QuestionnairesPage() {
         </div>
       ) : null}
 
-      <Card className="questionnaires-list-card">
+      {hasQuestionnaires ? (
+        <div className="compact-stats-grid questionnaires-support-stats questionnaire-insight-grid">
+          <CompactStatCard label="Questionnaires" value={questionnaireSummary.totalQuestionnaires} />
+          <CompactStatCard label="Questions total" value={questionnaireSummary.totalQuestions} />
+          <CompactStatCard label="Answered" value={questionnaireSummary.totalAnswered} tone="success" />
+          <CompactStatCard label="Not found" value={questionnaireSummary.totalNotFound} tone="danger" />
+        </div>
+      ) : null}
+
+      <Card className="questionnaires-list-card section-shell">
         <div className="card-title-row">
-          <div>
-            <h2 style={{ marginBottom: 4 }}>Saved Questionnaires</h2>
-            <p className="muted small" style={{ margin: "2px 0 0" }}>
-              {hasQuestionnaires
-                ? "Most recently updated first."
-                : "Import your first CSV to start the autofill and review workflow."}
-            </p>
+          <div className="section-copy">
+            <span className="section-kicker">Saved runs</span>
+            <div>
+              <h2 style={{ marginBottom: 4 }}>Saved Questionnaires</h2>
+              <p className="muted small" style={{ margin: "2px 0 0" }}>
+                {hasQuestionnaires
+                  ? "Most recently updated first."
+                  : "Import your first CSV to start the autofill and review workflow."}
+              </p>
+            </div>
           </div>
-          <div className="toolbar-row compact">
+          <div className="toolbar-row compact filter-toolbar">
             <div className="search-field">
               <label className="search-field-label" htmlFor="saved-questionnaire-search">
                 Search
@@ -648,15 +695,6 @@ export default function QuestionnairesPage() {
           </div>
         )}
       </Card>
-
-      {hasQuestionnaires ? (
-        <div className="compact-stats-grid questionnaires-support-stats">
-          <CompactStatCard label="Questionnaires" value={questionnaireSummary.totalQuestionnaires} />
-          <CompactStatCard label="Questions total" value={questionnaireSummary.totalQuestions} />
-          <CompactStatCard label="Answered" value={questionnaireSummary.totalAnswered} tone="success" />
-          <CompactStatCard label="Not found" value={questionnaireSummary.totalNotFound} tone="danger" />
-        </div>
-      ) : null}
 
       <ExportModal
         isOpen={Boolean(exportTarget) && canExportQuestionnaires}

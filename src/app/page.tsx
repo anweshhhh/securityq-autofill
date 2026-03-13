@@ -184,6 +184,33 @@ export default function Home() {
     questionnairesState
   ]);
 
+  const workflowInsights = useMemo(() => {
+    return [
+      {
+        label: "Evidence library",
+        value: documentsState === "ready" && documentsCount !== null ? String(documentsCount) : "--",
+        helper: "Uploaded source packs"
+      },
+      {
+        label: "Questionnaires",
+        value: questionnairesState === "ready" ? String(questionnaireCount) : "--",
+        helper: "Active review runs"
+      },
+      {
+        label: "Pending review",
+        value: derivedCountsState === "ready" && pendingReviewCount !== null ? String(pendingReviewCount) : "--",
+        helper: "Questions still needing decisions"
+      }
+    ];
+  }, [
+    derivedCountsState,
+    documentsCount,
+    documentsState,
+    pendingReviewCount,
+    questionnaireCount,
+    questionnairesState
+  ]);
+
   const fetchQuestionnaires = useCallback(async () => {
     setQuestionnairesState("loading");
 
@@ -347,16 +374,32 @@ export default function Home() {
 
   return (
     <div className="page-stack">
-      <Card className="home-launchpad-header">
-        <div>
-          <h2 style={{ margin: 0 }}>Workflow Launchpad</h2>
-          <p className="muted" style={{ margin: "6px 0 0" }}>
-            Evidence-first questionnaire automation.
+      <Card className="hero-panel hero-panel-home">
+        <div className="hero-panel-copy">
+          <span className="eyebrow">Control center</span>
+          <h2 style={{ margin: 0 }}>Move every questionnaire from evidence to export with less drag.</h2>
+          <p className="muted hero-panel-text" style={{ margin: 0 }}>
+            Keep documents current, run autofill when the evidence is ready, and review the answers that actually need
+            human attention.
           </p>
+          <div className="toolbar-row hero-action-row">
+            <Link href="/questionnaires" className="btn btn-primary" aria-label="Open questionnaires">
+              Open Questionnaires
+            </Link>
+            <Link href="/documents" className="btn btn-secondary" aria-label="Manage documents">
+              Manage Documents
+            </Link>
+          </div>
         </div>
-        <Link href="/questionnaires" className="btn btn-primary" aria-label="Open questionnaires">
-          Open Questionnaires
-        </Link>
+        <div className="hero-panel-insights">
+          {workflowInsights.map((insight) => (
+            <div key={insight.label} className="hero-mini-stat">
+              <span className="hero-mini-label">{insight.label}</span>
+              <strong>{insight.value}</strong>
+              <span className="hero-mini-helper">{insight.helper}</span>
+            </div>
+          ))}
+        </div>
       </Card>
 
       {message ? (
@@ -374,14 +417,23 @@ export default function Home() {
         </div>
       ) : null}
 
-      <Card>
+      <Card className="section-shell">
         <div className="card-title-row">
-          <h3 style={{ margin: 0 }}>Quick Actions</h3>
+          <div className="section-copy">
+            <span className="section-kicker">Launchpad</span>
+            <div>
+              <h3 style={{ margin: 0 }}>Quick Actions</h3>
+              <p className="muted small" style={{ margin: "4px 0 0" }}>
+                Jump straight into the next high-value step for this workspace.
+              </p>
+            </div>
+          </div>
           {isDashboardRefreshing ? <Badge tone="review">Refreshing...</Badge> : null}
         </div>
-        <div className="quick-actions-grid">
+        <div className="quick-actions-grid action-grid">
           {mostRecentQuestionnaire ? (
             <section className="quick-action-card quick-action-card-primary">
+              <span className="card-chip-label">Resume</span>
               <h4 style={{ margin: "0 0 6px" }}>Continue Review</h4>
               <p className="small muted" style={{ margin: "0 0 10px" }}>
                 Resume {mostRecentQuestionnaire.name}
@@ -396,6 +448,7 @@ export default function Home() {
             </section>
           ) : questionnairesState === "ready" ? (
             <section className="quick-action-card quick-action-card-primary">
+              <span className="card-chip-label">First run</span>
               <h4 style={{ margin: "0 0 6px" }}>Create your first questionnaire</h4>
               <p className="small muted" style={{ margin: "0 0 10px" }}>
                 Import CSV rows to start autofill and review.
@@ -411,6 +464,7 @@ export default function Home() {
             </section>
           ) : (
             <section className="quick-action-card quick-action-card-primary">
+              <span className="card-chip-label">Access</span>
               <h4 style={{ margin: "0 0 6px" }}>Continue Review</h4>
               <p className="small muted" style={{ margin: "0 0 10px" }}>
                 Sign in and open questionnaires to continue work.
@@ -423,6 +477,7 @@ export default function Home() {
 
           {questionnaireCount > 0 ? (
             <section className="quick-action-card">
+              <span className="card-chip-label">Pipeline</span>
               <h4 style={{ margin: "0 0 6px" }}>Import Questionnaire</h4>
               <p className="small muted" style={{ margin: "0 0 10px" }}>
                 Upload CSV rows and create a new review run.
@@ -439,6 +494,7 @@ export default function Home() {
           ) : null}
 
           <section className="quick-action-card">
+            <span className="card-chip-label">Evidence</span>
             <h4 style={{ margin: "0 0 6px" }}>Manage Documents</h4>
             <p className="small muted" style={{ margin: "0 0 10px" }}>
               Upload, inspect, and maintain source evidence.
@@ -450,6 +506,7 @@ export default function Home() {
 
           {canInviteMembers ? (
             <section className="quick-action-card">
+              <span className="card-chip-label">Team</span>
               <h4 style={{ margin: "0 0 6px" }}>Invite Teammate</h4>
               <p className="small muted" style={{ margin: "0 0 10px" }}>
                 Add reviewers and manage role-scoped access.
@@ -462,9 +519,12 @@ export default function Home() {
         </div>
       </Card>
 
-      <Card>
+      <Card className="section-shell">
         <div className="card-title-row">
-          <h3 style={{ margin: 0 }}>Operational Snapshot</h3>
+          <div className="section-copy">
+            <span className="section-kicker">Workspace health</span>
+            <h3 style={{ margin: 0 }}>Operational Snapshot</h3>
+          </div>
         </div>
         {snapshotCards.length === 0 ? (
           <p className="muted small" style={{ margin: 0 }}>
@@ -479,13 +539,16 @@ export default function Home() {
         )}
       </Card>
 
-      <Card>
+      <Card className="section-shell">
         <div className="card-title-row">
-          <div>
+          <div className="section-copy">
+            <span className="section-kicker">Recent activity</span>
+            <div>
             <h3 style={{ margin: 0 }}>Recent Questionnaires</h3>
             <p className="muted small" style={{ margin: "4px 0 0" }}>
               Continue review, rerun autofill, or jump into exports.
             </p>
+            </div>
           </div>
           <Button type="button" variant="secondary" onClick={() => void refreshDashboard()} disabled={isDashboardRefreshing}>
             {isDashboardRefreshing ? "Refreshing..." : "Refresh"}
@@ -564,23 +627,23 @@ export default function Home() {
       </Card>
 
       {isFirstRun ? (
-        <div className="stats-grid">
-          <div className="stat-card">
+        <div className="stats-grid process-grid">
+          <div className="stat-card process-step">
             <div className="label">Step 1</div>
             <div className="value">Ingest</div>
             <div className="muted small">Upload `.txt` and `.md`, then embed chunks.</div>
           </div>
-          <div className="stat-card">
+          <div className="stat-card process-step">
             <div className="label">Step 2</div>
             <div className="value">Autofill</div>
             <div className="muted small">Run answer engine across imported questionnaire rows.</div>
           </div>
-          <div className="stat-card">
+          <div className="stat-card process-step">
             <div className="label">Step 3</div>
             <div className="value">Review</div>
             <div className="muted small">Approve or flag answers and track citation coverage.</div>
           </div>
-          <div className="stat-card">
+          <div className="stat-card process-step">
             <div className="label">Step 4</div>
             <div className="value">Export</div>
             <div className="muted small">Download generated, approved-only, or preferred answers.</div>

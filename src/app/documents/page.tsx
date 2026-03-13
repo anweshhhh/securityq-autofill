@@ -307,6 +307,47 @@ export default function DocumentsPage() {
 
   return (
     <div className="page-stack">
+      <Card className="hero-panel hero-panel-compact">
+        <div className="hero-panel-copy">
+          <span className="eyebrow">Evidence operations</span>
+          <h2 style={{ margin: 0 }}>Keep the source library clean enough that reviewers can trust it.</h2>
+          <p className="muted hero-panel-text" style={{ margin: 0 }}>
+            Upload new evidence, keep only the latest versions in view, and remove stale files before they pollute
+            answer generation.
+          </p>
+          <div className="toolbar-row hero-action-row">
+            <a href="#upload" className="btn btn-primary">
+              Upload Evidence
+            </a>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void fetchDocuments()}
+              disabled={isLoading || isUploading || isDeleting}
+            >
+              {isLoading ? "Refreshing..." : "Refresh inventory"}
+            </Button>
+          </div>
+        </div>
+        <div className="hero-panel-insights">
+          <div className="hero-mini-stat">
+            <span className="hero-mini-label">Visible docs</span>
+            <strong>{filteredDocuments.length}</strong>
+            <span className="hero-mini-helper">Current inventory view</span>
+          </div>
+          <div className="hero-mini-stat">
+            <span className="hero-mini-label">Embedded</span>
+            <strong>{embeddedCount}</strong>
+            <span className="hero-mini-helper">Chunked and ready</span>
+          </div>
+          <div className="hero-mini-stat">
+            <span className="hero-mini-label">Selected</span>
+            <strong>{selectedDocumentIds.length}</strong>
+            <span className="hero-mini-helper">Queued for bulk actions</span>
+          </div>
+        </div>
+      </Card>
+
       <CollapsibleInputSection
         id="upload"
         title="Upload Evidence"
@@ -318,22 +359,33 @@ export default function DocumentsPage() {
         badgeTitle="Ingestion pipeline"
       >
         <form onSubmit={handleSubmit} className="page-stack">
-          <div className="empty-state">
-            <h3 style={{ marginTop: 0 }}>Upload evidence files</h3>
-            <p>Add `.txt`, `.md`, or `.pdf` files to build the workspace evidence library.</p>
-            <label className="small muted" htmlFor="document-upload-file">
-              Evidence file
-            </label>
-            <TextInput
-              id="document-upload-file"
-              type="file"
-              accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf"
-              disabled={!canUploadDocuments}
-              onChange={(event) => {
-                const file = event.target.files?.[0] ?? null;
-                setSelectedFile(file);
-              }}
-            />
+          <div className="surface-split">
+            <div className="empty-state upload-callout">
+              <h3 style={{ marginTop: 0 }}>Upload evidence files</h3>
+              <p>Add `.txt`, `.md`, or `.pdf` files to build the workspace evidence library.</p>
+              <p className="small muted" style={{ marginBottom: 0 }}>
+                The cleaner this library stays, the better autofill and stale-drift review behave downstream.
+              </p>
+            </div>
+
+            <div className="card card-muted intake-panel">
+              <label className="small muted" htmlFor="document-upload-file">
+                Evidence file
+              </label>
+              <TextInput
+                id="document-upload-file"
+                type="file"
+                accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf"
+                disabled={!canUploadDocuments}
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  setSelectedFile(file);
+                }}
+              />
+              <p className="small muted" style={{ marginBottom: 0 }}>
+                Prefer the final source pack rather than intermediate drafts when possible.
+              </p>
+            </div>
           </div>
 
           <div className="toolbar-row">
@@ -361,7 +413,7 @@ export default function DocumentsPage() {
         </form>
       </CollapsibleInputSection>
 
-      <div className="compact-stats-grid">
+      <div className="compact-stats-grid questionnaire-insight-grid">
         <CompactStatCard label="Visible documents" value={filteredDocuments.length} />
         <CompactStatCard label="Embedded (chunked)" value={embeddedCount} tone="success" />
         <CompactStatCard label="Selected" value={selectedDocumentIds.length} tone="neutral" />
@@ -382,15 +434,18 @@ export default function DocumentsPage() {
         </div>
       ) : null}
 
-      <Card>
+      <Card className="section-shell">
         <div className="card-title-row">
-          <div>
-            <h2 style={{ marginBottom: 4 }}>Document Inventory</h2>
-            <p className="muted" style={{ margin: 0 }}>
-              Track chunked status and remove stale files.
-            </p>
+          <div className="section-copy">
+            <span className="section-kicker">Inventory</span>
+            <div>
+              <h2 style={{ marginBottom: 4 }}>Document Inventory</h2>
+              <p className="muted" style={{ margin: 0 }}>
+                Track chunked status and remove stale files.
+              </p>
+            </div>
           </div>
-          <div className="toolbar-row compact">
+          <div className="toolbar-row compact filter-toolbar">
             <div className="search-field">
               <label className="search-field-label" htmlFor="documents-search">
                 Search

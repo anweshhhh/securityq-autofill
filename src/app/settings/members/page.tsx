@@ -76,6 +76,23 @@ export default function MembersSettingsPage() {
     });
   }, [members]);
 
+  const membershipSummary = useMemo(() => {
+    return sortedMembers.reduce(
+      (summary, member) => {
+        summary.total += 1;
+        summary[member.role] += 1;
+        return summary;
+      },
+      {
+        total: 0,
+        OWNER: 0,
+        ADMIN: 0,
+        REVIEWER: 0,
+        VIEWER: 0
+      }
+    );
+  }, [sortedMembers]);
+
   async function loadMembers() {
     setIsLoadingMembers(true);
 
@@ -187,6 +204,34 @@ export default function MembersSettingsPage() {
 
   return (
     <div className="page-stack">
+      <Card className="hero-panel hero-panel-compact">
+        <div className="hero-panel-copy">
+          <span className="eyebrow">Access and governance</span>
+          <h2 style={{ margin: 0 }}>Keep the right people close to the workflow and everyone else out of the way.</h2>
+          <p className="muted hero-panel-text" style={{ margin: 0 }}>
+            Member roles control who can invite collaborators, edit approvals, and manage evidence across the active
+            workspace.
+          </p>
+        </div>
+        <div className="hero-panel-insights">
+          <div className="hero-mini-stat">
+            <span className="hero-mini-label">Members</span>
+            <strong>{membershipSummary.total}</strong>
+            <span className="hero-mini-helper">Active in this workspace</span>
+          </div>
+          <div className="hero-mini-stat">
+            <span className="hero-mini-label">Admins</span>
+            <strong>{membershipSummary.OWNER + membershipSummary.ADMIN}</strong>
+            <span className="hero-mini-helper">Owner and admin seats</span>
+          </div>
+          <div className="hero-mini-stat">
+            <span className="hero-mini-label">Reviewers</span>
+            <strong>{membershipSummary.REVIEWER}</strong>
+            <span className="hero-mini-helper">Hands-on approvers</span>
+          </div>
+        </div>
+      </Card>
+
       {message ? (
         <div className={cx("message-banner", messageType === "error" ? "error" : "success")}>{message}</div>
       ) : null}
@@ -221,18 +266,21 @@ export default function MembersSettingsPage() {
       ) : null}
 
       {canInviteMembers ? (
-        <Card id="invite-member">
+        <Card id="invite-member" className="section-shell">
           <div className="card-title-row">
-            <div>
-              <h2 style={{ marginBottom: 4 }}>Invite Member</h2>
-              <p className="muted" style={{ margin: 0 }}>
-                Invite teammates to this workspace with role-scoped access.
-              </p>
+            <div className="section-copy">
+              <span className="section-kicker">Team access</span>
+              <div>
+                <h2 style={{ marginBottom: 4 }}>Invite Member</h2>
+                <p className="muted" style={{ margin: 0 }}>
+                  Invite teammates to this workspace with role-scoped access.
+                </p>
+              </div>
             </div>
             <Badge tone="review">Admin+</Badge>
           </div>
 
-          <form className="toolbar-row" onSubmit={(event) => void handleInviteSubmit(event)}>
+          <form className="toolbar-row form-grid-three" onSubmit={(event) => void handleInviteSubmit(event)}>
             <TextInput
               type="email"
               value={inviteEmail}
@@ -260,26 +308,32 @@ export default function MembersSettingsPage() {
           </form>
         </Card>
       ) : (
-        <Card>
+        <Card className="section-shell">
           <div className="card-title-row">
-            <div>
-              <h2 style={{ marginBottom: 4 }}>Invite Member</h2>
-              <p className="muted" style={{ margin: 0 }}>
-                Members list is read-only for your current role.
-              </p>
+            <div className="section-copy">
+              <span className="section-kicker">Team access</span>
+              <div>
+                <h2 style={{ marginBottom: 4 }}>Invite Member</h2>
+                <p className="muted" style={{ margin: 0 }}>
+                  Members list is read-only for your current role.
+                </p>
+              </div>
             </div>
             <Badge tone="draft">Read-only</Badge>
           </div>
         </Card>
       )}
 
-      <Card>
+      <Card className="section-shell">
         <div className="card-title-row">
-          <div>
-            <h2 style={{ marginBottom: 4 }}>Organization Members</h2>
-            <p className="muted" style={{ margin: 0 }}>
-              Current members in your active workspace.
-            </p>
+          <div className="section-copy">
+            <span className="section-kicker">Roster</span>
+            <div>
+              <h2 style={{ marginBottom: 4 }}>Organization Members</h2>
+              <p className="muted" style={{ margin: 0 }}>
+                Current members in your active workspace.
+              </p>
+            </div>
           </div>
           <Button type="button" variant="secondary" onClick={() => void loadMembers()} disabled={isLoadingMembers}>
             {isLoadingMembers ? "Refreshing..." : "Refresh"}

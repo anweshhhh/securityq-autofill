@@ -185,6 +185,42 @@ function getPrimaryAction(pathname: string, role: Role | null): { href: string; 
   };
 }
 
+function getPageFocus(pathname: string): string {
+  if (pathname === "/") {
+    return "Move from evidence intake to export without losing review context.";
+  }
+
+  if (pathname.startsWith("/documents")) {
+    return "Keep source evidence clean, current, and ready for answer generation.";
+  }
+
+  if (pathname.startsWith("/approved-answers")) {
+    return "Build a fresh, reusable library of approved security responses.";
+  }
+
+  if (pathname.startsWith("/trust-queue")) {
+    return "Resolve stale approvals before they become workflow blockers.";
+  }
+
+  if (pathname === "/questionnaires") {
+    return "Import, autofill, review, and export from one operating surface.";
+  }
+
+  if (pathname.startsWith("/questionnaires/")) {
+    return "Review every answer with the evidence, freshness, and actions in reach.";
+  }
+
+  if (pathname.startsWith("/ask")) {
+    return "Debug retrieval quality with one grounded question at a time.";
+  }
+
+  if (pathname.startsWith("/settings/members")) {
+    return "Keep the right teammates in the loop with role-scoped access.";
+  }
+
+  return "Evidence-backed operations for security questionnaire teams.";
+}
+
 function isActiveRoute(pathname: string, href: string): boolean {
   if (href === "/") {
     return pathname === "/";
@@ -237,6 +273,7 @@ export function AppShell({ devMode, children }: AppShellProps) {
   }, [authzState.role, devMode]);
 
   const pageHeader = getPageHeader(pathname);
+  const pageFocus = getPageFocus(pathname);
   const primaryAction = getPrimaryAction(pathname, authzState.role);
   const canViewMembers = authzState.role ? can(authzState.role, RbacAction.VIEW_MEMBERS) : false;
   const accountEmail = session?.user?.email ?? authzState.userEmail ?? "Signed in";
@@ -397,7 +434,9 @@ export function AppShell({ devMode, children }: AppShellProps) {
           onClick={onNavigate}
           aria-label={item.label}
         >
-          <span aria-hidden>{item.short}</span>
+          <span className="sidebar-link-short" aria-hidden>
+            {item.short}
+          </span>
           <span className="sidebar-link-label">{item.label}</span>
         </Link>
       );
@@ -418,7 +457,10 @@ export function AppShell({ devMode, children }: AppShellProps) {
         <div className="sidebar-title-row">
           <span className="sidebar-product">
             <span className="sidebar-product-dot" />
-            <span className="sidebar-product-name">SecurityQ</span>
+            <span className="sidebar-product-copy">
+              <span className="sidebar-product-name">SecurityQ</span>
+              <span className="sidebar-product-tag">Autofill OS</span>
+            </span>
           </span>
           <Button
             type="button"
@@ -454,7 +496,10 @@ export function AppShell({ devMode, children }: AppShellProps) {
             <div className="sidebar-title-row">
               <span className="sidebar-product">
                 <span className="sidebar-product-dot" />
-                <span className="sidebar-product-name">SecurityQ</span>
+                <span className="sidebar-product-copy">
+                  <span className="sidebar-product-name">SecurityQ</span>
+                  <span className="sidebar-product-tag">Autofill OS</span>
+                </span>
               </span>
               <Button
                 type="button"
@@ -669,13 +714,24 @@ export function AppShell({ devMode, children }: AppShellProps) {
         </header>
 
         <main id="main-content" className="canvas-area">
-          <header className="page-header-band">
-            <h1 id="page-title">{pageHeader.title}</h1>
-            <p>{pageHeader.subtitle}</p>
-          </header>
-
           <AppAuthzProvider value={authzState}>
-            <div className="canvas-inner">{children}</div>
+            <div className="canvas-inner">
+              <header className="page-header-band">
+                <div className="page-header-copy">
+                  <div className="page-header-kicker-row">
+                    <span className="page-header-kicker">{accountOrgName}</span>
+                    {authzState.role ? <span className="page-header-meta-pill">{accountRole}</span> : null}
+                  </div>
+                  <h1 id="page-title">{pageHeader.title}</h1>
+                  <p>{pageHeader.subtitle}</p>
+                </div>
+                <div className="page-header-accent">
+                  <span className="page-header-accent-label">Focus</span>
+                  <strong>{pageFocus}</strong>
+                </div>
+              </header>
+              <div className="page-content-stack">{children}</div>
+            </div>
           </AppAuthzProvider>
         </main>
       </div>
