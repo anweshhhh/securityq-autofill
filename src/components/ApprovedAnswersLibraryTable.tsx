@@ -40,76 +40,49 @@ export function ApprovedAnswersLibraryTable({ rows }: ApprovedAnswersLibraryTabl
 
   return (
     <>
-      <div style={{ display: "grid", gap: 12 }}>
+      <div className="review-stack">
         {rows.map((row) => {
           const active = selectedApprovedAnswerId === row.approvedAnswerId;
 
           return (
             <Card
               key={row.approvedAnswerId}
-              style={{
-                borderColor: active ? "rgba(37, 99, 235, 0.32)" : undefined,
-                boxShadow: active ? "0 0 0 1px rgba(37, 99, 235, 0.12)" : undefined
-              }}
+              className={active ? "review-card review-card-active" : "review-card"}
             >
               <button
                 type="button"
                 onClick={() => setSelectedApprovedAnswerId(row.approvedAnswerId)}
                 aria-haspopup="dialog"
                 aria-expanded={active}
-                style={{
-                  width: "100%",
-                  display: "grid",
-                  gap: 14,
-                  padding: 0,
-                  border: "none",
-                  background: "transparent",
-                  textAlign: "left",
-                  cursor: "pointer"
-                }}
+                className="review-card-button"
               >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    alignItems: "flex-start",
-                    flexWrap: "wrap"
-                  }}
-                >
-                  <div style={{ display: "grid", gap: 6, maxWidth: "76ch" }}>
-                    <strong style={{ fontSize: "1rem" }}>{row.answerPreview || "No approved answer text."}</strong>
+                <div className="review-card-header">
+                  <div className="review-card-copy">
+                    <strong className="review-card-title">{row.answerPreview || "No approved answer text."}</strong>
+                    <span className="review-card-subtitle">
+                      Open the detail view to inspect citations, provenance, and reuse context.
+                    </span>
                   </div>
                   <Badge tone={row.freshness === "STALE" ? "review" : "approved"}>
                     {row.freshness === "STALE" ? "Stale" : "Fresh"}
                   </Badge>
                 </div>
 
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-                    gap: 12
-                  }}
-                >
-                  <div style={{ display: "grid", gap: 2 }}>
-                    <span style={{ color: "var(--muted-text)", fontSize: "0.82rem", fontWeight: 600 }}>Approved at</span>
+                <div className="review-meta-grid">
+                  <div className="review-meta-item">
+                    <span className="review-meta-label">Approved at</span>
                     <span>{formatApprovedAt(row.approvedAt)}</span>
                   </div>
-                  <div style={{ display: "grid", gap: 2 }}>
-                    <span style={{ color: "var(--muted-text)", fontSize: "0.82rem", fontWeight: 600 }}>
-                      Snapshotted citations
-                    </span>
+                  <div className="review-meta-item">
+                    <span className="review-meta-label">Snapshotted citations</span>
                     <span>{row.snapshottedCitationsCount}</span>
                   </div>
-                  <div style={{ display: "grid", gap: 2 }}>
-                    <span style={{ color: "var(--muted-text)", fontSize: "0.82rem", fontWeight: 600 }}>Reused</span>
+                  <div className="review-meta-item">
+                    <span className="review-meta-label">Reused</span>
                     <span>{renderBoolean(row.reused)}</span>
                   </div>
-                  <div style={{ display: "grid", gap: 2 }}>
-                    <span style={{ color: "var(--muted-text)", fontSize: "0.82rem", fontWeight: 600 }}>
-                      Suggestion-assisted
-                    </span>
+                  <div className="review-meta-item">
+                    <span className="review-meta-label">Suggestion-assisted</span>
                     <span>{renderBoolean(row.suggestionAssisted)}</span>
                   </div>
                 </div>

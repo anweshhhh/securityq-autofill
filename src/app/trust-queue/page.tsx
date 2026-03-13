@@ -115,21 +115,44 @@ export default async function TrustQueuePage({
     : null;
 
   return (
-    <div style={{ display: "grid", gap: 20 }}>
-      {startReviewHref ? (
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <Link href={startReviewHref} className="btn btn-primary">
-            Start review
-          </Link>
+    <div className="page-stack">
+      <Card className="hero-panel hero-panel-compact">
+        <div className="hero-panel-copy">
+          <span className="eyebrow">Trust queue</span>
+          <h2 style={{ margin: 0 }}>Focus reviewers on the answers that could break confidence first.</h2>
+          <p className="muted hero-panel-text" style={{ margin: 0 }}>
+            Stale approvals and unresolved review states surface here before they turn into export blockers.
+          </p>
+          {startReviewHref ? (
+            <div className="toolbar-row hero-action-row">
+              <Link href={startReviewHref} className="btn btn-primary">
+                Start review
+              </Link>
+            </div>
+          ) : null}
         </div>
-      ) : null}
+        <div className="hero-panel-insights">
+          <div className="hero-mini-stat">
+            <span className="hero-mini-label">Stale approvals</span>
+            <strong>{queue.summary.staleApprovalsCount}</strong>
+            <span className="hero-mini-helper">Approved answers that drifted</span>
+          </div>
+          <div className="hero-mini-stat">
+            <span className="hero-mini-label">Needs review</span>
+            <strong>{queue.summary.needsReviewCount}</strong>
+            <span className="hero-mini-helper">Questions still awaiting decisions</span>
+          </div>
+          <div className="hero-mini-stat">
+            <span className="hero-mini-label">Blocked questionnaires</span>
+            <strong>{queue.summary.blockedQuestionnairesCount}</strong>
+            <span className="hero-mini-helper">Workflows slowed by trust debt</span>
+          </div>
+        </div>
+      </Card>
 
       <section
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: 12
-        }}
+        className="compact-stats-grid questionnaire-insight-grid"
+        aria-label="Trust queue summary"
       >
         <CompactStatCard
           label="Stale approvals"
@@ -148,27 +171,26 @@ export default async function TrustQueuePage({
         />
       </section>
 
-      <TrustQueueQuestionnaireGroups
-        groups={queue.questionnaireGroups}
-        queueFilter={activeFilter}
-        queueQuery={query}
-      />
+      <Card className="section-shell">
+        <div className="card-title-row">
+          <div className="section-copy">
+            <span className="section-kicker">Filters</span>
+            <div>
+              <h3 style={{ margin: 0 }}>Review scope</h3>
+              <p className="muted small" style={{ margin: "4px 0 0" }}>
+                Narrow the queue before you enter the review workbench.
+              </p>
+            </div>
+          </div>
+        </div>
 
-      <Card>
         <div style={{ display: "grid", gap: 14 }}>
           <div style={{ color: "var(--muted-text)", fontSize: "0.95rem" }}>
             Showing {queue.rows.length} actionable item{queue.rows.length === 1 ? "" : "s"}
           </div>
 
           <form method="GET" action="/trust-queue" style={{ display: "grid", gap: 12 }}>
-            <div
-              style={{
-                display: "flex",
-                gap: 12,
-                flexWrap: "wrap",
-                alignItems: "center"
-              }}
-            >
+            <div className="toolbar-row filter-toolbar">
               <TextInput
                 type="search"
                 name="q"
@@ -186,7 +208,7 @@ export default async function TrustQueuePage({
             </div>
           </form>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} aria-label="Trust queue filters">
+          <div className="toolbar-row" aria-label="Trust queue filters">
             {FILTER_OPTIONS.map((option) => {
               const active = option.value === activeFilter;
               return (
@@ -203,6 +225,24 @@ export default async function TrustQueuePage({
           </div>
         </div>
       </Card>
+
+      {queue.questionnaireGroups.length > 0 ? (
+        <div className="section-copy">
+          <span className="section-kicker">Blocked questionnaires</span>
+          <h3 style={{ margin: 0 }}>Start with the workflows carrying the most risk.</h3>
+        </div>
+      ) : null}
+
+      <TrustQueueQuestionnaireGroups
+        groups={queue.questionnaireGroups}
+        queueFilter={activeFilter}
+        queueQuery={query}
+      />
+
+      <div className="section-copy">
+        <span className="section-kicker">Actionable items</span>
+        <h3 style={{ margin: 0 }}>Priority-ordered review queue</h3>
+      </div>
 
       <TrustQueueTable rows={queue.rows} queueFilter={activeFilter} queueQuery={query} />
     </div>

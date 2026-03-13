@@ -106,20 +106,53 @@ export default async function ApprovedAnswersPage({
   });
 
   return (
-    <div style={{ display: "grid", gap: 20 }}>
-      <section
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-          gap: 12
-        }}
-      >
+    <div className="page-stack">
+      <Card className="hero-panel hero-panel-compact">
+        <div className="hero-panel-copy">
+          <span className="eyebrow">Approved answer library</span>
+          <h2 style={{ margin: 0 }}>Turn strong reviews into a reusable library instead of repeating them.</h2>
+          <p className="muted hero-panel-text" style={{ margin: 0 }}>
+            Fresh approvals become the building blocks for faster future questionnaires, with provenance and reuse
+            signals intact.
+          </p>
+        </div>
+        <div className="hero-panel-insights">
+          <div className="hero-mini-stat">
+            <span className="hero-mini-label">Total</span>
+            <strong>{library.counts.total}</strong>
+            <span className="hero-mini-helper">Approved answers in the library</span>
+          </div>
+          <div className="hero-mini-stat">
+            <span className="hero-mini-label">Fresh</span>
+            <strong>{library.counts.fresh}</strong>
+            <span className="hero-mini-helper">Ready for confident reuse</span>
+          </div>
+          <div className="hero-mini-stat">
+            <span className="hero-mini-label">Stale</span>
+            <strong>{library.counts.stale}</strong>
+            <span className="hero-mini-helper">Needs re-validation</span>
+          </div>
+        </div>
+      </Card>
+
+      <section className="compact-stats-grid questionnaire-insight-grid">
         <CompactStatCard label="Total" value={library.counts.total} />
         <CompactStatCard label="Fresh" value={library.counts.fresh} tone="success" />
         <CompactStatCard label="Stale" value={library.counts.stale} tone={library.counts.stale > 0 ? "danger" : "neutral"} />
       </section>
 
-      <Card>
+      <Card className="section-shell">
+        <div className="card-title-row">
+          <div className="section-copy">
+            <span className="section-kicker">Filters</span>
+            <div>
+              <h3 style={{ margin: 0 }}>Library scope</h3>
+              <p className="muted small" style={{ margin: "4px 0 0" }}>
+                Search the answer library or isolate stale answers that need attention.
+              </p>
+            </div>
+          </div>
+        </div>
         <div style={{ display: "grid", gap: 14 }}>
           <div style={{ color: "var(--muted-text)", fontSize: "0.95rem" }}>
             Showing {library.rows.length} of {library.counts.total}
@@ -133,14 +166,7 @@ export default async function ApprovedAnswersPage({
               gap: 12
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                gap: 12,
-                flexWrap: "wrap",
-                alignItems: "center"
-              }}
-            >
+            <div className="toolbar-row filter-toolbar">
               <TextInput
                 type="search"
                 name="q"
@@ -158,7 +184,7 @@ export default async function ApprovedAnswersPage({
             </div>
           </form>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} aria-label="Freshness filters">
+          <div className="toolbar-row" aria-label="Freshness filters">
             {FRESHNESS_OPTIONS.map((option) => {
               const active = option.value === activeFreshness;
               return (
@@ -175,6 +201,11 @@ export default async function ApprovedAnswersPage({
           </div>
         </div>
       </Card>
+
+      <div className="section-copy">
+        <span className="section-kicker">Library entries</span>
+        <h3 style={{ margin: 0 }}>Approved answers with freshness and reuse signals</h3>
+      </div>
 
       <ApprovedAnswersLibraryTable rows={library.rows} />
     </div>

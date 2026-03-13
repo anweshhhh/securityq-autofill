@@ -86,67 +86,55 @@ export function TrustQueueTable({
   }
 
   return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <div style={{ color: "var(--muted-text)", fontSize: "0.92rem" }}>
+    <div className="review-stack">
+      <div className="utility-caption">
         P1 stale approved · P2 needs review in blocked questionnaire · P3 other needs review
       </div>
       {rows.map((row) => (
-        <Card key={row.itemId}>
-          <div
-            style={{
-              display: "grid",
-              gap: 14
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 12,
-                alignItems: "flex-start",
-                flexWrap: "wrap"
-              }}
-            >
-              <div style={{ display: "grid", gap: 6, maxWidth: "76ch" }}>
-                <strong style={{ fontSize: "1rem" }}>{row.questionPreview || "Question unavailable."}</strong>
-                <span style={{ color: "var(--muted-text)", fontSize: "0.95rem" }}>{row.questionnaireName}</span>
-              </div>
-              <div className="toolbar-row compact">
-                <Badge tone={priorityTone(row.priority)}>{row.priority}</Badge>
-                <Badge tone={statusTone(row.reviewStatus)}>{statusLabel(row.reviewStatus)}</Badge>
-                {row.freshness ? (
-                  <Badge tone={row.freshness === "STALE" ? "review" : "approved"}>
-                    {row.freshness === "STALE" ? "Stale" : "Fresh"}
-                  </Badge>
-                ) : null}
-                <Link href={buildReviewHref(row, queueFilter, queueQuery)} className="btn btn-secondary">
-                  Review item
-                </Link>
-              </div>
+        <Card key={row.itemId} className="review-card">
+          <div className="review-card-header">
+            <div className="review-card-copy">
+              <strong className="review-card-title">{row.questionPreview || "Question unavailable."}</strong>
+              <span className="review-card-subtitle">{row.questionnaireName}</span>
             </div>
+            <div className="toolbar-row compact">
+              <Badge tone={priorityTone(row.priority)}>{row.priority}</Badge>
+              <Badge tone={statusTone(row.reviewStatus)}>{statusLabel(row.reviewStatus)}</Badge>
+              {row.freshness ? (
+                <Badge tone={row.freshness === "STALE" ? "review" : "approved"}>
+                  {row.freshness === "STALE" ? "Stale" : "Fresh"}
+                </Badge>
+              ) : null}
+              <Link href={buildReviewHref(row, queueFilter, queueQuery)} className="btn btn-secondary">
+                Review item
+              </Link>
+            </div>
+          </div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                gap: 12
-              }}
-            >
-              <div style={{ display: "grid", gap: 2 }}>
-                <span style={{ color: "var(--muted-text)", fontSize: "0.82rem", fontWeight: 600 }}>
-                  Review status
-                </span>
-                <span>{statusLabel(row.reviewStatus)}</span>
-              </div>
-              <div style={{ display: "grid", gap: 2 }}>
-                <span style={{ color: "var(--muted-text)", fontSize: "0.82rem", fontWeight: 600 }}>Freshness</span>
-                <span>{row.freshness ? (row.freshness === "STALE" ? "Stale" : "Fresh") : "n/a"}</span>
-              </div>
-              <div style={{ display: "grid", gap: 2 }}>
-                <span style={{ color: "var(--muted-text)", fontSize: "0.82rem", fontWeight: 600 }}>Approved at</span>
-                <span>{formatApprovedAt(row.approvedAt)}</span>
-              </div>
+          <div className="review-meta-grid">
+            <div className="review-meta-item">
+              <span className="review-meta-label">Review status</span>
+              <span>{statusLabel(row.reviewStatus)}</span>
             </div>
+            <div className="review-meta-item">
+              <span className="review-meta-label">Freshness</span>
+              <span>{row.freshness ? (row.freshness === "STALE" ? "Stale" : "Fresh") : "n/a"}</span>
+            </div>
+            <div className="review-meta-item">
+              <span className="review-meta-label">Approved at</span>
+              <span>{formatApprovedAt(row.approvedAt)}</span>
+            </div>
+          </div>
+
+          <div className="review-callout">
+            <span className="review-callout-label">Why it is here</span>
+            <span>
+              {row.freshness === "STALE"
+                ? "An approved answer has drifted against its cited evidence."
+                : row.reviewStatus === "NEEDS_REVIEW"
+                  ? "This question still needs a reviewer decision."
+                  : "This item is still open in the queue."}
+            </span>
           </div>
         </Card>
       ))}

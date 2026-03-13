@@ -825,6 +825,7 @@ export default function QuestionnaireDetailsPageClient({
   const [isContextOpen, setIsContextOpen] = useState(false);
   const [drawerTab, setDrawerTab] = useState<DrawerTab>("ANSWER");
   const [isMobileSheetExpanded, setIsMobileSheetExpanded] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [lastInteractedRowId, setLastInteractedRowId] = useState<string | null>(null);
   const [activeQuestionActionId, setActiveQuestionActionId] = useState<string | null>(null);
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
@@ -1195,6 +1196,21 @@ export default function QuestionnaireDetailsPageClient({
       setIsMobileSheetExpanded(false);
     }
   }, [selectedQuestionId]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 960px)");
+    const syncViewport = () => setIsMobileViewport(mediaQuery.matches);
+
+    syncViewport();
+
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", syncViewport);
+      return () => mediaQuery.removeEventListener("change", syncViewport);
+    }
+
+    mediaQuery.addListener(syncViewport);
+    return () => mediaQuery.removeListener(syncViewport);
+  }, []);
 
   const scrollQueueRowIntoView = useCallback((questionId: string) => {
     window.requestAnimationFrame(() => {
@@ -2499,7 +2515,7 @@ export default function QuestionnaireDetailsPageClient({
   });
 
   useFocusTrap({
-    active: isContextOpen && Boolean(selectedQuestion),
+    active: isMobileViewport && isContextOpen && Boolean(selectedQuestion),
     containerRef: contextDrawerRef,
     onEscape: closeContextDrawer
   });
@@ -2537,6 +2553,7 @@ export default function QuestionnaireDetailsPageClient({
     );
   }, [message]);
   const selectedQuestionApprovalCandidate = selectedQuestion ? getApprovalCandidate(selectedQuestion) : null;
+  const showInlineContextPanel = !isMobileViewport && isContextOpen && Boolean(selectedQuestion);
   const hasMissingVisibleAnswers = useMemo(
     () => visibleQuestions.some((question) => (question.answer ?? "").trim().length === 0),
     [visibleQuestions]
@@ -2973,7 +2990,10 @@ export default function QuestionnaireDetailsPageClient({
         </div>
       ) : null}
 
-      <div className="queue-primary-layout" data-testid="questionnaire-workbench">
+      <div
+        className={cx("queue-primary-layout", showInlineContextPanel && "queue-primary-layout-panel-open")}
+        data-testid="questionnaire-workbench"
+      >
         <div data-testid="answer-main-panel">
           <div data-testid="evidence-panel">
             {showLoadingSkeletons ? (
@@ -3046,12 +3066,16 @@ export default function QuestionnaireDetailsPageClient({
             aria-label="Close question context drawer"
           />
           <div
-            className={cx("context-panel", isMobileSheetExpanded && "sheet-expanded")}
+            className={cx(
+              "context-panel",
+              !isMobileViewport && "context-panel-desktop",
+              isMobileSheetExpanded && "sheet-expanded"
+            )}
             ref={contextDrawerRef}
-            role="dialog"
-            aria-modal="true"
+            role={isMobileViewport ? "dialog" : "complementary"}
+            aria-modal={isMobileViewport ? "true" : undefined}
             aria-labelledby="context-drawer-title"
-            tabIndex={-1}
+            tabIndex={isMobileViewport ? -1 : undefined}
           >
             <div className="context-panel-header">
               <div>
