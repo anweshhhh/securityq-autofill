@@ -22,6 +22,8 @@ export type TrustQueueQuestionnaireGroup = {
   staleCount: number;
   needsReviewCount: number;
   blocked: boolean;
+  firstActionableItemId: string | null;
+  firstActionableFilter: "stale" | "needs-review" | null;
 };
 
 export type TrustQueueResult = {
@@ -84,8 +86,15 @@ function buildQuestionnaireGroups(
       questionnaireName: row.questionnaireName,
       staleCount: 0,
       needsReviewCount: 0,
-      blocked: false
+      blocked: false,
+      firstActionableItemId: null,
+      firstActionableFilter: null
     };
+
+    if (!next.firstActionableItemId) {
+      next.firstActionableItemId = row.itemId;
+      next.firstActionableFilter = row.freshness === "STALE" ? "stale" : "needs-review";
+    }
 
     if (row.freshness === "STALE") {
       next.staleCount += 1;
@@ -321,7 +330,7 @@ export async function listTrustQueueItemsForOrg(
 
   const staleRows = prioritizedRows.filter((row) => row.freshness === "STALE");
   const needsReviewRows = prioritizedRows.filter((row) => row.reviewStatus === "NEEDS_REVIEW");
-  const questionnaireGroups = buildQuestionnaireGroups(prioritizedRows);
+  const questionnaireGroups = buildQuestionnaireGroups(sortedRows);
 
   return {
     rows: rows.slice(0, limit).map(({ rowIndex: _rowIndex, sortTimestamp: _sortTimestamp, ...row }) => row),

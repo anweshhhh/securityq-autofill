@@ -14,6 +14,19 @@ function groupLabel(group: TrustQueueQuestionnaireGroup): string {
   return group.blocked ? "Blocked" : "Needs review";
 }
 
+function buildQuestionnaireHref(group: TrustQueueQuestionnaireGroup): string {
+  if (!group.firstActionableItemId || !group.firstActionableFilter) {
+    return `/questionnaires/${group.questionnaireId}`;
+  }
+
+  const params = new URLSearchParams({
+    itemId: group.firstActionableItemId,
+    filter: group.firstActionableFilter
+  });
+
+  return `/questionnaires/${group.questionnaireId}?${params.toString()}`;
+}
+
 export function TrustQueueQuestionnaireGroups({ groups }: TrustQueueQuestionnaireGroupsProps) {
   if (groups.length === 0) {
     return null;
@@ -59,7 +72,7 @@ export function TrustQueueQuestionnaireGroups({ groups }: TrustQueueQuestionnair
                 </div>
                 <div className="toolbar-row compact">
                   <Badge tone={groupTone(group)}>{groupLabel(group)}</Badge>
-                  <Link href={`/questionnaires/${group.questionnaireId}`} className="btn btn-secondary">
+                  <Link href={buildQuestionnaireHref(group)} className="btn btn-secondary">
                     Open questionnaire
                   </Link>
                 </div>

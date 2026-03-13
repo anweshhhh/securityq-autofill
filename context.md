@@ -41,6 +41,7 @@ Core promise: answers are generated only from uploaded evidence and always inclu
 - Workspace includes a Trust Queue page at `/trust-queue` for cross-questionnaire review work, summarizing stale approvals, needs-review items, and blocked questionnaires while linking reviewers back to questionnaire review pages
 - Trust Queue includes a questionnaire-level actionable section showing blocked questionnaires, stale counts, and needs-review counts across the workspace without adding a second backend data path
 - Trust Queue item rows use deterministic priority buckets to drive review order: `P1` stale approved items, `P2` needs-review items inside blocked questionnaires, `P3` other needs-review items
+- Trust Queue questionnaire-group links now deep-link to the first actionable blocker for that questionnaire, preferring stale items and otherwise falling back to the first needs-review item via the existing questionnaire item deep-link contract
 - Questionnaire page supports stable item deep links via `/questionnaires/:id?itemId=<id>&filter=all|stale|needs-review`; Trust Queue rows and safe approved-answer source links use this contract to open review context without adding new backend APIs
 - No doc-template-specific keyword/canned-answer logic in retrieval/answer path
 

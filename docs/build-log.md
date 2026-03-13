@@ -2230,3 +2230,41 @@ Current log of implemented MVP work (concise, execution-focused).
   - audit target was unauthenticated, so the route redirected to login and the remaining DOM assertion mismatch reflects the shared questionnaire-oriented audit script rather than a priority-ordering regression
 - Manual auth notes:
   - a signed-in `/trust-queue` priority-ordering smoke test was not possible in this shell session
+
+## 2026-03-13 - trust-queue-group-deeplink-01
+
+- Extended Trust Queue questionnaire-group payloads with first-actionable deeplink metadata:
+  - `src/server/trustQueue/listTrustQueueItems.ts`
+    - `questionnaireGroups` now include:
+      - `firstActionableItemId`
+      - `firstActionableFilter`
+    - metadata is derived from the already-sorted actionable row set for each questionnaire
+    - selection rules:
+      - stale item first when present
+      - otherwise first needs-review item
+      - fallback remains questionnaire scope when no actionable metadata exists
+    - questionnaire-group ordering, item-row ordering, and summary counts are unchanged
+- Extended deterministic coverage:
+  - `src/server/trustQueue/listTrustQueueItems.test.ts`
+    - verifies stale-first deeplink selection when a questionnaire has both stale and needs-review work
+    - verifies needs-review fallback for needs-review-only questionnaires
+    - verifies org scoping and summary invariants remain unchanged
+- Updated the questionnaire-group UI link target:
+  - `src/components/TrustQueueQuestionnaireGroups.tsx`
+    - `Open questionnaire` now links to:
+      - `/questionnaires/:id?itemId=:firstStaleItemId&filter=stale` when stale blockers exist
+      - `/questionnaires/:id?itemId=:firstNeedsReviewItemId&filter=needs-review` otherwise
+      - `/questionnaires/:id` as a safe fallback when metadata is missing
+- Commands run:
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npm test` => PASS (`40` passed files, `1` skipped; `123` passed tests, `1` skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run ui:audit -- http://localhost:4010/trust-queue` => completed with artifacts copied to:
+    - `artifacts/ui-audit/2026-03-13T02-37-35Z/trust-queue-group-deeplink-01/`
+- UI audit/auth notes:
+  - axe serious/critical: `0/0`
+  - console errors/warnings: `0/0`
+  - network failures: `0`
+  - DOM assertions: `1/4`
+  - audit target was unauthenticated, so the route redirected to login and the remaining DOM assertion mismatch reflects the shared questionnaire-oriented audit script rather than a group-deeplink regression
+- Manual auth notes:
+  - a signed-in `/trust-queue` group deeplink smoke test was not possible in this shell session

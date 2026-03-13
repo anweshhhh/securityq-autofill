@@ -305,7 +305,9 @@ describe.sequential("listTrustQueueItemsForOrg", () => {
         questionnaireName: "Org A Questionnaire",
         staleCount: 0,
         needsReviewCount: 1,
-        blocked: false
+        blocked: false,
+        firstActionableItemId: visible.id,
+        firstActionableFilter: "needs-review"
       }
     ]);
   });
@@ -369,7 +371,9 @@ describe.sequential("listTrustQueueItemsForOrg", () => {
         questionnaireName: "Stale filter questionnaire",
         staleCount: 1,
         needsReviewCount: 0,
-        blocked: true
+        blocked: true,
+        firstActionableItemId: stale.questionId,
+        firstActionableFilter: "stale"
       }
     ]);
   });
@@ -419,7 +423,9 @@ describe.sequential("listTrustQueueItemsForOrg", () => {
         questionnaireName: "Needs review questionnaire",
         staleCount: 0,
         needsReviewCount: 1,
-        blocked: false
+        blocked: false,
+        firstActionableItemId: needsReview.id,
+        firstActionableFilter: "needs-review"
       }
     ]);
   });
@@ -483,7 +489,9 @@ describe.sequential("listTrustQueueItemsForOrg", () => {
         questionnaireName: "Blocked questionnaire",
         staleCount: 2,
         needsReviewCount: 0,
-        blocked: true
+        blocked: true,
+        firstActionableItemId: queue.rows[0]?.itemId ?? null,
+        firstActionableFilter: "stale"
       }
     ]);
   });
@@ -529,7 +537,9 @@ describe.sequential("listTrustQueueItemsForOrg", () => {
         questionnaireName: "Vendor Alpha Review",
         staleCount: 0,
         needsReviewCount: 1,
-        blocked: false
+        blocked: false,
+        firstActionableItemId: matched.id,
+        firstActionableFilter: "needs-review"
       }
     ]);
   });
@@ -604,21 +614,27 @@ describe.sequential("listTrustQueueItemsForOrg", () => {
         questionnaireName: "Vendor Alpha",
         staleCount: 2,
         needsReviewCount: 0,
-        blocked: true
+        blocked: true,
+        firstActionableItemId: queue.rows.find((row) => row.questionnaireId === alsoBlockedQuestionnaire.id)?.itemId ?? null,
+        firstActionableFilter: "stale"
       },
       {
         questionnaireId: blockedQuestionnaire.id,
         questionnaireName: "Vendor Zeta",
         staleCount: 1,
         needsReviewCount: 0,
-        blocked: true
+        blocked: true,
+        firstActionableItemId: queue.rows.find((row) => row.questionnaireId === blockedQuestionnaire.id)?.itemId ?? null,
+        firstActionableFilter: "stale"
       },
       {
         questionnaireId: needsReviewQuestionnaire.id,
         questionnaireName: "Vendor Gamma",
         staleCount: 0,
         needsReviewCount: 1,
-        blocked: false
+        blocked: false,
+        firstActionableItemId: queue.rows.find((row) => row.questionnaireId === needsReviewQuestionnaire.id)?.itemId ?? null,
+        firstActionableFilter: "needs-review"
       }
     ]);
   });
@@ -711,5 +727,34 @@ describe.sequential("listTrustQueueItemsForOrg", () => {
       needsReviewCount: 3,
       blockedQuestionnairesCount: 1
     });
+    expect(queue.questionnaireGroups).toEqual([
+      {
+        questionnaireId: blockedQuestionnaire.id,
+        questionnaireName: "Vendor Delta",
+        staleCount: 1,
+        needsReviewCount: 1,
+        blocked: true,
+        firstActionableItemId: stale.questionId,
+        firstActionableFilter: "stale"
+      },
+      {
+        questionnaireId: p3QuestionnaireA.id,
+        questionnaireName: "Vendor Alpha",
+        staleCount: 0,
+        needsReviewCount: 1,
+        blocked: false,
+        firstActionableItemId: p3Alpha.id,
+        firstActionableFilter: "needs-review"
+      },
+      {
+        questionnaireId: p3QuestionnaireB.id,
+        questionnaireName: "Vendor Beta",
+        staleCount: 0,
+        needsReviewCount: 1,
+        blocked: false,
+        firstActionableItemId: p3Beta.id,
+        firstActionableFilter: "needs-review"
+      }
+    ]);
   });
 });
