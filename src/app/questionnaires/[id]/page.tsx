@@ -1,4 +1,5 @@
 import QuestionnaireDetailsPageClient from "@/components/QuestionnaireDetailsPageClient";
+import type { TrustQueueReviewSessionBannerProps } from "@/components/TrustQueueReviewSessionBanner";
 import { getRequestContext, RequestContextError } from "@/lib/requestContext";
 import { assertCan, RbacAction } from "@/server/rbac";
 import { getTrustQueueSessionForOrg } from "@/server/trustQueue/getTrustQueueSession";
@@ -18,11 +19,6 @@ type QuestionnairePageSearchParams = {
   queueQuery?: string | string[];
 };
 
-type TrustQueueReviewSessionBannerState = {
-  currentPriority: "P1" | "P2" | "P3";
-  nextHref: string | null;
-};
-
 function readSearchParam(value: string | string[] | undefined): string {
   if (Array.isArray(value)) {
     return value[0] ?? "";
@@ -34,7 +30,7 @@ function readSearchParam(value: string | string[] | undefined): string {
 async function resolveTrustQueueReviewSession(params: {
   questionnaireId: string;
   searchParams: QuestionnairePageSearchParams;
-}): Promise<TrustQueueReviewSessionBannerState | null> {
+}): Promise<TrustQueueReviewSessionBannerProps | null> {
   const source = readSearchParam(params.searchParams.source).trim().toLowerCase();
   if (source !== "trust-queue") {
     return null;

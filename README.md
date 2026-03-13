@@ -12,6 +12,8 @@ Security Questionnaire Autofill + Evidence Finder (MVP scaffold).
 - Home: `http://localhost:3000/`
 - Documents UI: `http://localhost:3000/documents`
 - Questionnaires UI: `http://localhost:3000/questionnaires`
+- Trust Queue UI: `http://localhost:3000/trust-queue`
+- Approved Answers Library UI: `http://localhost:3000/approved-answers`
 - Ask UI (DEV only): `http://localhost:3000/ask`
 - Documents API: `http://localhost:3000/api/documents`
 - Embed Chunks API: `POST http://localhost:3000/api/documents/embed`
@@ -55,6 +57,7 @@ Then verify:
 
 - Ask flow at `http://localhost:3000/ask` (when `DEV_MODE=true`)
 - CSV flow at `http://localhost:3000/questionnaires`
+- Trust Queue review flow at `http://localhost:3000/trust-queue`
 
 ## DEV_MODE
 

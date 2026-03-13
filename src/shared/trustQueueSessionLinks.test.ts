@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   buildTrustQueueSessionHref,
-  normalizeTrustQueueSessionFilterParam
+  normalizeTrustQueueSessionFilterParam,
+  toTrustQueueFilter
 } from "@/shared/trustQueueSessionLinks";
 
 describe("normalizeTrustQueueSessionFilterParam", () => {
@@ -44,5 +45,19 @@ describe("buildTrustQueueSessionHref", () => {
     ).toBe(
       "/questionnaires/questionnaire-1?itemId=question-9&filter=needs-review&source=trust-queue&queueFilter=needs-review"
     );
+  });
+});
+
+describe("toTrustQueueFilter", () => {
+  it("maps public filter params to trust queue filters", () => {
+    expect(toTrustQueueFilter("all")).toBe("ALL");
+    expect(toTrustQueueFilter("stale")).toBe("STALE");
+    expect(toTrustQueueFilter("needs-review")).toBe("NEEDS_REVIEW");
+  });
+
+  it("falls back invalid values to ALL", () => {
+    expect(toTrustQueueFilter("bogus")).toBe("ALL");
+    expect(toTrustQueueFilter("")).toBe("ALL");
+    expect(toTrustQueueFilter(null)).toBe("ALL");
   });
 });

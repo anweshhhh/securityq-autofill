@@ -2326,3 +2326,56 @@ Current log of implemented MVP work (concise, execution-focused).
     - unauthenticated run hit the expected auth-gated `401` questionnaire fetches while still reporting no serious/critical axe issues
 - Manual auth notes:
   - a signed-in Trust Queue review-session smoke test was not possible in this shell session
+
+## 2026-03-13 - repo-cleanup-readiness-01
+
+- Focused cleanup/readiness pass across the recent Trust Queue, questionnaire deeplink/session, and approved-answer picker/detail surfaces without changing product behavior:
+  - `src/shared/trustQueueSessionLinks.ts`
+    - added `toTrustQueueFilter(...)` so Trust Queue pages/helpers reuse one filter-normalization path instead of carrying duplicate mapping logic
+  - `src/app/trust-queue/page.tsx`
+    - removed the local filter-normalization helper and now reuses the shared Trust Queue session filter utilities
+  - `src/server/trustQueue/getTrustQueueSession.ts`
+    - removed the dead `totalCount` field from the internal session return shape because it was only used by tests
+    - removed duplicate filter-mapping logic in favor of the shared helper
+  - `src/app/questionnaires/[id]/page.tsx`
+  - `src/components/QuestionnaireDetailsPageClient.tsx`
+  - `src/components/TrustQueueReviewSessionBanner.tsx`
+    - collapsed duplicated Trust Queue review-session banner prop typing into a single exported type
+  - `src/components/ApprovedAnswerPicker.tsx`
+    - removed redundant preview-state resets that were already handled by the existing preview effect
+    - consolidated duplicate guarded-apply handlers into one local helper
+  - `src/components/ApprovedAnswerDetailDrawer.tsx`
+    - removed a redundant explicit `GET` option from the detail fetch
+  - `README.md`
+    - aligned the route list/runbook with current product reality by adding `/trust-queue` and `/approved-answers`
+- Test alignment:
+  - `src/server/trustQueue/getTrustQueueSession.test.ts`
+    - removed assertions for the deleted internal `totalCount` field
+  - `src/shared/trustQueueSessionLinks.test.ts`
+    - added direct coverage for `toTrustQueueFilter(...)`
+- Commands run:
+  - `npm run lint` => PASS
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npm test` => PASS (`42` passed files, `1` skipped; `134` passed tests, `1` skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run ui:audit -- http://localhost:4010/trust-queue` => completed
+  - `npm run ui:audit -- http://localhost:4010/questionnaires` => completed
+  - consolidated UI audit artifacts copied to:
+    - `artifacts/ui-audit/2026-03-13T19-04-02Z/repo-cleanup-readiness-01/`
+- UI audit/auth notes:
+  - Trust Queue audit:
+    - axe serious/critical: `0/0`
+    - console errors/warnings: `0/0`
+    - network failures: `0`
+    - DOM assertions: `1/4`
+    - unauthenticated run redirected to login; remaining DOM mismatch comes from the shared questionnaire-oriented audit script rather than this cleanup
+  - Questionnaire audit:
+    - axe serious/critical: `0/0`
+    - console errors: `6`
+    - network failures: `1`
+    - DOM assertions: `1/4`
+    - unauthenticated run hit the expected auth-gated `401` questionnaire fetches while still reporting no serious/critical axe issues
+- Manual auth notes:
+  - a signed-in cleanup smoke pass for Trust Queue review session and questionnaire library preview/apply was not possible in this shell session
+- Deferred cleanup ideas intentionally skipped:
+  - extracting a shared approved-answer detail fetcher for both the library detail drawer and the questionnaire library picker preview
+  - broader type consolidation inside `src/components/QuestionnaireDetailsPageClient.tsx`, which is still intentionally large and should only be split in a behavior-safe follow-up PR

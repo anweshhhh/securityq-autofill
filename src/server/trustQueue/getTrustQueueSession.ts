@@ -4,6 +4,7 @@ import type {
   TrustQueueSessionFilterParam,
   TrustQueueSessionRowFilter
 } from "@/shared/trustQueueSessionLinks";
+import { toTrustQueueFilter } from "@/shared/trustQueueSessionLinks";
 
 export type TrustQueueSessionItem = {
   questionnaireId: string;
@@ -16,19 +17,14 @@ export type TrustQueueSession = {
   firstItem: TrustQueueSessionItem | null;
   current: TrustQueueSessionItem | null;
   next: TrustQueueSessionItem | null;
-  totalCount: number;
 };
 
-function toTrustQueueFilter(value: TrustQueueSessionFilterParam | TrustQueueFilter | string | null | undefined): TrustQueueFilter {
-  if (value === "STALE" || value === "stale") {
-    return "STALE";
+function normalizeSessionFilter(value: TrustQueueSessionFilterParam | TrustQueueFilter | string | null | undefined): TrustQueueFilter {
+  if (typeof value !== "string") {
+    return "ALL";
   }
 
-  if (value === "NEEDS_REVIEW" || value === "needs-review") {
-    return "NEEDS_REVIEW";
-  }
-
-  return "ALL";
+  return toTrustQueueFilter(value.toLowerCase());
 }
 
 function toSessionItem(row: Awaited<ReturnType<typeof listTrustQueueItemsForOrg>>["rows"][number]): TrustQueueSessionItem {
@@ -52,7 +48,7 @@ export async function getTrustQueueSessionForOrg(
 ): Promise<TrustQueueSession> {
   const queue = await listTrustQueueItemsForOrg(ctx, {
     query: params?.query,
-    filter: toTrustQueueFilter(params?.filter),
+    filter: normalizeSessionFilter(params?.filter),
     limit: 100
   });
 
@@ -63,7 +59,6 @@ export async function getTrustQueueSessionForOrg(
   return {
     firstItem: rows[0] ? toSessionItem(rows[0]) : null,
     current: currentIndex >= 0 ? toSessionItem(rows[currentIndex]) : null,
-    next: currentIndex >= 0 && currentIndex + 1 < rows.length ? toSessionItem(rows[currentIndex + 1]) : null,
-    totalCount: rows.length
+    next: currentIndex >= 0 && currentIndex + 1 < rows.length ? toSessionItem(rows[currentIndex + 1]) : null
   };
 }

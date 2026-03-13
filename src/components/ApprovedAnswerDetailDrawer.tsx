@@ -43,7 +43,6 @@ export function ApprovedAnswerDetailDrawer({
     void (async () => {
       try {
         const response = await fetch(`/api/approved-answers/${approvedAnswerId}?detail=library`, {
-          method: "GET",
           cache: "no-store",
           signal: controller.signal
         });

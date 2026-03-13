@@ -99,6 +99,19 @@ export function ApprovedAnswerPicker({
   const [previewErrorMessage, setPreviewErrorMessage] = useState("");
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
 
+  async function handleApplyApprovedAnswer(approvedAnswerId: string) {
+    setErrorMessage("");
+    const result = await onApply(approvedAnswerId);
+    if (result.ok) {
+      onClose();
+      return;
+    }
+
+    if (result.message) {
+      setErrorMessage(result.message);
+    }
+  }
+
   useFocusTrap({
     active: isOpen,
     containerRef: modalRef,
@@ -371,9 +384,6 @@ export function ApprovedAnswerPicker({
                   variant="ghost"
                   onClick={() => {
                     setPreviewApprovedAnswerId(null);
-                    setPreviewDetail(null);
-                    setPreviewErrorMessage("");
-                    setIsPreviewLoading(false);
                   }}
                 >
                   Close preview
@@ -391,18 +401,7 @@ export function ApprovedAnswerPicker({
                   applyAction={{
                     label: "Apply this answer",
                     pendingLabel: "Applying...",
-                    onApply: async () => {
-                      setErrorMessage("");
-                      const result = await onApply(previewDetail.approvedAnswerId);
-                      if (result.ok) {
-                        onClose();
-                        return;
-                      }
-
-                      if (result.message) {
-                        setErrorMessage(result.message);
-                      }
-                    },
+                    onApply: () => handleApplyApprovedAnswer(previewDetail.approvedAnswerId),
                     disabled: Boolean(applyingApprovedAnswerId),
                     pending: applyingApprovedAnswerId === previewDetail.approvedAnswerId
                   }}
@@ -457,18 +456,7 @@ export function ApprovedAnswerPicker({
                     <Button
                       type="button"
                       variant="secondary"
-                      onClick={async () => {
-                        setErrorMessage("");
-                        const result = await onApply(row.approvedAnswerId);
-                        if (result.ok) {
-                          onClose();
-                          return;
-                        }
-
-                        if (result.message) {
-                          setErrorMessage(result.message);
-                        }
-                      }}
+                      onClick={() => void handleApplyApprovedAnswer(row.approvedAnswerId)}
                       disabled={Boolean(applyingApprovedAnswerId)}
                       aria-label={`Apply approved answer with ${row.snapshottedCitationsCount} citations`}
                     >

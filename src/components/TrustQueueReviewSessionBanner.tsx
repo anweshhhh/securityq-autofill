@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Badge, Card } from "@/components/ui";
 
-type TrustQueueReviewSessionBannerProps = {
+export type TrustQueueReviewSessionBannerProps = {
   currentPriority: "P1" | "P2" | "P3";
   nextHref: string | null;
 };
@@ -14,6 +14,8 @@ export function TrustQueueReviewSessionBanner({
   currentPriority,
   nextHref
 }: TrustQueueReviewSessionBannerProps) {
+  const nextItemHref = nextHref ?? null;
+
   return (
     <Card className="card-muted">
       <div
@@ -31,12 +33,14 @@ export function TrustQueueReviewSessionBanner({
             <Badge tone={priorityTone(currentPriority)}>{currentPriority}</Badge>
           </div>
           <span className="small muted">
-            {nextHref ? "Stay in the queue and move to the next blocker when you are ready." : "No more queue items."}
+            {nextItemHref
+              ? "Stay in the queue and move to the next blocker when you are ready."
+              : "No more queue items."}
           </span>
         </div>
 
-        {nextHref ? (
-          <Link href={nextHref} className="btn btn-secondary">
+        {nextItemHref ? (
+          <Link href={nextItemHref} className="btn btn-secondary">
             Next item
           </Link>
         ) : (

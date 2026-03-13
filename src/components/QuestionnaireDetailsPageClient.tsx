@@ -7,7 +7,10 @@ import { useAppAuthz } from "@/components/AppAuthzContext";
 import { CompactStatCard } from "@/components/CompactStatCard";
 import { ExportModal } from "@/components/ExportModal";
 import { QuestionnaireHealthPanel } from "@/components/QuestionnaireHealthPanel";
-import { TrustQueueReviewSessionBanner } from "@/components/TrustQueueReviewSessionBanner";
+import {
+  TrustQueueReviewSessionBanner,
+  type TrustQueueReviewSessionBannerProps
+} from "@/components/TrustQueueReviewSessionBanner";
 import { Badge, Button, Card, TextArea, TextInput, cx } from "@/components/ui";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 import { NOT_FOUND_TEXT } from "@/shared/answerTemplates";
@@ -206,12 +209,8 @@ type SelectedQuestionApprovalHistoryEntry = {
 };
 
 type DrawerTab = "ANSWER" | "EVIDENCE" | "REFERENCES";
-type TrustQueueReviewSessionBannerState = {
-  currentPriority: "P1" | "P2" | "P3";
-  nextHref: string | null;
-};
 type QuestionnaireDetailsPageClientProps = {
-  trustQueueReviewSession: TrustQueueReviewSessionBannerState | null;
+  trustQueueReviewSession: TrustQueueReviewSessionBannerProps | null;
 };
 
 const NOT_FOUND_ANSWER = NOT_FOUND_TEXT;

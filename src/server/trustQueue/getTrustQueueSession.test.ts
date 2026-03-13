@@ -292,7 +292,6 @@ describe.sequential("getTrustQueueSessionForOrg", () => {
       priority: "P1",
       rowFilter: "stale"
     });
-    expect(session.totalCount).toBe(2);
   });
 
   it("returns current and next items from the sorted queue order", async () => {
@@ -403,7 +402,6 @@ describe.sequential("getTrustQueueSessionForOrg", () => {
       }
     );
 
-    expect(session.totalCount).toBe(1);
     expect(session.firstItem).toEqual({
       questionnaireId: matchedQuestionnaire.id,
       itemId: matched.id,
@@ -434,7 +432,6 @@ describe.sequential("getTrustQueueSessionForOrg", () => {
 
     const session = await getTrustQueueSessionForOrg({ orgId: orgA.id });
 
-    expect(session.totalCount).toBe(1);
     expect(session.firstItem).toEqual({
       questionnaireId: questionnaireA.id,
       itemId: visible.id,

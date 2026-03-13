@@ -11,7 +11,12 @@ import {
 } from "@/server/trustQueue/listTrustQueueItems";
 import { getTrustQueueSessionForOrg } from "@/server/trustQueue/getTrustQueueSession";
 import { assertCan, RbacAction } from "@/server/rbac";
-import { buildTrustQueueSessionHref } from "@/shared/trustQueueSessionLinks";
+import {
+  buildTrustQueueSessionHref,
+  normalizeTrustQueueSessionFilterParam,
+  toTrustQueueFilter,
+  type TrustQueueSessionFilterParam
+} from "@/shared/trustQueueSessionLinks";
 
 type TrustQueueSearchParams = {
   q?: string | string[];
@@ -41,20 +46,7 @@ function readSearchParam(value: string | string[] | undefined): string {
   return value ?? "";
 }
 
-function normalizeFilter(value: string): TrustQueueFilter {
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "stale") {
-    return "STALE";
-  }
-
-  if (normalized === "needs-review") {
-    return "NEEDS_REVIEW";
-  }
-
-  return "ALL";
-}
-
-function buildFilterHref(query: string, filter: "all" | "stale" | "needs-review"): string {
+function buildFilterHref(query: string, filter: TrustQueueSessionFilterParam): string {
   const params = new URLSearchParams();
   if (query) {
     params.set("q", query);
@@ -75,10 +67,8 @@ export default async function TrustQueuePage({
 }) {
   const resolvedSearchParams = await Promise.resolve(searchParams ?? {});
   const query = readSearchParam(resolvedSearchParams.q).trim();
-  const filterParam = readSearchParam(resolvedSearchParams.filter).trim().toLowerCase();
-  const filter = normalizeFilter(filterParam);
-  const activeFilter =
-    filterParam === "stale" || filterParam === "needs-review" ? filterParam : "all";
+  const activeFilter = normalizeTrustQueueSessionFilterParam(readSearchParam(resolvedSearchParams.filter));
+  const filter: TrustQueueFilter = toTrustQueueFilter(activeFilter);
 
   let ctx;
   try {
