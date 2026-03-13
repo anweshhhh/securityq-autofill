@@ -116,28 +116,13 @@ export default async function TrustQueuePage({
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
-      <section
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 12,
-          alignItems: "flex-start",
-          flexWrap: "wrap"
-        }}
-      >
-        <div style={{ display: "grid", gap: 8 }}>
-          <h1 style={{ margin: 0 }}>Trust Queue</h1>
-          <p style={{ margin: 0, color: "var(--muted-text)", maxWidth: "72ch" }}>
-            Review stale approvals and needs-review items across the active workspace without opening each
-            questionnaire first.
-          </p>
-        </div>
-        {startReviewHref ? (
+      {startReviewHref ? (
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <Link href={startReviewHref} className="btn btn-primary">
             Start review
           </Link>
-        ) : null}
-      </section>
+        </div>
+      ) : null}
 
       <section
         style={{
@@ -171,24 +156,8 @@ export default async function TrustQueuePage({
 
       <Card>
         <div style={{ display: "grid", gap: 14 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 12,
-              alignItems: "center",
-              flexWrap: "wrap"
-            }}
-          >
-            <div style={{ display: "grid", gap: 4 }}>
-              <strong>Filter queue</strong>
-              <span style={{ color: "var(--muted-text)" }}>
-                Search by questionnaire name and focus the queue on stale approvals or needs-review work.
-              </span>
-            </div>
-            <div style={{ color: "var(--muted-text)", fontSize: "0.95rem" }}>
-              Showing {queue.rows.length} actionable item{queue.rows.length === 1 ? "" : "s"}
-            </div>
+          <div style={{ color: "var(--muted-text)", fontSize: "0.95rem" }}>
+            Showing {queue.rows.length} actionable item{queue.rows.length === 1 ? "" : "s"}
           </div>
 
           <form method="GET" action="/trust-queue" style={{ display: "grid", gap: 12 }}>

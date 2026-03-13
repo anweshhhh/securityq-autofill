@@ -107,14 +107,6 @@ export default async function ApprovedAnswersPage({
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
-      <section style={{ display: "grid", gap: 8 }}>
-        <h1 style={{ margin: 0 }}>Approved Answers</h1>
-        <p style={{ margin: 0, color: "var(--muted-text)", maxWidth: "72ch" }}>
-          Browse approved answers across the active workspace and inspect freshness, reuse, and provenance metadata
-          before you reuse a claim.
-        </p>
-      </section>
-
       <section
         style={{
           display: "grid",
@@ -129,24 +121,8 @@ export default async function ApprovedAnswersPage({
 
       <Card>
         <div style={{ display: "grid", gap: 14 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 12,
-              alignItems: "center",
-              flexWrap: "wrap"
-            }}
-          >
-            <div style={{ display: "grid", gap: 4 }}>
-              <strong>Filter library</strong>
-              <span style={{ color: "var(--muted-text)" }}>
-                Search answer text or question text, then narrow by freshness.
-              </span>
-            </div>
-            <div style={{ color: "var(--muted-text)", fontSize: "0.95rem" }}>
-              Showing {library.rows.length} of {library.counts.total}
-            </div>
+          <div style={{ color: "var(--muted-text)", fontSize: "0.95rem" }}>
+            Showing {library.rows.length} of {library.counts.total}
           </div>
 
           <form
@@ -199,15 +175,6 @@ export default async function ApprovedAnswersPage({
           </div>
         </div>
       </Card>
-
-      {library.counts.total > library.rows.length ? (
-        <Card>
-          <div style={{ color: "var(--muted-text)" }}>
-            Showing the first {library.rows.length} approved answers in this filtered view. Refine the search to narrow
-            the list further.
-          </div>
-        </Card>
-      ) : null}
 
       <ApprovedAnswersLibraryTable rows={library.rows} />
     </div>

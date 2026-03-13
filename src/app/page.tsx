@@ -421,20 +421,22 @@ export default function Home() {
             </section>
           )}
 
-          <section className="quick-action-card">
-            <h4 style={{ margin: "0 0 6px" }}>Import Questionnaire</h4>
-            <p className="small muted" style={{ margin: "0 0 10px" }}>
-              Upload CSV rows and create a new review run.
-            </p>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => router.push("/questionnaires#import")}
-              disabled={!canImportQuestionnaires}
-            >
-              Import
-            </Button>
-          </section>
+          {questionnaireCount > 0 ? (
+            <section className="quick-action-card">
+              <h4 style={{ margin: "0 0 6px" }}>Import Questionnaire</h4>
+              <p className="small muted" style={{ margin: "0 0 10px" }}>
+                Upload CSV rows and create a new review run.
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => router.push("/questionnaires#import")}
+                disabled={!canImportQuestionnaires}
+              >
+                Import
+              </Button>
+            </section>
+          ) : null}
 
           <section className="quick-action-card">
             <h4 style={{ margin: "0 0 6px" }}>Manage Documents</h4>

@@ -321,9 +321,6 @@ export function ApprovedAnswerPicker({
             <h3 id="approved-answer-picker-title" style={{ margin: 0 }}>
               Browse library
             </h3>
-            <span className="small muted">
-              Search fresh approved answers in the current workspace, preview them, and apply one to this draft.
-            </span>
           </div>
           <Button type="button" variant="ghost" onClick={onClose}>
             Close
@@ -375,9 +372,6 @@ export function ApprovedAnswerPicker({
               >
                 <div style={{ display: "grid", gap: 4 }}>
                   <strong>Preview</strong>
-                  <span className="small muted">
-                    Inspect this approved answer in context before applying it to the current draft.
-                  </span>
                 </div>
                 <Button
                   type="button"

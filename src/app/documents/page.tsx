@@ -319,9 +319,13 @@ export default function DocumentsPage() {
       >
         <form onSubmit={handleSubmit} className="page-stack">
           <div className="empty-state">
-            <h3 style={{ marginTop: 0 }}>Drop evidence files here</h3>
-            <p>Drag-and-drop styling is active. Upload still uses the file selector for deterministic behavior.</p>
+            <h3 style={{ marginTop: 0 }}>Upload evidence files</h3>
+            <p>Add `.txt`, `.md`, or `.pdf` files to build the workspace evidence library.</p>
+            <label className="small muted" htmlFor="document-upload-file">
+              Evidence file
+            </label>
             <TextInput
+              id="document-upload-file"
               type="file"
               accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf"
               disabled={!canUploadDocuments}
@@ -361,11 +365,6 @@ export default function DocumentsPage() {
         <CompactStatCard label="Visible documents" value={filteredDocuments.length} />
         <CompactStatCard label="Embedded (chunked)" value={embeddedCount} tone="success" />
         <CompactStatCard label="Selected" value={selectedDocumentIds.length} tone="neutral" />
-        <CompactStatCard
-          label="Filter mode"
-          value={showLatestOnly ? "Latest" : "All"}
-          sublabel={showLatestOnly ? "Showing latest per file" : "Showing all versions"}
-        />
       </div>
 
       {message ? (
@@ -392,13 +391,29 @@ export default function DocumentsPage() {
             </p>
           </div>
           <div className="toolbar-row compact">
-            <TextInput
-              className="search-input-small"
-              value={searchText}
-              onChange={(event) => setSearchText(event.target.value)}
-              placeholder="Search documents"
-              title="Filter document list"
-            />
+            <div className="search-field">
+              <label className="search-field-label" htmlFor="documents-search">
+                Search
+              </label>
+              <TextInput
+                id="documents-search"
+                className="search-field-input"
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+                placeholder="Search documents"
+                title="Filter document list"
+              />
+              {searchText.trim().length > 0 ? (
+                <button
+                  type="button"
+                  className="search-field-clear"
+                  onClick={() => setSearchText("")}
+                  aria-label="Clear document search"
+                >
+                  Clear
+                </button>
+              ) : null}
+            </div>
             {canDeleteDocuments ? (
               <Button
                 type="button"

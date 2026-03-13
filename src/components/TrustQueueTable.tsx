@@ -146,12 +146,6 @@ export function TrustQueueTable({
                 <span style={{ color: "var(--muted-text)", fontSize: "0.82rem", fontWeight: 600 }}>Approved at</span>
                 <span>{formatApprovedAt(row.approvedAt)}</span>
               </div>
-              <div style={{ display: "grid", gap: 2 }}>
-                <span style={{ color: "var(--muted-text)", fontSize: "0.82rem", fontWeight: 600 }}>
-                  Export readiness
-                </span>
-                <span>{row.isBlockedForApprovedOnlyExport ? "Blocked" : "Clear"}</span>
-              </div>
             </div>
           </div>
         </Card>

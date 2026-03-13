@@ -5,7 +5,7 @@ import { signOut, useSession } from "next-auth/react";
 import { usePathname, useRouter } from "next/navigation";
 import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppAuthzProvider, type AppAuthzState } from "@/components/AppAuthzContext";
-import { Button, TextInput, cx } from "@/components/ui";
+import { Button, cx } from "@/components/ui";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 import { can, RbacAction, type Role } from "@/server/rbac";
 
@@ -221,6 +221,7 @@ export function AppShell({ devMode, children }: AppShellProps) {
       { href: "/", label: "Home", short: "H" },
       { href: "/documents", label: "Documents", short: "D" },
       { href: "/questionnaires", label: "Questionnaires", short: "Q" },
+      { href: "/approved-answers", label: "Approved Answers", short: "L" },
       { href: "/trust-queue", label: "Trust Queue", short: "T" }
     ];
 
@@ -237,7 +238,6 @@ export function AppShell({ devMode, children }: AppShellProps) {
 
   const pageHeader = getPageHeader(pathname);
   const primaryAction = getPrimaryAction(pathname, authzState.role);
-  const showTopNavSearch = pathname !== "/";
   const canViewMembers = authzState.role ? can(authzState.role, RbacAction.VIEW_MEMBERS) : false;
   const accountEmail = session?.user?.email ?? authzState.userEmail ?? "Signed in";
   const accountOrgName = authzState.orgName ?? "Workspace";
@@ -492,16 +492,6 @@ export function AppShell({ devMode, children }: AppShellProps) {
               <span className="top-nav-sep">|</span>
               <span>{pageHeader.title}</span>
             </div>
-            {showTopNavSearch ? (
-              <div className="top-nav-search">
-                <TextInput
-                  type="search"
-                  readOnly
-                  placeholder="Search questionnaires, evidence, citations (coming soon)"
-                  aria-label="Global search (coming soon)"
-                />
-              </div>
-            ) : null}
             {primaryAction ? (
               <Link href={primaryAction.href} className="btn btn-primary" aria-label={primaryAction.label}>
                 {primaryAction.label}

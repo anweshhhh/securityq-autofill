@@ -43,9 +43,7 @@ export function TrustQueueReviewSessionBanner({
           <Link href={nextItemHref} className="btn btn-secondary">
             Next item
           </Link>
-        ) : (
-          <span className="small muted">No more queue items</span>
-        )}
+        ) : null}
       </div>
     </Card>
   );

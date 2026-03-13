@@ -50,12 +50,7 @@ export function TrustQueueQuestionnaireGroups({
   return (
     <Card>
       <div style={{ display: "grid", gap: 16 }}>
-        <div style={{ display: "grid", gap: 4 }}>
-          <strong>Blocked questionnaires</strong>
-          <span style={{ color: "var(--muted-text)" }}>
-            Triage questionnaire-level blockers before drilling into specific stale or needs-review items.
-          </span>
-        </div>
+        <strong>Blocked questionnaires</strong>
 
         <div style={{ display: "grid", gap: 12 }}>
           {groups.map((group) => (
@@ -79,11 +74,6 @@ export function TrustQueueQuestionnaireGroups({
               >
                 <div style={{ display: "grid", gap: 4, maxWidth: "70ch" }}>
                   <strong style={{ fontSize: "1rem" }}>{group.questionnaireName}</strong>
-                  <span style={{ color: "var(--muted-text)", fontSize: "0.95rem" }}>
-                    {group.staleCount > 0
-                      ? "Approved-only export is blocked until stale answers are reviewed."
-                      : "This questionnaire still has needs-review work pending."}
-                  </span>
                 </div>
                 <div className="toolbar-row compact">
                   <Badge tone={groupTone(group)}>{groupLabel(group)}</Badge>

@@ -2910,25 +2910,6 @@ export default function QuestionnaireDetailsPageClient({
             ))}
           </nav>
           <div className="queue-metrics-side">
-            {canApproveAnswers ? (
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => void approveExactReusedQuestions()}
-                disabled={
-                  isLoading ||
-                  isBulkApproving ||
-                  isApprovingReusedExact ||
-                  isRunningAutofill ||
-                  exactReusedEligibleQuestions.length === 0
-                }
-                aria-label={`Approve reused exact questions (${exactReusedEligibleQuestions.length})`}
-              >
-                {isApprovingReusedExact
-                  ? "Approving reused..."
-                  : `Approve reused (exact) · ${exactReusedEligibleQuestions.length}`}
-              </Button>
-            ) : null}
             <div className="queue-search-wrap">
               <TextInput
                 id="queue-search-input"
@@ -3077,9 +3058,6 @@ export default function QuestionnaireDetailsPageClient({
                 <h3 id="context-drawer-title" style={{ margin: "0 0 4px" }}>
                   Question {selectedQuestion.rowIndex + 1}
                 </h3>
-                <p className="small muted" style={{ margin: 0 }}>
-                  Context review
-                </p>
               </div>
               <div className="toolbar-row compact">
                 <Button

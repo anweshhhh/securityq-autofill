@@ -2379,3 +2379,91 @@ Current log of implemented MVP work (concise, execution-focused).
 - Deferred cleanup ideas intentionally skipped:
   - extracting a shared approved-answer detail fetcher for both the library detail drawer and the questionnaire library picker preview
   - broader type consolidation inside `src/components/QuestionnaireDetailsPageClient.tsx`, which is still intentionally large and should only be split in a behavior-safe follow-up PR
+
+## 2026-03-13 - authenticated-ux-audit-01
+
+- Audited the current user-facing route surface against the implemented MVP workflow:
+  - `/`
+  - `/documents`
+  - `/questionnaires`
+  - `/questionnaires/[id]`
+  - `/approved-answers`
+  - `/trust-queue`
+- Removed or tightened low-value UI clutter without changing product behavior:
+  - `src/components/AppShell.tsx`
+    - removed the read-only “coming soon” global search control from the shell header
+    - added `Approved Answers` to the main nav so the reusable-claims library is reachable from the core workspace flow
+  - `src/app/page.tsx`
+    - removed the duplicate `Import Questionnaire` quick-action card when the workspace has no questionnaires yet and the primary launch card already points to the same action
+  - `src/app/trust-queue/page.tsx`
+    - removed the duplicate page-local heading block because the shell already provides the page title/subtitle
+    - simplified the queue filter card to focus on filters and result count instead of explanatory copy
+  - `src/components/TrustQueueQuestionnaireGroups.tsx`
+    - removed repetitive helper text that restated whether a questionnaire was blocked or still needed review
+  - `src/components/TrustQueueTable.tsx`
+    - removed the extra `Export readiness` field from item rows because blocked state is already visible elsewhere in Trust Queue and questionnaire health surfaces
+  - `src/components/TrustQueueReviewSessionBanner.tsx`
+    - removed duplicate end-of-session copy when there is no next item
+  - `src/app/approved-answers/page.tsx`
+    - removed the duplicate page-local heading block because the shell already provides the page title/subtitle
+    - removed the extra “showing the first N answers” card because the filtered result count already communicates truncation
+  - `src/components/ApprovedAnswersLibraryTable.tsx`
+    - removed the repeated “click to inspect” helper line from every row
+  - `src/components/ApprovedAnswerPicker.tsx`
+  - `src/components/ApprovedAnswerDetailDrawer.tsx`
+    - trimmed redundant explanatory copy while preserving preview/detail/apply flow
+  - `src/components/QuestionnaireDetailsPageClient.tsx`
+    - removed the duplicate `Approve reused (exact)` button from the queue metrics strip because the same action already exists in the header flow
+    - removed the low-value `Context review` subtitle from the drawer header
+  - `src/app/documents/page.tsx`
+    - removed confusing drag-and-drop wording from the upload area
+    - removed the low-value `Filter mode` stat card
+    - added visible labels for upload/search controls to clear the only serious/critical a11y issue found in the audit
+- Commands run:
+  - `npm run lint` => PASS
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npm test` => PASS (`42` passed files, `1` skipped; `134` passed tests, `1` skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run ui:audit -- http://localhost:4010/trust-queue` => completed
+  - `npm run ui:audit -- http://localhost:4010/questionnaires` => completed
+  - `npm run ui:audit -- http://localhost:4010/approved-answers` => completed
+  - `npm run ui:audit -- http://localhost:4010/documents` => completed
+  - `npm run ui:audit -- http://localhost:4010/` => completed
+  - consolidated UI audit artifacts copied to:
+    - `artifacts/ui-audit/2026-03-13T19-31-36Z/authenticated-ux-audit-01/`
+- UI audit/auth notes:
+  - Trust Queue:
+    - axe serious/critical: `0/0`
+    - console errors/warnings: `0/0`
+    - network failures: `0`
+    - DOM assertions: `1/4`
+  - Approved Answers:
+    - axe serious/critical: `0/0`
+    - console errors/warnings: `0/0`
+    - network failures: `0`
+    - DOM assertions: `1/4`
+  - Documents:
+    - axe serious/critical: `0/0`
+    - console errors: `6`
+    - network failures: `1`
+    - DOM assertions: `1/4`
+    - unauthenticated run still hit expected auth-gated `401`s, but the upload/search label issues were cleared
+  - Questionnaires:
+    - axe serious/critical: `0/0`
+    - console errors: `6`
+    - network failures: `1`
+    - DOM assertions: `1/4`
+    - unauthenticated run hit expected auth-gated `401` questionnaire fetches
+  - Home:
+    - axe serious/critical: `0/0`
+    - console errors: `12`
+    - network failures: `2`
+    - DOM assertions: `1/4`
+    - unauthenticated run rendered the shell/login redirect flow and hit expected auth-gated data fetches
+- Authenticated/manual audit notes:
+  - a true signed-in browser walkthrough was not possible in this shell session, so the UX pass relied on:
+    - code-level route review
+    - automated UI audits
+    - behavior-preserving cleanup in the visible MVP surfaces
+- Deferred post-launch UX ideas intentionally skipped:
+  - a dedicated signed-in usability pass for the home dashboard, questionnaire workbench, and approved-answer reuse flow
+  - broader visual consolidation of repeated metric card patterns across Trust Queue, library, and questionnaire pages

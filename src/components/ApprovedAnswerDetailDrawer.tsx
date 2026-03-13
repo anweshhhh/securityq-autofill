@@ -148,9 +148,6 @@ export function ApprovedAnswerDetailDrawer({
             <h2 id="approved-answer-detail-title" style={{ margin: 0 }}>
               Approved answer
             </h2>
-            <span style={{ color: "var(--muted-text)" }}>
-              Inspect trust metadata for this reusable claim without leaving the library.
-            </span>
           </div>
           <Button type="button" variant="ghost" onClick={onClose}>
             Close

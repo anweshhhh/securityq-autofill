@@ -79,9 +79,6 @@ export function ApprovedAnswersLibraryTable({ rows }: ApprovedAnswersLibraryTabl
                 >
                   <div style={{ display: "grid", gap: 6, maxWidth: "76ch" }}>
                     <strong style={{ fontSize: "1rem" }}>{row.answerPreview || "No approved answer text."}</strong>
-                    <span style={{ color: "var(--muted-text)", fontSize: "0.95rem" }}>
-                      Click to inspect freshness, provenance, and stale-reason metadata.
-                    </span>
                   </div>
                   <Badge tone={row.freshness === "STALE" ? "review" : "approved"}>
                     {row.freshness === "STALE" ? "Stale" : "Fresh"}
