@@ -43,6 +43,10 @@ function statusLabel(status: TrustQueueRow["reviewStatus"]): string {
   return "Open";
 }
 
+function priorityTone(priority: TrustQueueRow["priority"]): "review" | "draft" {
+  return priority === "P1" ? "review" : "draft";
+}
+
 function buildReviewHref(row: TrustQueueRow): string {
   const params = new URLSearchParams({
     itemId: row.itemId
@@ -73,6 +77,9 @@ export function TrustQueueTable({ rows }: TrustQueueTableProps) {
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
+      <div style={{ color: "var(--muted-text)", fontSize: "0.92rem" }}>
+        P1 stale approved · P2 needs review in blocked questionnaire · P3 other needs review
+      </div>
       {rows.map((row) => (
         <Card key={row.itemId}>
           <div
@@ -95,6 +102,7 @@ export function TrustQueueTable({ rows }: TrustQueueTableProps) {
                 <span style={{ color: "var(--muted-text)", fontSize: "0.95rem" }}>{row.questionnaireName}</span>
               </div>
               <div className="toolbar-row compact">
+                <Badge tone={priorityTone(row.priority)}>{row.priority}</Badge>
                 <Badge tone={statusTone(row.reviewStatus)}>{statusLabel(row.reviewStatus)}</Badge>
                 {row.freshness ? (
                   <Badge tone={row.freshness === "STALE" ? "review" : "approved"}>

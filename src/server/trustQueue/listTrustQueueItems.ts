@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { findStaleApprovedAnswerIds } from "@/server/approvedAnswers/staleness";
 
 export type TrustQueueFilter = "ALL" | "STALE" | "NEEDS_REVIEW";
+export type TrustQueuePriority = "P1" | "P2" | "P3";
 
 export type TrustQueueRow = {
   questionnaireId: string;
@@ -12,6 +13,7 @@ export type TrustQueueRow = {
   freshness: "FRESH" | "STALE" | null;
   approvedAt: string | null;
   isBlockedForApprovedOnlyExport: boolean;
+  priority: TrustQueuePriority;
 };
 
 export type TrustQueueQuestionnaireGroup = {
@@ -114,6 +116,34 @@ function buildQuestionnaireGroups(
 
       return left.questionnaireName.localeCompare(right.questionnaireName);
     });
+}
+
+function getTrustQueuePriority(params: {
+  freshness: TrustQueueRow["freshness"];
+  reviewStatus: TrustQueueRow["reviewStatus"];
+  isBlockedForApprovedOnlyExport: boolean;
+}): TrustQueuePriority {
+  if (params.freshness === "STALE") {
+    return "P1";
+  }
+
+  if (params.reviewStatus === "NEEDS_REVIEW" && params.isBlockedForApprovedOnlyExport) {
+    return "P2";
+  }
+
+  return "P3";
+}
+
+function priorityRank(priority: TrustQueuePriority): number {
+  if (priority === "P1") {
+    return 0;
+  }
+
+  if (priority === "P2") {
+    return 1;
+  }
+
+  return 2;
 }
 
 export async function listTrustQueueItemsForOrg(
@@ -234,20 +264,49 @@ export async function listTrustQueueItemsForOrg(
       } => row !== null
     );
 
-  const sortedRows = actionableRows.sort((left, right) => {
-    const leftPriority = left.freshness === "STALE" ? 0 : left.reviewStatus === "NEEDS_REVIEW" ? 1 : 2;
-    const rightPriority = right.freshness === "STALE" ? 0 : right.reviewStatus === "NEEDS_REVIEW" ? 1 : 2;
+  const blockedQuestionnaireIds = new Set(
+    actionableRows
+      .filter((row) => row.freshness === "STALE")
+      .map((row) => row.questionnaireId)
+  );
+
+  const prioritizedRows = actionableRows.map((row) => {
+    const isBlockedForApprovedOnlyExport = blockedQuestionnaireIds.has(row.questionnaireId);
+
+    return {
+      ...row,
+      isBlockedForApprovedOnlyExport,
+      priority: getTrustQueuePriority({
+        freshness: row.freshness,
+        reviewStatus: row.reviewStatus,
+        isBlockedForApprovedOnlyExport
+      })
+    };
+  });
+
+  const sortedRows = prioritizedRows.sort((left, right) => {
+    const leftPriority = priorityRank(left.priority);
+    const rightPriority = priorityRank(right.priority);
 
     if (leftPriority !== rightPriority) {
       return leftPriority - rightPriority;
+    }
+
+    if (left.isBlockedForApprovedOnlyExport !== right.isBlockedForApprovedOnlyExport) {
+      return left.isBlockedForApprovedOnlyExport ? -1 : 1;
     }
 
     if (left.sortTimestamp !== right.sortTimestamp) {
       return right.sortTimestamp - left.sortTimestamp;
     }
 
+    // Keep ties deterministic when priority and relevant timestamps match.
     if (left.questionnaireName !== right.questionnaireName) {
       return left.questionnaireName.localeCompare(right.questionnaireName);
+    }
+
+    if (left.questionPreview !== right.questionPreview) {
+      return left.questionPreview.localeCompare(right.questionPreview);
     }
 
     return left.rowIndex - right.rowIndex;
@@ -260,9 +319,9 @@ export async function listTrustQueueItemsForOrg(
         ? sortedRows.filter((row) => row.reviewStatus === "NEEDS_REVIEW")
         : sortedRows;
 
-  const staleRows = actionableRows.filter((row) => row.freshness === "STALE");
-  const needsReviewRows = actionableRows.filter((row) => row.reviewStatus === "NEEDS_REVIEW");
-  const questionnaireGroups = buildQuestionnaireGroups(actionableRows);
+  const staleRows = prioritizedRows.filter((row) => row.freshness === "STALE");
+  const needsReviewRows = prioritizedRows.filter((row) => row.reviewStatus === "NEEDS_REVIEW");
+  const questionnaireGroups = buildQuestionnaireGroups(prioritizedRows);
 
   return {
     rows: rows.slice(0, limit).map(({ rowIndex: _rowIndex, sortTimestamp: _sortTimestamp, ...row }) => row),

@@ -2191,3 +2191,42 @@ Current log of implemented MVP work (concise, execution-focused).
   - audit target was unauthenticated, so the route redirected to login and the remaining DOM assertion mismatch reflects the shared questionnaire-oriented audit script rather than a Trust Queue regression
 - Manual auth notes:
   - a signed-in `/trust-queue` questionnaire-group smoke test was not possible in this shell session
+
+## 2026-03-12 - trust-queue-priority-ordering-01
+
+- Prioritized Trust Queue item rows with deterministic workflow buckets:
+  - `src/server/trustQueue/listTrustQueueItems.ts`
+    - row shape now includes `priority: "P1" | "P2" | "P3"`
+    - classification:
+      - `P1` = stale approved item
+      - `P2` = needs-review item in a blocked questionnaire
+      - `P3` = other needs-review item
+    - item ordering now uses:
+      - priority bucket first
+      - blocked questionnaire first
+      - newest relevant persisted timestamp desc
+      - stable fallback by questionnaire name, question preview, and row index
+    - summary counts and questionnaire-group aggregates remain unchanged
+- Extended deterministic coverage:
+  - `src/server/trustQueue/listTrustQueueItems.test.ts`
+    - verifies P1/P2/P3 classification
+    - verifies cross-bucket ordering
+    - verifies stable fallback ordering when needs-review timestamps are equal
+    - verifies summary invariants remain unchanged
+- Updated queue row presentation:
+  - `src/components/TrustQueueTable.tsx`
+    - renders compact `P1` / `P2` / `P3` badges on item rows
+    - adds a small one-line legend for the bucket meanings without changing filters or questionnaire-group layout
+- Commands run:
+  - `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/app?schema=public npm test` => PASS (`40` passed files, `1` skipped; `123` passed tests, `1` skipped)
+  - `npm run build` => PASS (with existing Next.js dynamic-server-usage warnings on auth-scoped API routes)
+  - `npm run ui:audit -- http://localhost:4010/trust-queue` => completed with artifacts copied to:
+    - `artifacts/ui-audit/2026-03-13T02-16-30Z/trust-queue-priority-ordering-01/`
+- UI audit/auth notes:
+  - axe serious/critical: `0/0`
+  - console errors/warnings: `0/0`
+  - network failures: `0`
+  - DOM assertions: `1/4`
+  - audit target was unauthenticated, so the route redirected to login and the remaining DOM assertion mismatch reflects the shared questionnaire-oriented audit script rather than a priority-ordering regression
+- Manual auth notes:
+  - a signed-in `/trust-queue` priority-ordering smoke test was not possible in this shell session

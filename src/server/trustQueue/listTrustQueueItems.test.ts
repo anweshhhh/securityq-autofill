@@ -171,6 +171,14 @@ async function createNeedsReviewQuestion(params: {
   });
 }
 
+async function setQuestionUpdatedAt(questionId: string, updatedAt: Date) {
+  await prisma.$executeRaw`
+    UPDATE "Question"
+    SET "updatedAt" = ${updatedAt}
+    WHERE "id" = ${questionId}
+  `;
+}
+
 async function seedApprovedQuestion(params: {
   organizationId: string;
   questionnaireId: string;
@@ -282,7 +290,9 @@ describe.sequential("listTrustQueueItemsForOrg", () => {
       questionnaireId: questionnaireA.id,
       questionnaireName: "Org A Questionnaire",
       reviewStatus: "NEEDS_REVIEW",
-      freshness: null
+      freshness: null,
+      isBlockedForApprovedOnlyExport: false,
+      priority: "P3"
     });
     expect(queue.summary).toEqual({
       staleApprovalsCount: 0,
@@ -345,7 +355,8 @@ describe.sequential("listTrustQueueItemsForOrg", () => {
       itemId: stale.questionId,
       reviewStatus: "APPROVED",
       freshness: "STALE",
-      isBlockedForApprovedOnlyExport: true
+      isBlockedForApprovedOnlyExport: true,
+      priority: "P1"
     });
     expect(queue.summary).toEqual({
       staleApprovalsCount: 1,
@@ -393,7 +404,9 @@ describe.sequential("listTrustQueueItemsForOrg", () => {
     expect(queue.rows[0]).toMatchObject({
       itemId: needsReview.id,
       reviewStatus: "NEEDS_REVIEW",
-      freshness: null
+      freshness: null,
+      isBlockedForApprovedOnlyExport: false,
+      priority: "P3"
     });
     expect(queue.summary).toEqual({
       staleApprovalsCount: 0,
@@ -502,7 +515,8 @@ describe.sequential("listTrustQueueItemsForOrg", () => {
     expect(queue.rows).toHaveLength(1);
     expect(queue.rows[0]).toMatchObject({
       itemId: matched.id,
-      questionnaireName: "Vendor Alpha Review"
+      questionnaireName: "Vendor Alpha Review",
+      priority: "P3"
     });
     expect(queue.summary).toEqual({
       staleApprovalsCount: 0,
@@ -607,5 +621,95 @@ describe.sequential("listTrustQueueItemsForOrg", () => {
         blocked: false
       }
     ]);
+  });
+
+  it("classifies item priorities and keeps stable fallback ordering within the same bucket", async () => {
+    const organization = await createOrganization("priority-ordering");
+    const blockedQuestionnaire = await createQuestionnaire(organization.id, "Vendor Delta");
+    const p3QuestionnaireA = await createQuestionnaire(organization.id, "Vendor Alpha");
+    const p3QuestionnaireB = await createQuestionnaire(organization.id, "Vendor Beta");
+
+    const stale = await seedApprovedQuestion({
+      organizationId: organization.id,
+      questionnaireId: blockedQuestionnaire.id,
+      rowIndex: 0,
+      questionText: "Do you archive audit logs?",
+      answerText: "Audit logs are archived.",
+      chunkText: "Audit logs are archived for at least one year."
+    });
+
+    const blockedNeedsReview = await createNeedsReviewQuestion({
+      questionnaireId: blockedQuestionnaire.id,
+      rowIndex: 1,
+      questionText: "Do you review termination checklists?"
+    });
+
+    const p3Alpha = await createNeedsReviewQuestion({
+      questionnaireId: p3QuestionnaireA.id,
+      rowIndex: 0,
+      questionText: "Do you review firewall changes?"
+    });
+
+    const p3Beta = await createNeedsReviewQuestion({
+      questionnaireId: p3QuestionnaireB.id,
+      rowIndex: 0,
+      questionText: "Do you review router changes?"
+    });
+
+    const driftedText = `Priority drift ${randomUUID()}`;
+    await prisma.documentChunk.update({
+      where: {
+        id: stale.chunkId
+      },
+      data: {
+        content: driftedText,
+        evidenceFingerprint: computeEvidenceFingerprint(driftedText)
+      }
+    });
+
+    const sharedTimestamp = new Date("2026-03-12T12:00:00.000Z");
+    await setQuestionUpdatedAt(blockedNeedsReview.id, sharedTimestamp);
+    await setQuestionUpdatedAt(p3Alpha.id, sharedTimestamp);
+    await setQuestionUpdatedAt(p3Beta.id, sharedTimestamp);
+
+    const queue = await listTrustQueueItemsForOrg({ orgId: organization.id });
+
+    expect(queue.rows.map((row) => ({
+      itemId: row.itemId,
+      questionnaireName: row.questionnaireName,
+      priority: row.priority,
+      blocked: row.isBlockedForApprovedOnlyExport
+    }))).toEqual([
+      {
+        itemId: stale.questionId,
+        questionnaireName: "Vendor Delta",
+        priority: "P1",
+        blocked: true
+      },
+      {
+        itemId: blockedNeedsReview.id,
+        questionnaireName: "Vendor Delta",
+        priority: "P2",
+        blocked: true
+      },
+      {
+        itemId: p3Alpha.id,
+        questionnaireName: "Vendor Alpha",
+        priority: "P3",
+        blocked: false
+      },
+      {
+        itemId: p3Beta.id,
+        questionnaireName: "Vendor Beta",
+        priority: "P3",
+        blocked: false
+      }
+    ]);
+
+    expect(queue.summary).toEqual({
+      staleApprovalsCount: 1,
+      needsReviewCount: 3,
+      blockedQuestionnairesCount: 1
+    });
   });
 });
