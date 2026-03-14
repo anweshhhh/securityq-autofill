@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppAuthz } from "@/components/AppAuthzContext";
 import { CollapsibleInputSection } from "@/components/CollapsibleInputSection";
+import { OperationalSummaryBand } from "@/components/OperationalSummaryBand";
 import { Badge, Button, Card, TextInput, cx } from "@/components/ui";
 import { can, RbacAction } from "@/server/rbac";
 
@@ -306,18 +307,16 @@ export default function DocumentsPage() {
 
   return (
     <div className="page-stack">
-      <Card className="hero-panel hero-panel-compact">
-        <div className="hero-panel-copy">
-          <span className="eyebrow">Evidence operations</span>
-          <h2 style={{ margin: 0 }}>Keep the source library clean enough that reviewers can trust it.</h2>
-          <p className="muted hero-panel-text" style={{ margin: 0 }}>
-            Upload new evidence, keep only the latest versions in view, and remove stale files before they pollute
-            answer generation.
-          </p>
-          <div className="toolbar-row hero-action-row">
-            <a href="#upload" className="btn btn-primary">
-              Upload Evidence
-            </a>
+      <OperationalSummaryBand
+        kicker="Library health"
+        summary={
+          filteredDocuments.length > 0
+            ? `${filteredDocuments.length} evidence file${filteredDocuments.length === 1 ? "" : "s"} are visible in the current inventory view, with ${embeddedCount} already chunked and ready for grounded retrieval.`
+            : "Keep the evidence library clean and current so questionnaire answers stay grounded in trustworthy source material."
+        }
+        note="Ingestion belongs here. Review context belongs in the workbench."
+        actions={
+          <>
             <Button
               type="button"
               variant="secondary"
@@ -326,26 +325,29 @@ export default function DocumentsPage() {
             >
               {isLoading ? "Refreshing..." : "Refresh inventory"}
             </Button>
-          </div>
-        </div>
-        <div className="hero-panel-insights">
-          <div className="hero-mini-stat">
-            <span className="hero-mini-label">Visible docs</span>
-            <strong>{filteredDocuments.length}</strong>
-            <span className="hero-mini-helper">Current inventory view</span>
-          </div>
-          <div className="hero-mini-stat">
-            <span className="hero-mini-label">Embedded</span>
-            <strong>{embeddedCount}</strong>
-            <span className="hero-mini-helper">Chunked and ready</span>
-          </div>
-          <div className="hero-mini-stat">
-            <span className="hero-mini-label">Selected</span>
-            <strong>{selectedDocumentIds.length}</strong>
-            <span className="hero-mini-helper">Queued for bulk actions</span>
-          </div>
-        </div>
-      </Card>
+            <a href="#upload" className="btn btn-ghost">
+              Jump to upload
+            </a>
+          </>
+        }
+        stats={[
+          {
+            label: "Visible files",
+            value: filteredDocuments.length,
+            helper: "Current inventory view"
+          },
+          {
+            label: "Embedded",
+            value: embeddedCount,
+            helper: "Chunked and ready"
+          },
+          {
+            label: "Selected",
+            value: selectedDocumentIds.length,
+            helper: "Queued for bulk actions"
+          }
+        ]}
+      />
 
       <CollapsibleInputSection
         id="upload"
@@ -360,8 +362,8 @@ export default function DocumentsPage() {
         <form onSubmit={handleSubmit} className="page-stack">
           <div className="surface-split">
             <div className="empty-state upload-callout">
-              <h3 style={{ marginTop: 0 }}>Upload evidence files</h3>
-              <p>Add `.txt`, `.md`, or `.pdf` files to build the workspace evidence library.</p>
+              <h3 style={{ marginTop: 0 }}>Prefer final source packs</h3>
+              <p>Add `.txt`, `.md`, or `.pdf` files that represent the most current source of truth.</p>
               <p className="small muted" style={{ marginBottom: 0 }}>
                 The cleaner this library stays, the better autofill and stale-drift review behave downstream.
               </p>
@@ -391,23 +393,6 @@ export default function DocumentsPage() {
             <Button type="submit" variant="primary" disabled={isUploading || !selectedFile || !canUploadDocuments}>
               {isUploading ? "Uploading..." : "Upload Evidence"}
             </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => void fetchDocuments()}
-              disabled={isLoading || isUploading || isDeleting}
-            >
-              Refresh
-            </Button>
-            <label className="toolbar-row small muted" htmlFor="latest-only">
-              <input
-                id="latest-only"
-                type="checkbox"
-                checked={showLatestOnly}
-                onChange={(event) => setShowLatestOnly(event.target.checked)}
-              />
-              Show latest per original filename
-            </label>
           </div>
         </form>
       </CollapsibleInputSection>
@@ -432,7 +417,7 @@ export default function DocumentsPage() {
           <div className="section-copy">
             <span className="section-kicker">Inventory</span>
             <div>
-              <h2 style={{ marginBottom: 4 }}>Document Inventory</h2>
+              <h2 style={{ marginBottom: 4 }}>Evidence inventory</h2>
               <p className="muted" style={{ margin: 0 }}>
                 Track chunked status and remove stale files.
               </p>
@@ -448,7 +433,7 @@ export default function DocumentsPage() {
                 className="search-field-input"
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
-                placeholder="Search documents"
+                placeholder="Search evidence"
                 title="Filter document list"
               />
               {searchText.trim().length > 0 ? (
@@ -462,6 +447,15 @@ export default function DocumentsPage() {
                 </button>
               ) : null}
             </div>
+            <label className="toolbar-row small muted" htmlFor="latest-only">
+              <input
+                id="latest-only"
+                type="checkbox"
+                checked={showLatestOnly}
+                onChange={(event) => setShowLatestOnly(event.target.checked)}
+              />
+              Show latest versions only
+            </label>
             {canDeleteDocuments ? (
               <Button
                 type="button"

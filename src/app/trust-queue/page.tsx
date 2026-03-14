@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { OperationalSummaryBand } from "@/components/OperationalSummaryBand";
 import { TrustQueueQuestionnaireGroups } from "@/components/TrustQueueQuestionnaireGroups";
 import { TrustQueueTable } from "@/components/TrustQueueTable";
 import { Button, Card, TextInput, cx } from "@/components/ui";
@@ -115,39 +116,41 @@ export default async function TrustQueuePage({
 
   return (
     <div className="page-stack">
-      <Card className="hero-panel hero-panel-compact">
-        <div className="hero-panel-copy">
-          <span className="eyebrow">Review inbox</span>
-          <h2 style={{ margin: 0 }}>Start with the answers that can break confidence or block export readiness.</h2>
-          <p className="muted hero-panel-text" style={{ margin: 0 }}>
-            Stale approvals, unresolved questions, and blocked runs surface here before they slow the team down.
-          </p>
-          {startReviewHref ? (
-            <div className="toolbar-row hero-action-row">
-              <Link href={startReviewHref} className="btn btn-primary">
-                Start review
-              </Link>
-            </div>
-          ) : null}
-        </div>
-        <div className="hero-panel-insights">
-          <div className="hero-mini-stat">
-            <span className="hero-mini-label">Stale approvals</span>
-            <strong>{queue.summary.staleApprovalsCount}</strong>
-            <span className="hero-mini-helper">Approved answers that drifted</span>
-          </div>
-          <div className="hero-mini-stat">
-            <span className="hero-mini-label">Needs review</span>
-            <strong>{queue.summary.needsReviewCount}</strong>
-            <span className="hero-mini-helper">Questions still awaiting decisions</span>
-          </div>
-          <div className="hero-mini-stat">
-            <span className="hero-mini-label">Blocked questionnaires</span>
-            <strong>{queue.summary.blockedQuestionnairesCount}</strong>
-            <span className="hero-mini-helper">Workflows slowed by trust debt</span>
-          </div>
-        </div>
-      </Card>
+      <OperationalSummaryBand
+        kicker="Ready now"
+        summary={
+          queue.rows.length > 0
+            ? `${queue.rows.length} reviewer action${queue.rows.length === 1 ? "" : "s"} are waiting across ${
+                queue.questionnaireGroups.length
+              } questionnaire${queue.questionnaireGroups.length === 1 ? "" : "s"}.`
+            : "The inbox is clear right now. New stale approvals and unresolved answers will surface here as they appear."
+        }
+        note="Use the inbox to jump straight into the next risky decision instead of hunting through questionnaire runs."
+        actions={
+          startReviewHref ? (
+            <Link href={startReviewHref} className="btn btn-primary">
+              Start review
+            </Link>
+          ) : undefined
+        }
+        stats={[
+          {
+            label: "Stale approvals",
+            value: queue.summary.staleApprovalsCount,
+            helper: "Approved answers that drifted"
+          },
+          {
+            label: "Needs review",
+            value: queue.summary.needsReviewCount,
+            helper: "Questions still awaiting decisions"
+          },
+          {
+            label: "Blocked",
+            value: queue.summary.blockedQuestionnairesCount,
+            helper: "Questionnaires carrying trust debt"
+          }
+        ]}
+      />
 
       <Card className="section-shell">
         <div className="card-title-row">

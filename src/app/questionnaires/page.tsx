@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAppAuthz } from "@/components/AppAuthzContext";
 import { CollapsibleInputSection } from "@/components/CollapsibleInputSection";
 import { ExportModal } from "@/components/ExportModal";
+import { OperationalSummaryBand } from "@/components/OperationalSummaryBand";
 import { Badge, Button, Card, TextInput, cx } from "@/components/ui";
 import { can, RbacAction } from "@/server/rbac";
 
@@ -366,40 +367,52 @@ export default function QuestionnairesPage() {
 
   return (
     <div className="page-stack">
-      <Card className="hero-panel hero-panel-compact">
-        <div className="hero-panel-copy">
-          <span className="eyebrow">Pipeline overview</span>
-          <h2 style={{ margin: 0 }}>Keep imports, review runs, and exports on one surface.</h2>
-          <p className="muted hero-panel-text" style={{ margin: 0 }}>
-            Parse CSVs, launch autofill, and jump straight back into the questionnaires that still need decisions.
-          </p>
-          <div className="toolbar-row hero-action-row">
-            <Link href="#import" className="btn btn-primary">
-              Import Questionnaire
-            </Link>
+      <OperationalSummaryBand
+        kicker="Run health"
+        summary={
+          hasQuestionnaires
+            ? `${questionnaireSummary.totalQuestionnaires} questionnaire run${
+                questionnaireSummary.totalQuestionnaires === 1 ? "" : "s"
+              } are active, with ${questionnaireSummary.totalNotFound} unresolved row${
+                questionnaireSummary.totalNotFound === 1 ? "" : "s"
+              } still needing evidence or reviewer attention.`
+            : "Import the first questionnaire to create a review run, then route unresolved answers back through the inbox."
+        }
+        note="This surface is for import, rerun, and export. The inbox should stay focused on review decisions."
+        actions={
+          <>
             <Button type="button" variant="secondary" onClick={() => void fetchQuestionnaires()} disabled={isLoadingList}>
               {isLoadingList ? "Refreshing..." : "Refresh list"}
             </Button>
-          </div>
-        </div>
-        <div className="hero-panel-insights">
-          <div className="hero-mini-stat">
-            <span className="hero-mini-label">Questionnaires</span>
-            <strong>{questionnaireSummary.totalQuestionnaires}</strong>
-            <span className="hero-mini-helper">Saved runs</span>
-          </div>
-          <div className="hero-mini-stat">
-            <span className="hero-mini-label">Questions</span>
-            <strong>{questionnaireSummary.totalQuestions}</strong>
-            <span className="hero-mini-helper">Imported rows</span>
-          </div>
-          <div className="hero-mini-stat">
-            <span className="hero-mini-label">Answered</span>
-            <strong>{questionnaireSummary.totalAnswered}</strong>
-            <span className="hero-mini-helper">Draft or approved answers</span>
-          </div>
-        </div>
-      </Card>
+            {hasQuestionnaires ? (
+              <Link href="/review/inbox" className="btn btn-ghost">
+                Open inbox
+              </Link>
+            ) : (
+              <Link href="#import" className="btn btn-ghost">
+                Jump to import
+              </Link>
+            )}
+          </>
+        }
+        stats={[
+          {
+            label: "Runs",
+            value: questionnaireSummary.totalQuestionnaires,
+            helper: "Saved questionnaire workflows"
+          },
+          {
+            label: "Questions",
+            value: questionnaireSummary.totalQuestions,
+            helper: "Imported questionnaire rows"
+          },
+          {
+            label: "Answered",
+            value: questionnaireSummary.totalAnswered,
+            helper: "Draft or approved answers"
+          }
+        ]}
+      />
 
       <CollapsibleInputSection
         id="import"
@@ -475,9 +488,6 @@ export default function QuestionnairesPage() {
             >
               {isImporting ? "Importing..." : "Create Questionnaire"}
             </Button>
-            <Button type="button" variant="secondary" disabled={isLoadingList} onClick={() => void fetchQuestionnaires()}>
-              Refresh list
-            </Button>
           </div>
         </form>
 
@@ -528,9 +538,9 @@ export default function QuestionnairesPage() {
       <Card className="questionnaires-list-card section-shell">
         <div className="card-title-row">
           <div className="section-copy">
-            <span className="section-kicker">Saved runs</span>
+            <span className="section-kicker">Run inventory</span>
             <div>
-              <h2 style={{ marginBottom: 4 }}>Saved Questionnaires</h2>
+              <h2 style={{ marginBottom: 4 }}>Recent runs</h2>
               <p className="muted small" style={{ margin: "2px 0 0" }}>
                 {hasQuestionnaires
                   ? "Most recently updated first."

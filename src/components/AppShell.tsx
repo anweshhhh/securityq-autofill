@@ -23,6 +23,7 @@ type PageMeta = {
   kicker: string;
   title: string;
   subtitle: string;
+  compact?: boolean;
 };
 
 type MePayload = {
@@ -65,7 +66,7 @@ function getPageMeta(pathname: string): PageMeta {
     return {
       kicker: "Review",
       title: "Library",
-      subtitle: "Reusable approved answers with freshness, provenance, and reuse context."
+      subtitle: "Reusable reviewer decisions with freshness, provenance, and reuse context."
     };
   }
 
@@ -80,32 +81,33 @@ function getPageMeta(pathname: string): PageMeta {
   if (pathname.startsWith("/questionnaires/")) {
     return {
       kicker: "Review",
-      title: "Workbench",
-      subtitle: "Queue, answer, and evidence aligned in one focused decision surface."
+      title: "Review Workbench",
+      subtitle: "Queue, answer, and evidence aligned in one focused decision surface.",
+      compact: true
     };
   }
 
   if (pathname === "/questionnaires") {
     return {
       kicker: "Questionnaires",
-      title: "Runs",
-      subtitle: "Import, run, and export questionnaire workflows without losing operating context."
+      title: "Questionnaires",
+      subtitle: "Run imports, autofill, and exports without losing review context."
     };
   }
 
   if (pathname.startsWith("/evidence") || pathname.startsWith("/documents")) {
     return {
       kicker: "Evidence",
-      title: "Evidence Library",
-      subtitle: "Keep source material current, healthy, and ready for grounded answer generation."
+      title: "Evidence",
+      subtitle: "Keep source material current, healthy, and grounded for reviewer decisions."
     };
   }
 
   if (pathname.startsWith("/settings")) {
     return {
       kicker: "Settings",
-      title: "Workspace Settings",
-      subtitle: "Manage the team, governance surface, and access posture for the active workspace."
+      title: "Workspace",
+      subtitle: "Manage access, governance, and the team around the active workspace."
     };
   }
 
@@ -268,6 +270,7 @@ export function AppShell({ devMode, children }: AppShellProps) {
   }, [pathname]);
 
   const pageMeta = getPageMeta(pathname);
+  const sectionTabs = subnavItems.length > 1 ? subnavItems : [];
   const primaryAction = getPrimaryAction(pathname, authzState.role);
   const accountEmail = session?.user?.email ?? authzState.userEmail ?? "Signed in";
   const accountOrgName = authzState.orgName ?? "Workspace";
@@ -668,35 +671,31 @@ export function AppShell({ devMode, children }: AppShellProps) {
           </div>
         </div>
 
-        {subnavItems.length > 0 ? (
-          <div className="product-subnav-shell">
-            <div className="shell-container product-subnav-inner">
-              <nav className="product-subnav" aria-label="Section">
-                {subnavItems.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cx("product-subnav-link", item.activeWhen(pathname) && "active")}
-                    aria-current={item.activeWhen(pathname) ? "page" : undefined}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </nav>
-            </div>
-          </div>
-        ) : null}
       </header>
 
       <main id="main-content" className="product-main">
         <AppAuthzProvider value={authzState}>
           <div className="shell-container product-main-inner">
-            <header className="product-page-intro">
+            <header className={cx("product-page-intro", pageMeta.compact && "product-page-intro-compact")}>
               <span className="product-page-kicker">{pageMeta.kicker}</span>
               <div className="product-page-copy">
                 <h1>{pageMeta.title}</h1>
                 <p>{pageMeta.subtitle}</p>
               </div>
+              {sectionTabs.length > 0 ? (
+                <nav className="product-page-tabs" aria-label="Section">
+                  {sectionTabs.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cx("product-page-tab-link", item.activeWhen(pathname) && "active")}
+                      aria-current={item.activeWhen(pathname) ? "page" : undefined}
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </nav>
+              ) : null}
             </header>
             <div className="page-content-stack">{children}</div>
           </div>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ApprovedAnswersLibraryTable } from "@/components/ApprovedAnswersLibraryTable";
+import { OperationalSummaryBand } from "@/components/OperationalSummaryBand";
 import { Card, Button, TextInput, cx } from "@/components/ui";
 import { getRequestContext, RequestContextError } from "@/lib/requestContext";
 import {
@@ -106,33 +107,34 @@ export default async function ApprovedAnswersPage({
 
   return (
     <div className="page-stack">
-      <Card className="hero-panel hero-panel-compact">
-        <div className="hero-panel-copy">
-          <span className="eyebrow">Review library</span>
-          <h2 style={{ margin: 0 }}>Turn strong reviewer decisions into a reusable answer system.</h2>
-          <p className="muted hero-panel-text" style={{ margin: 0 }}>
-            Fresh approvals become the building blocks for faster future questionnaires, with provenance and reuse
-            signals intact.
-          </p>
-        </div>
-        <div className="hero-panel-insights">
-          <div className="hero-mini-stat">
-            <span className="hero-mini-label">Total</span>
-            <strong>{library.counts.total}</strong>
-            <span className="hero-mini-helper">Approved answers in the library</span>
-          </div>
-          <div className="hero-mini-stat">
-            <span className="hero-mini-label">Fresh</span>
-            <strong>{library.counts.fresh}</strong>
-            <span className="hero-mini-helper">Ready for confident reuse</span>
-          </div>
-          <div className="hero-mini-stat">
-            <span className="hero-mini-label">Stale</span>
-            <strong>{library.counts.stale}</strong>
-            <span className="hero-mini-helper">Needs re-validation</span>
-          </div>
-        </div>
-      </Card>
+      <OperationalSummaryBand
+        kicker="Reusable coverage"
+        summary={
+          library.counts.total > 0
+            ? `${library.counts.fresh} fresh answer${library.counts.fresh === 1 ? "" : "s"} are ready for confident reuse, with ${
+                library.counts.stale
+              } needing another pass.`
+            : "The library will fill as reviewers approve strong answers with provenance."
+        }
+        note="Treat the library as the reusable trust layer behind each new questionnaire run."
+        stats={[
+          {
+            label: "Total",
+            value: library.counts.total,
+            helper: "Approved answers in the library"
+          },
+          {
+            label: "Fresh",
+            value: library.counts.fresh,
+            helper: "Ready for confident reuse"
+          },
+          {
+            label: "Stale",
+            value: library.counts.stale,
+            helper: "Needs re-validation"
+          }
+        ]}
+      />
 
       <Card className="section-shell">
         <div className="card-title-row">

@@ -3263,18 +3263,20 @@ body::before {
 /* Editorial shell and route restructure */
 
 :root {
-  --bg-shell: #09101d;
-  --bg-shell-elevated: rgba(13, 22, 38, 0.86);
-  --bg-shell-border: rgba(175, 196, 229, 0.14);
-  --bg-canvas: #f7f1e8;
-  --surface: rgba(255, 252, 248, 0.92);
-  --surface-muted: rgba(249, 243, 233, 0.9);
-  --border: rgba(129, 115, 96, 0.16);
-  --text: #171a22;
-  --muted-text: #5a6272;
-  --shell-text: #f5f7fb;
-  --shell-muted-text: rgba(230, 238, 250, 0.76);
-  --brand: #1d6de2;
+  --bg-shell: #091221;
+  --bg-shell-elevated: rgba(11, 20, 36, 0.88);
+  --bg-shell-border: rgba(140, 163, 214, 0.18);
+  --bg-canvas: #f5f1e8;
+  --surface: rgba(255, 252, 248, 0.96);
+  --surface-muted: rgba(241, 232, 218, 0.92);
+  --border: rgba(216, 208, 196, 0.88);
+  --text: #141b25;
+  --muted-text: #667487;
+  --shell-text: #f5f8ff;
+  --shell-muted-text: rgba(227, 235, 249, 0.78);
+  --brand: #2f6ef3;
+  --brand-strong: #4f46e5;
+  --accent-warm: #d89a43;
   --brand-foreground: #f8fbff;
   --radius: 20px;
 }
@@ -3283,18 +3285,26 @@ body {
   font-family: var(--font-sans), "Segoe UI", sans-serif;
   color: var(--text);
   background:
-    radial-gradient(circle at top left, rgba(53, 104, 189, 0.24) 0%, rgba(9, 16, 29, 0) 36%),
-    radial-gradient(circle at top right, rgba(220, 153, 83, 0.16) 0%, rgba(9, 16, 29, 0) 30%),
-    linear-gradient(180deg, #0a1220 0%, #121a2d 18%, #f7f1e8 18%, #f7f1e8 100%);
+    radial-gradient(circle at top left, rgba(47, 110, 243, 0.18) 0%, rgba(9, 18, 33, 0) 32%),
+    radial-gradient(circle at top right, rgba(79, 70, 229, 0.16) 0%, rgba(9, 18, 33, 0) 28%),
+    radial-gradient(circle at 85% 12%, rgba(216, 154, 67, 0.14) 0%, rgba(9, 18, 33, 0) 20%),
+    linear-gradient(180deg, #091221 0%, #101b31 16%, #f5f1e8 16%, #f5f1e8 100%);
 }
 
 h1,
-h2,
-h3,
+.landing-hero-copy h1,
+.landing-section-heading h2,
+.landing-cta-copy h2,
+.auth-stage-copy h1 {
+  font-family: var(--font-display), Georgia, serif;
+}
+
 .landing-kicker,
 .landing-stage-label,
-.product-page-kicker {
-  font-family: var(--font-display), Georgia, serif;
+.product-page-kicker,
+.section-kicker,
+.eyebrow {
+  font-family: var(--font-sans), "Segoe UI", sans-serif;
 }
 
 .app-shell {
@@ -3321,8 +3331,8 @@ h3,
   width: 16px;
   height: 16px;
   border-radius: 999px;
-  background: linear-gradient(135deg, #4aa0ff 0%, #1e66d3 48%, #f4c27d 100%);
-  box-shadow: 0 0 0 6px rgba(76, 139, 228, 0.12);
+  background: linear-gradient(135deg, var(--brand) 0%, var(--brand-strong) 56%, var(--accent-warm) 100%);
+  box-shadow: 0 0 0 6px rgba(47, 110, 243, 0.14);
   flex-shrink: 0;
 }
 
@@ -3349,23 +3359,26 @@ h3,
   position: sticky;
   top: 0;
   z-index: 40;
-  backdrop-filter: blur(22px);
-  background: rgba(10, 18, 32, 0.8);
+  backdrop-filter: blur(18px) saturate(1.35);
+  background:
+    radial-gradient(circle at left top, rgba(79, 70, 229, 0.22) 0%, rgba(79, 70, 229, 0) 32%),
+    radial-gradient(circle at right top, rgba(47, 110, 243, 0.18) 0%, rgba(47, 110, 243, 0) 30%),
+    linear-gradient(180deg, rgba(9, 18, 33, 0.94) 0%, rgba(11, 20, 36, 0.88) 100%);
   border-bottom: 1px solid var(--bg-shell-border);
+  box-shadow: 0 14px 34px rgba(5, 12, 24, 0.16);
 }
 
 .public-site-header-inner,
-.product-site-header-inner,
-.product-subnav-inner {
+.product-site-header-inner {
   display: flex;
   align-items: center;
-  gap: 20px;
-  min-height: 74px;
+  gap: 18px;
+  min-height: 64px;
 }
 
 .public-site-nav,
 .product-main-nav,
-.product-subnav {
+.product-page-tabs {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -3378,13 +3391,13 @@ h3,
 
 .public-site-nav a,
 .product-main-nav-link,
-.product-subnav-link {
+.product-page-tab-link {
   color: var(--shell-muted-text);
   text-decoration: none;
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  padding: 10px 14px;
+  padding: 9px 13px;
   border-radius: 999px;
   border: 1px solid transparent;
   transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease;
@@ -3392,17 +3405,17 @@ h3,
 
 .public-site-nav a:hover,
 .product-main-nav-link:hover,
-.product-subnav-link:hover {
+.product-page-tab-link:hover {
   color: #ffffff;
-  background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .product-main-nav-link.active,
-.product-subnav-link.active {
+.product-page-tab-link.active {
   color: #ffffff;
-  background: rgba(34, 109, 226, 0.22);
-  border-color: rgba(105, 163, 245, 0.28);
+  background: rgba(79, 70, 229, 0.18);
+  border-color: rgba(121, 116, 237, 0.34);
 }
 
 .product-site-actions,
@@ -3413,13 +3426,9 @@ h3,
   margin-left: auto;
 }
 
-.product-subnav-shell {
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-}
-
 .public-main,
 .product-main {
-  padding: 34px 0 56px;
+  padding: 26px 0 60px;
 }
 
 .public-main-inner {
@@ -3428,13 +3437,32 @@ h3,
 
 .product-main-inner {
   display: grid;
-  gap: 24px;
+  gap: 18px;
 }
 
 .product-page-intro {
+  position: relative;
   display: grid;
-  gap: 12px;
-  padding: 24px 0 4px;
+  gap: 14px;
+  margin-top: -18px;
+  padding: 22px 26px 20px;
+  border: 1px solid var(--border);
+  border-radius: 30px;
+  background: linear-gradient(180deg, rgba(255, 252, 248, 0.98) 0%, rgba(241, 232, 218, 0.92) 100%);
+  box-shadow: 0 28px 64px rgba(8, 16, 30, 0.1);
+}
+
+.product-page-intro::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.92), transparent);
+}
+
+.product-page-intro-compact {
+  gap: 10px;
+  padding: 18px 22px 16px;
 }
 
 .product-page-kicker,
@@ -3445,7 +3473,7 @@ h3,
 }
 
 .product-page-kicker {
-  color: rgba(230, 238, 250, 0.7);
+  color: #6b7688;
 }
 
 .landing-kicker {
@@ -3454,28 +3482,56 @@ h3,
 
 .product-page-copy {
   display: grid;
-  gap: 8px;
-  max-width: 780px;
+  gap: 6px;
+  max-width: 820px;
 }
 
 .product-page-copy h1 {
   margin: 0;
-  font-size: clamp(2.2rem, 4vw, 4.1rem);
-  line-height: 0.96;
+  font-family: var(--font-sans), "Segoe UI", sans-serif;
+  font-size: clamp(2rem, 3.2vw, 3.2rem);
+  font-weight: 700;
+  line-height: 0.94;
   letter-spacing: -0.04em;
-  color: #f7f9fd;
-  text-shadow: 0 18px 34px rgba(8, 16, 30, 0.24);
+  color: var(--text);
+}
+
+.product-page-intro-compact .product-page-copy h1 {
+  font-size: clamp(1.7rem, 2.4vw, 2.5rem);
 }
 
 .product-page-copy p {
   margin: 0;
-  max-width: 720px;
-  color: rgba(233, 240, 250, 0.74);
-  font-size: 1rem;
+  max-width: 64ch;
+  color: #5c6a7d;
+  font-size: 0.98rem;
+}
+
+.product-page-tabs {
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.product-page-tab-link {
+  color: #536174;
+  background: rgba(241, 232, 218, 0.6);
+  border-color: rgba(216, 208, 196, 0.82);
+}
+
+.product-page-tab-link:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.88);
+  border-color: rgba(208, 200, 189, 0.92);
+}
+
+.product-page-tab-link.active {
+  color: #1f3473;
+  background: rgba(79, 70, 229, 0.1);
+  border-color: rgba(106, 98, 233, 0.28);
 }
 
 .page-stack {
-  gap: 22px;
+  gap: 20px;
 }
 
 .landing-page {
@@ -3724,8 +3780,8 @@ h3,
   min-height: 44px;
   padding: 8px 12px;
   border-radius: 999px;
-  border: 1px solid rgba(220, 232, 247, 0.14);
-  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(224, 233, 248, 0.14);
+  background: rgba(255, 255, 255, 0.08);
   color: #edf4ff;
   max-width: min(360px, 42vw);
 }
@@ -3742,7 +3798,7 @@ h3,
   border-radius: 999px;
   font-size: 11px;
   font-weight: 800;
-  background: linear-gradient(135deg, rgba(79, 150, 245, 0.72) 0%, rgba(30, 102, 211, 0.78) 100%);
+  background: linear-gradient(135deg, rgba(47, 110, 243, 0.88) 0%, rgba(79, 70, 229, 0.82) 100%);
   color: #ffffff;
 }
 
@@ -3761,7 +3817,7 @@ h3,
   top: calc(100% + 12px);
   width: min(340px, calc(100vw - 24px));
   border-radius: 22px;
-  border-color: rgba(131, 116, 95, 0.18);
+  border-color: rgba(216, 208, 196, 0.9);
   background: rgba(255, 252, 248, 0.98);
   box-shadow: 0 26px 60px rgba(10, 18, 32, 0.18);
   padding: 16px;
@@ -3777,55 +3833,164 @@ h3,
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #2275eb 0%, #124fa7 100%);
+  background: linear-gradient(135deg, var(--brand) 0%, var(--brand-strong) 100%);
+  border-color: rgba(50, 86, 224, 0.84);
+  box-shadow: 0 16px 28px rgba(54, 80, 212, 0.24);
 }
 
 .btn-secondary {
-  background: rgba(255, 253, 249, 0.94);
+  background: rgba(255, 252, 247, 0.96);
+  border-color: rgba(216, 208, 196, 0.94);
 }
 
 .btn-ghost {
-  background: rgba(255, 255, 255, 0.38);
+  background: rgba(255, 255, 255, 0.58);
+  border-color: rgba(216, 208, 196, 0.88);
 }
 
-.hero-panel {
-  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
-  padding: 24px 26px;
-  border-radius: 30px;
-  border: 1px solid rgba(131, 116, 95, 0.14);
-  background:
-    radial-gradient(circle at top right, rgba(70, 139, 241, 0.1) 0%, rgba(70, 139, 241, 0) 28%),
-    linear-gradient(145deg, rgba(255, 252, 248, 0.96) 0%, rgba(246, 239, 229, 0.98) 100%);
-  box-shadow: 0 28px 60px rgba(8, 18, 32, 0.08);
+.card {
+  background: linear-gradient(180deg, rgba(255, 252, 248, 0.98) 0%, rgba(250, 245, 237, 0.98) 100%);
+  border-color: rgba(216, 208, 196, 0.88);
+  box-shadow: 0 22px 52px rgba(12, 22, 39, 0.08);
 }
 
-.hero-panel h2 {
-  font-family: var(--font-display), Georgia, serif;
-  font-size: clamp(2rem, 3vw, 3.1rem);
-  line-height: 0.96;
-  letter-spacing: -0.05em;
-  color: #182134;
+.card::before {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.92), transparent);
 }
 
-.hero-panel-text {
-  color: #5a6272;
-  max-width: 52ch;
+.card:hover {
+  box-shadow: 0 28px 58px rgba(12, 22, 39, 0.1);
 }
 
-.hero-panel-insights {
+.card-muted {
+  background: linear-gradient(180deg, rgba(247, 241, 232, 0.92) 0%, rgba(242, 234, 220, 0.96) 100%);
+}
+
+.card-title-row h2,
+.card-title-row h3,
+.card-title-row h4 {
+  font-family: var(--font-sans), "Segoe UI", sans-serif;
+  letter-spacing: -0.03em;
+}
+
+.section-shell {
+  padding-top: 20px;
+  padding-bottom: 20px;
+}
+
+.data-table-wrap {
+  border-color: rgba(216, 208, 196, 0.88);
+  background: rgba(255, 252, 248, 0.94);
+}
+
+.data-table thead th {
+  background: rgba(241, 232, 218, 0.92);
+  color: #49586b;
+}
+
+.data-table tbody tr:hover td {
+  background: rgba(244, 238, 228, 0.88);
+}
+
+.search-field {
+  border-color: rgba(216, 208, 196, 0.9);
+  background: rgba(255, 252, 247, 0.92);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+.search-field-label {
+  color: #667487;
+}
+
+.search-field-clear {
+  border-color: rgba(216, 208, 196, 0.9);
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.empty-state,
+.empty-shell {
+  border-color: rgba(123, 151, 204, 0.14);
+  background: linear-gradient(145deg, rgba(10, 24, 44, 0.98) 0%, rgba(17, 35, 64, 0.96) 100%);
+}
+
+.message-banner {
+  border-color: rgba(216, 208, 196, 0.88);
+  background: rgba(255, 252, 247, 0.88);
+}
+
+.eyebrow,
+.section-kicker,
+.card-chip-label {
+  background: rgba(20, 32, 51, 0.07);
+  color: #506071;
+}
+
+.ops-band {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+  align-items: start;
+  padding: 22px 24px;
+}
+
+.ops-band-copy {
+  display: grid;
   gap: 12px;
+  align-content: start;
 }
 
-.hero-mini-stat {
-  border-radius: 22px;
-  border: 1px solid rgba(132, 118, 96, 0.14);
+.ops-band-copy p {
+  margin: 0;
+  max-width: 60ch;
+  color: #5f6c7f;
+}
+
+.ops-band-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ops-band-stats {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+}
+
+.ops-stat {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(216, 208, 196, 0.92);
   background: rgba(255, 255, 255, 0.72);
-  min-height: 112px;
 }
 
-.hero-mini-stat strong {
-  font-size: 2rem;
-  color: #182134;
+.ops-stat-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6a7789;
+}
+
+.ops-stat-value {
+  font-size: 1.85rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--text);
+}
+
+.ops-stat-helper {
+  font-size: 12px;
+  color: #607084;
+}
+
+.ops-band-note {
+  font-size: 0.94rem;
+  color: #506071;
 }
 
 @media (max-width: 1080px) {
@@ -3843,10 +4008,14 @@ h3,
   }
 
   .public-site-nav,
-  .product-main-nav {
-    order: 3;
+  .product-main-nav,
+  .product-page-tabs {
     overflow-x: auto;
     padding-bottom: 4px;
+  }
+
+  .product-page-tabs {
+    flex-wrap: nowrap;
   }
 
   .public-site-actions,
@@ -3866,6 +4035,10 @@ h3,
     align-items: start;
     flex-direction: column;
   }
+
+  .ops-band {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
@@ -3875,11 +4048,12 @@ h3,
 
   .public-main,
   .product-main {
-    padding-top: 20px;
+    padding-top: 18px;
   }
 
   .product-page-intro {
-    padding-top: 8px;
+    margin-top: -12px;
+    padding: 18px 18px 16px;
   }
 
   .product-page-copy h1,
@@ -3919,7 +4093,7 @@ h3,
   }
 
   .product-main-nav-link,
-  .product-subnav-link,
+  .product-page-tab-link,
   .public-site-nav a {
     padding: 8px 10px;
     font-size: 12px;
@@ -3927,6 +4101,14 @@ h3,
 
   .account-menu-org {
     max-width: 112px;
+  }
+
+  .ops-band {
+    padding: 18px;
+  }
+
+  .ops-band-actions {
+    width: 100%;
   }
 }
 

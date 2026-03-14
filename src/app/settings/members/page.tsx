@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useAppAuthz } from "@/components/AppAuthzContext";
+import { OperationalSummaryBand } from "@/components/OperationalSummaryBand";
 import { Badge, Button, Card, TextInput, cx } from "@/components/ui";
 import { can, RbacAction } from "@/server/rbac";
 
@@ -204,33 +205,36 @@ export default function MembersSettingsPage() {
 
   return (
     <div className="page-stack">
-      <Card className="hero-panel hero-panel-compact">
-        <div className="hero-panel-copy">
-          <span className="eyebrow">Access and governance</span>
-          <h2 style={{ margin: 0 }}>Keep the right people close to the workflow and everyone else out of the way.</h2>
-          <p className="muted hero-panel-text" style={{ margin: 0 }}>
-            Member roles control who can invite collaborators, edit approvals, and manage evidence across the active
-            workspace.
-          </p>
-        </div>
-        <div className="hero-panel-insights">
-          <div className="hero-mini-stat">
-            <span className="hero-mini-label">Members</span>
-            <strong>{membershipSummary.total}</strong>
-            <span className="hero-mini-helper">Active in this workspace</span>
-          </div>
-          <div className="hero-mini-stat">
-            <span className="hero-mini-label">Admins</span>
-            <strong>{membershipSummary.OWNER + membershipSummary.ADMIN}</strong>
-            <span className="hero-mini-helper">Owner and admin seats</span>
-          </div>
-          <div className="hero-mini-stat">
-            <span className="hero-mini-label">Reviewers</span>
-            <strong>{membershipSummary.REVIEWER}</strong>
-            <span className="hero-mini-helper">Hands-on approvers</span>
-          </div>
-        </div>
-      </Card>
+      <OperationalSummaryBand
+        kicker="Access posture"
+        summary={
+          membershipSummary.total > 0
+            ? `${membershipSummary.OWNER + membershipSummary.ADMIN} admin seat${
+                membershipSummary.OWNER + membershipSummary.ADMIN === 1 ? "" : "s"
+              } are governing a workspace with ${membershipSummary.REVIEWER} active reviewer${
+                membershipSummary.REVIEWER === 1 ? "" : "s"
+              }.`
+            : "Invite the first collaborators once the workspace needs dedicated reviewers or admins."
+        }
+        note="Membership is the governance layer around evidence, approvals, and export permissions."
+        stats={[
+          {
+            label: "Members",
+            value: membershipSummary.total,
+            helper: "Active in this workspace"
+          },
+          {
+            label: "Admins",
+            value: membershipSummary.OWNER + membershipSummary.ADMIN,
+            helper: "Owner and admin seats"
+          },
+          {
+            label: "Reviewers",
+            value: membershipSummary.REVIEWER,
+            helper: "Hands-on approvers"
+          }
+        ]}
+      />
 
       {message ? (
         <div className={cx("message-banner", messageType === "error" ? "error" : "success")}>{message}</div>
