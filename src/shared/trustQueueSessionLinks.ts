@@ -35,7 +35,7 @@ export function buildTrustQueueSessionHref(params: {
   const searchParams = new URLSearchParams({
     itemId: params.itemId,
     filter: params.rowFilter,
-    source: "trust-queue",
+    source: "review",
     queueFilter: params.queueFilter
   });
 

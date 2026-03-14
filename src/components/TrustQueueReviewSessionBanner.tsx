@@ -29,13 +29,13 @@ export function TrustQueueReviewSessionBanner({
       >
         <div style={{ display: "grid", gap: 6 }}>
           <div className="toolbar-row compact" style={{ alignItems: "center" }}>
-            <strong>Reviewing from Trust Queue</strong>
+            <strong>Reviewing from Inbox</strong>
             <Badge tone={priorityTone(currentPriority)}>{currentPriority}</Badge>
           </div>
           <span className="small muted">
             {nextItemHref
-              ? "Stay in the queue and move to the next blocker when you are ready."
-              : "No more queue items."}
+              ? "Stay in the review flow and move to the next priority item when you are ready."
+              : "No more inbox items."}
           </span>
         </div>
 

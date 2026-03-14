@@ -2637,6 +2637,486 @@ export default function QuestionnaireDetailsPageClient({
       return <span key={`segment-${index}`}>{segment}</span>;
     });
   }, [activeEvidence?.snippet, questionKeyTerms]);
+  const showMobileContextPanel = isMobileViewport && isContextOpen && Boolean(selectedQuestion);
+
+  function renderAnswerTabContent() {
+    if (!selectedQuestion) {
+      return <div className="muted small">Select a question to inspect the answer.</div>;
+    }
+
+    return (
+      <div className="context-section-stack">
+        <div className="toolbar-row compact">
+          <Badge tone={statusTone(selectedQuestion.reviewStatus)} title={statusLabel(selectedQuestion.reviewStatus)}>
+            {statusLabel(selectedQuestion.reviewStatus)}
+          </Badge>
+          {selectedQuestion.reuseMatchType ? (
+            <Badge tone={getReuseBadgeTone(selectedQuestion.reuseMatchType) ?? "draft"}>
+              {getReuseBadgeLabel(selectedQuestion.reuseMatchType)}
+            </Badge>
+          ) : null}
+          <Badge tone="draft">
+            {selectedQuestionCitationCount} citation{selectedQuestionCitationCount === 1 ? "" : "s"}
+          </Badge>
+        </div>
+
+        <Card className="card-muted">
+          <p className="workbench-question-text" style={{ margin: 0 }}>
+            {selectedQuestion.text || "No question text available."}
+          </p>
+        </Card>
+
+        {selectedQuestionIsStale && (isSelectedQuestionStalenessLoading || selectedQuestionStalenessDetails) ? (
+          <Card className="card-muted">
+            <div className="card-title-row">
+              <h4 style={{ margin: 0 }}>Why stale</h4>
+              <Badge tone="review">Stale approval</Badge>
+            </div>
+            {isSelectedQuestionStalenessLoading ? (
+              <p className="small muted" style={{ margin: "8px 0 0" }}>
+                Loading stale details...
+              </p>
+            ) : selectedQuestionStalenessDetails ? (
+              <div className="compact-stats-grid" style={{ marginTop: 12 }}>
+                <CompactStatCard
+                  label="Affected citations"
+                  value={selectedQuestionStalenessDetails.affectedCitationsCount}
+                  tone="warning"
+                />
+                <CompactStatCard
+                  label="Changed evidence"
+                  value={selectedQuestionStalenessDetails.changedCount}
+                  tone={selectedQuestionStalenessDetails.changedCount > 0 ? "warning" : "neutral"}
+                />
+                <CompactStatCard
+                  label="Missing evidence"
+                  value={selectedQuestionStalenessDetails.missingCount}
+                  tone={selectedQuestionStalenessDetails.missingCount > 0 ? "danger" : "neutral"}
+                />
+              </div>
+            ) : null}
+          </Card>
+        ) : null}
+
+        {selectedQuestion.approvedAnswer && (isSelectedQuestionApprovalTraceLoading || selectedQuestionApprovalTrace) ? (
+          <Card className="card-muted">
+            <div className="card-title-row">
+              <h4 style={{ margin: 0 }}>Approval provenance</h4>
+              {selectedQuestionApprovalTrace ? (
+                <Badge tone={selectedQuestionApprovalTrace.freshness === "STALE" ? "review" : "approved"}>
+                  {selectedQuestionApprovalTrace.freshness === "STALE" ? "Stale" : "Fresh"}
+                </Badge>
+              ) : null}
+            </div>
+            {isSelectedQuestionApprovalTraceLoading ? (
+              <p className="small muted" style={{ margin: "8px 0 0" }}>
+                Loading approval trace...
+              </p>
+            ) : selectedQuestionApprovalTrace ? (
+              <div style={{ display: "grid", gap: 8 }}>
+                <div className="toolbar-row compact" style={{ justifyContent: "space-between" }}>
+                  <span className="small muted">Approved at</span>
+                  <span>{formatTraceTimestamp(selectedQuestionApprovalTrace.approvedAt)}</span>
+                </div>
+                <div className="toolbar-row compact" style={{ justifyContent: "space-between" }}>
+                  <span className="small muted">Freshness</span>
+                  <Badge tone={selectedQuestionApprovalTrace.freshness === "STALE" ? "review" : "approved"}>
+                    {selectedQuestionApprovalTrace.freshness === "STALE" ? "Stale" : "Fresh"}
+                  </Badge>
+                </div>
+                <div className="toolbar-row compact" style={{ justifyContent: "space-between" }}>
+                  <span className="small muted">Snapshotted citations</span>
+                  <span>{selectedQuestionApprovalTrace.snapshottedCitationsCount}</span>
+                </div>
+                <div className="toolbar-row compact" style={{ justifyContent: "space-between" }}>
+                  <span className="small muted">Reused</span>
+                  <span>{selectedQuestionApprovalTrace.reusedFromApprovedAnswer ? "Yes" : "No"}</span>
+                </div>
+                <div className="toolbar-row compact" style={{ justifyContent: "space-between" }}>
+                  <span className="small muted">Suggestion-assisted</span>
+                  <span>{selectedQuestionApprovalTrace.suggestionAssisted ? "Yes" : "No"}</span>
+                </div>
+              </div>
+            ) : null}
+          </Card>
+        ) : null}
+
+        {(isSelectedQuestionApprovalHistoryLoading || selectedQuestionApprovalHistory.length > 0) ? (
+          <Card className="card-muted">
+            <div className="card-title-row">
+              <h4 style={{ margin: 0 }}>Approval history</h4>
+              {selectedQuestionApprovalHistory.length > 0 ? (
+                <Badge tone="draft">
+                  {selectedQuestionApprovalHistory.length} event
+                  {selectedQuestionApprovalHistory.length === 1 ? "" : "s"}
+                </Badge>
+              ) : null}
+            </div>
+            {isSelectedQuestionApprovalHistoryLoading ? (
+              <p className="small muted" style={{ margin: "8px 0 0" }}>
+                Loading approval history...
+              </p>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                {selectedQuestionApprovalHistory.map((entry, index) => (
+                  <div
+                    key={`${entry.type}-${entry.occurredAt}-${index}`}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "12px minmax(0, 1fr)",
+                      gap: 12,
+                      alignItems: "start"
+                    }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: "999px",
+                        background:
+                          entry.type === "BECAME_STALE"
+                            ? "#d08b16"
+                            : entry.type === "REAPPROVED" || entry.type === "APPROVED"
+                              ? "#157347"
+                              : "#7a8699"
+                      }}
+                    />
+                    <div style={{ minWidth: 0 }}>
+                      <div>{approvalHistoryLabel(entry.type)}</div>
+                      <div className="small muted">{formatTraceTimestamp(entry.occurredAt)}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        ) : null}
+
+        <div className="card-title-row">
+          <h4 style={{ margin: 0 }}>
+            {selectedQuestion.approvedAnswer && !showingGeneratedComparison ? "Approved Answer" : "Generated Draft"}
+          </h4>
+          <div className="toolbar-row compact">
+            {selectedQuestion.approvedAnswer ? (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setShowGeneratedDraft((value) => !value)}
+                title={showingGeneratedComparison ? "Show approved answer" : "Show generated draft"}
+              >
+                {showingGeneratedComparison ? "Show Approved" : "Show Generated"}
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setIsAnswerExpanded((value) => !value)}
+              title={isAnswerExpanded ? "Collapse answer" : "Expand answer"}
+            >
+              {isAnswerExpanded ? "Collapse" : "Expand"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void copyText(effectiveAnswer, "Answer copied.")}
+              title="Copy answer text"
+            >
+              Copy answer
+            </Button>
+          </div>
+        </div>
+        <div className={isAnswerExpanded ? "answer-scroll" : "answer-preview"}>{effectiveAnswer}</div>
+
+        <Card className="card-muted reuse-suggestions-card">
+          <div className="card-title-row">
+            <h4 style={{ margin: 0 }}>Approved Answer Suggestions</h4>
+            <div className="toolbar-row compact">
+              {!selectedQuestion.approvedAnswer ? (
+                <Badge tone="draft">{reuseSuggestions.length} available</Badge>
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setIsApprovedAnswerPickerOpen(true)}
+                disabled={Boolean(selectedQuestion.approvedAnswer)}
+                aria-haspopup="dialog"
+              >
+                Browse library
+              </Button>
+            </div>
+          </div>
+
+          {selectedQuestion.approvedAnswer ? (
+            <p className="small muted" style={{ margin: 0 }}>
+              Suggestions are available for reviewable items only. Unapprove this item first if you want to apply a
+              different approved answer as a draft, including from the library.
+            </p>
+          ) : isReuseSuggestionsLoading ? (
+            <p className="small muted" style={{ margin: 0 }}>
+              Loading fresh approved-answer suggestions...
+            </p>
+          ) : reuseSuggestions.length === 0 ? (
+            <p className="small muted" style={{ margin: 0 }}>
+              No fresh approved-answer suggestions were found for this question.
+            </p>
+          ) : (
+            <div className="reuse-suggestion-list">
+              {reuseSuggestions.map((suggestion) => {
+                const preview =
+                  stripLeadingQuestionEcho(suggestion.answerText, selectedQuestion.text) || suggestion.answerText.trim();
+                return (
+                  <div key={suggestion.approvedAnswerId} className="reuse-suggestion-item">
+                    <div className="toolbar-row compact reuse-suggestion-meta">
+                      <span className="small muted">
+                        {Math.max(0, Math.min(100, Math.round(suggestion.similarity * 100)))}% match
+                      </span>
+                      <Badge tone="draft">
+                        {suggestion.citationsCount} citation{suggestion.citationsCount === 1 ? "" : "s"}
+                      </Badge>
+                    </div>
+                    <div className="reuse-suggestion-preview">{preview || "Suggested answer unavailable."}</div>
+                    <div className="toolbar-row compact">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => void applyReuseSuggestion(selectedQuestion, suggestion)}
+                        disabled={
+                          activeSuggestionId === suggestion.approvedAnswerId ||
+                          activeQuestionActionId === selectedQuestion.id ||
+                          isBulkApproving ||
+                          isApprovingReusedExact
+                        }
+                        aria-label={`Apply suggested approved answer with ${suggestion.citationsCount} citations`}
+                      >
+                        {activeSuggestionId === suggestion.approvedAnswerId ? "Applying..." : "Apply"}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      </div>
+    );
+  }
+
+  function renderEvidenceTabContent() {
+    if (evidenceItems.length === 0) {
+      return <div className="muted small">No citations available for the current question.</div>;
+    }
+
+    return (
+      <div className="context-section-stack">
+        <div className="evidence-chip-list">
+          {evidenceItems.map((item) => {
+            const citationReference = `${item.docName}#${item.chunkId}`;
+            const itemDocumentId = documentIdByName[item.docName.trim().toLowerCase()] ?? null;
+            return (
+              <div key={item.chunkId} className={cx("evidence-chip-item", item.chunkId === activeEvidenceChunkId && "active")}>
+                <button
+                  type="button"
+                  className={cx(
+                    "chip evidence-chip-trigger has-tooltip",
+                    item.chunkId === activeEvidenceChunkId && "active"
+                  )}
+                  onClick={() => setActiveEvidenceChunkId(item.chunkId)}
+                  title={citationReference}
+                  data-tooltip={citationReference}
+                  aria-label={`Select evidence from ${citationReference}`}
+                >
+                  <span className="evidence-chip-doc">{item.docName}</span>
+                </button>
+                <div className="evidence-chip-actions">
+                  {itemDocumentId ? (
+                    <button
+                      type="button"
+                      className="mini-chip-icon-action has-tooltip"
+                      onClick={() => void openDocumentModal(item.docName)}
+                      title="Open document"
+                      data-tooltip="Open document"
+                      aria-label={`Open source document ${item.docName}`}
+                    >
+                      <OpenDocIcon />
+                      <span className="sr-only">Open document</span>
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="toolbar-row compact">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => void copyText(activeEvidence?.snippet ?? "", "Selected snippet copied.")}
+            disabled={!activeEvidence?.snippet}
+          >
+            Copy snippet
+          </Button>
+          {activeEvidenceDocumentId ? (
+            <Button type="button" variant="ghost" onClick={() => void openDocumentModal(activeEvidence?.docName ?? "")}>
+              Open document
+            </Button>
+          ) : null}
+        </div>
+        <div className="snippet-scroll">
+          {activeEvidence ? highlightedSnippetParts : "Select a citation chip to view snippet text."}
+        </div>
+      </div>
+    );
+  }
+
+  function renderReferencesTabContent() {
+    return (
+      <div className="context-section-stack">
+        <div className="toolbar-row">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => void copyText(citationReferenceText, "Citation references copied.")}
+            disabled={citationReferenceRows.length === 0}
+          >
+            Copy all refs
+          </Button>
+        </div>
+        {citationReferenceRows.length === 0 ? (
+          <div className="muted small">No references available for the current question.</div>
+        ) : (
+          <div className="context-reference-list">
+            {citationReferenceRows.map((reference) => (
+              <div key={reference} className="context-reference-item">
+                <span>{reference}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => void copyText(reference, "Citation reference copied.")}
+                >
+                  Copy ref
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function renderContextActions() {
+    if (!selectedQuestion) {
+      return null;
+    }
+
+    return (
+      <>
+        {isMessageError ? (
+          <div className="message-banner error" role="status" aria-live="polite">
+            {message}
+          </div>
+        ) : null}
+        {isNotFoundAnswer(selectedQuestion.answer) ? (
+          <p className="small muted" style={{ margin: 0 }}>
+            Approve is disabled because this question is currently marked as not found.
+          </p>
+        ) : null}
+        <div className="toolbar-row">
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => void approveQuestion(selectedQuestion)}
+            disabled={
+              activeQuestionActionId === selectedQuestion.id ||
+              isBulkApproving ||
+              isApprovingReusedExact ||
+              !selectedQuestionApprovalCandidate ||
+              !canApproveAnswers
+            }
+            aria-label="Approve selected answer"
+          >
+            {activeQuestionActionId === selectedQuestion.id ? "Working..." : "Approve"}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => void updateReviewStatus(selectedQuestion.id, "NEEDS_REVIEW")}
+            disabled={
+              activeQuestionActionId === selectedQuestion.id ||
+              isBulkApproving ||
+              isApprovingReusedExact ||
+              selectedQuestion.reviewStatus === "NEEDS_REVIEW" ||
+              !canMarkNeedsReview
+            }
+            aria-label="Mark selected question as needs review"
+          >
+            Needs review
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            onClick={() => {
+              if (selectedQuestion.approvedAnswer) {
+                void unapprove(selectedQuestion.approvedAnswer.id, selectedQuestion.id);
+              }
+            }}
+            disabled={
+              activeQuestionActionId === selectedQuestion.id ||
+              isBulkApproving ||
+              isApprovingReusedExact ||
+              !selectedQuestion.approvedAnswer ||
+              !canApproveAnswers
+            }
+            aria-label="Remove selected approval"
+          >
+            Unapprove
+          </Button>
+          {selectedQuestion.approvedAnswer && editingQuestionId !== selectedQuestion.id ? (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => beginEdit(selectedQuestion)}
+              disabled={!canEditApprovedAnswers}
+            >
+              Edit approved
+            </Button>
+          ) : null}
+        </div>
+
+        {selectedQuestion.approvedAnswer && editingQuestionId === selectedQuestion.id ? (
+          <div className="context-edit-area">
+            <TextArea rows={5} value={editAnswerText} onChange={(event) => setEditAnswerText(event.target.value)} />
+            <p className="small muted" style={{ margin: "8px 0 0" }}>
+              Citations are preserved from the current approved answer.
+            </p>
+            <div className="toolbar-row">
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => void saveEditedApproval(selectedQuestion)}
+                disabled={
+                  activeQuestionActionId === selectedQuestion.id ||
+                  isBulkApproving ||
+                  isApprovingReusedExact ||
+                  !canEditApprovedAnswers
+                }
+              >
+                Save approved edit
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={cancelEdit}
+                disabled={isBulkApproving || isApprovingReusedExact}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </>
+    );
+  }
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -2994,70 +3474,145 @@ export default function QuestionnaireDetailsPageClient({
         className={cx("queue-primary-layout", showInlineContextPanel && "queue-primary-layout-panel-open")}
         data-testid="questionnaire-workbench"
       >
-        <div data-testid="answer-main-panel">
-          <div data-testid="evidence-panel">
-            {showLoadingSkeletons ? (
-              <Card>
-                <div className="skeleton-line skeleton-title" />
-                <div className="skeleton-line" />
-                <div className="skeleton-list">
-                  {Array.from({ length: 8 }).map((_, index) => (
-                    <div key={`rail-skeleton-${index}`} className="skeleton-block" />
-                  ))}
+        <div className="workbench-queue-column">
+          {showLoadingSkeletons ? (
+            <Card>
+              <div className="skeleton-line skeleton-title" />
+              <div className="skeleton-line" />
+              <div className="skeleton-list">
+                {Array.from({ length: 8 }).map((_, index) => (
+                  <div key={`rail-skeleton-${index}`} className="skeleton-block" />
+                ))}
+              </div>
+            </Card>
+          ) : (
+            <Card data-testid="question-rail-panel">
+              <div className="card-title-row">
+                <h3 style={{ margin: 0 }}>Queue</h3>
+                <div className="toolbar-row compact">
+                  <Badge tone="draft">{filteredQuestionIds.length} visible</Badge>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="icon-btn"
+                    onClick={() => setIsShortcutHelpOpen(true)}
+                    aria-label="Open keyboard shortcuts help"
+                    title="Keyboard shortcuts"
+                  >
+                    ?
+                  </Button>
                 </div>
-              </Card>
-            ) : (
-              <Card data-testid="question-rail-panel">
-                <div className="card-title-row">
-                  <h3 style={{ margin: 0 }}>Queue</h3>
-                  <div className="toolbar-row compact">
-                    <Badge tone="draft">{filteredQuestionIds.length} visible</Badge>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="icon-btn"
-                      onClick={() => setIsShortcutHelpOpen(true)}
-                      aria-label="Open keyboard shortcuts help"
-                      title="Keyboard shortcuts"
-                    >
-                      ?
-                    </Button>
-                  </div>
-                </div>
+              </div>
 
-                {!selectedQuestion && railItems.length > 0 ? (
-                  <div className="queue-selection-hint" role="status" aria-live="polite">
-                    <span className="queue-selection-hint-icon" aria-hidden="true">
-                      i
-                    </span>
-                    Select a question to review
-                  </div>
-                ) : null}
-
-                <div className="question-list" style={{ marginTop: 12 }} role="listbox" aria-label="Question queue">
-                  {railItems.length === 0 ? (
-                    <div className="muted small" role="option" aria-disabled="true" aria-selected="false">
-                      No questions match the current filters.
-                    </div>
-                  ) : (
-                    railItems.map((item) => (
-                      <QuestionRailItemButton
-                        key={item.id}
-                        item={item}
-                        active={selectedQuestionId === item.id}
-                        onSelect={handleSelectQuestion}
-                        onRegisterRef={registerQueueRowRef}
-                      />
-                    ))
-                  )}
+              {!selectedQuestion && railItems.length > 0 ? (
+                <div className="queue-selection-hint" role="status" aria-live="polite">
+                  <span className="queue-selection-hint-icon" aria-hidden="true">
+                    i
+                  </span>
+                  Select a question to review
                 </div>
-              </Card>
-            )}
-          </div>
+              ) : null}
+
+              <div className="question-list" style={{ marginTop: 12 }} role="listbox" aria-label="Question queue">
+                {railItems.length === 0 ? (
+                  <div className="muted small" role="option" aria-disabled="true" aria-selected="false">
+                    No questions match the current filters.
+                  </div>
+                ) : (
+                  railItems.map((item) => (
+                    <QuestionRailItemButton
+                      key={item.id}
+                      item={item}
+                      active={selectedQuestionId === item.id}
+                      onSelect={handleSelectQuestion}
+                      onRegisterRef={registerQueueRowRef}
+                    />
+                  ))
+                )}
+              </div>
+            </Card>
+          )}
         </div>
+
+        {!isMobileViewport ? (
+          <>
+            <div className="workbench-answer-column" data-testid="answer-main-panel">
+              {showInlineContextPanel && selectedQuestion ? (
+                <>
+                  <Card className="workbench-detail-card workbench-detail-card-primary">
+                    <div className="workbench-detail-header">
+                      <div>
+                        <span className="small muted">Question {selectedQuestion.rowIndex + 1}</span>
+                        <h3 style={{ margin: "6px 0 0" }}>Review answer</h3>
+                      </div>
+                      <div className="toolbar-row compact">
+                        <Badge tone="draft">
+                          {selectedQuestionCitationCount} citation{selectedQuestionCitationCount === 1 ? "" : "s"}
+                        </Badge>
+                        <Button type="button" variant="ghost" onClick={closeContextDrawer}>
+                          Hide
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="workbench-detail-scroll">{renderAnswerTabContent()}</div>
+                  </Card>
+
+                  <Card className="workbench-detail-card workbench-action-card">
+                    <div className="workbench-action-header">
+                      <h3 style={{ margin: 0 }}>Decision controls</h3>
+                    </div>
+                    <div className="context-panel-actions workbench-action-body">{renderContextActions()}</div>
+                  </Card>
+                </>
+              ) : (
+                <Card className="workbench-empty-card">
+                  <span className="section-kicker">Workbench</span>
+                  <h3 style={{ margin: 0 }}>Select a question to inspect its answer quality and approval history.</h3>
+                  <p className="muted" style={{ margin: 0 }}>
+                    The queue stays anchored on the left while answer details and evidence appear here.
+                  </p>
+                </Card>
+              )}
+            </div>
+
+            <div className="workbench-evidence-column" data-testid="evidence-panel">
+              {showInlineContextPanel && selectedQuestion ? (
+                <>
+                  <Card className="workbench-detail-card">
+                    <div className="workbench-detail-header">
+                      <div>
+                        <span className="small muted">Evidence</span>
+                        <h3 style={{ margin: "6px 0 0" }}>Citations and source snippets</h3>
+                      </div>
+                    </div>
+                    <div className="workbench-detail-scroll">{renderEvidenceTabContent()}</div>
+                  </Card>
+
+                  <Card className="workbench-detail-card">
+                    <div className="workbench-detail-header">
+                      <div>
+                        <span className="small muted">References</span>
+                        <h3 style={{ margin: "6px 0 0" }}>Snapshot references</h3>
+                      </div>
+                    </div>
+                    <div className="workbench-detail-scroll">{renderReferencesTabContent()}</div>
+                  </Card>
+                </>
+              ) : (
+                <Card className="workbench-empty-card">
+                  <span className="section-kicker">Evidence</span>
+                  <h3 style={{ margin: 0 }}>Citation snippets and reference rows will appear here.</h3>
+                  <p className="muted" style={{ margin: 0 }}>
+                    Open any queue item to keep the supporting evidence visible beside the answer.
+                  </p>
+                </Card>
+              )}
+            </div>
+          </>
+        ) : null}
       </div>
 
-      {isContextOpen && selectedQuestion ? (
+      {showMobileContextPanel && selectedQuestion ? (
         <div className="context-overlay">
           <button
             type="button"
@@ -3137,474 +3692,12 @@ export default function QuestionnaireDetailsPageClient({
             </div>
 
             <div className="context-panel-body">
-              {drawerTab === "ANSWER" ? (
-                <div className="context-section-stack">
-                  <div className="toolbar-row compact">
-                    <Badge tone={statusTone(selectedQuestion.reviewStatus)} title={statusLabel(selectedQuestion.reviewStatus)}>
-                      {statusLabel(selectedQuestion.reviewStatus)}
-                    </Badge>
-                    {selectedQuestion.reuseMatchType ? (
-                      <Badge tone={getReuseBadgeTone(selectedQuestion.reuseMatchType) ?? "draft"}>
-                        {getReuseBadgeLabel(selectedQuestion.reuseMatchType)}
-                      </Badge>
-                    ) : null}
-                    <Badge tone="draft">
-                      {selectedQuestionCitationCount} citation{selectedQuestionCitationCount === 1 ? "" : "s"}
-                    </Badge>
-                  </div>
-
-                  <Card className="card-muted">
-                    <p className="workbench-question-text" style={{ margin: 0 }}>
-                      {selectedQuestion.text || "No question text available."}
-                    </p>
-                  </Card>
-
-                  {selectedQuestionIsStale &&
-                  (isSelectedQuestionStalenessLoading || selectedQuestionStalenessDetails) ? (
-                    <Card className="card-muted">
-                      <div className="card-title-row">
-                        <h4 style={{ margin: 0 }}>Why stale</h4>
-                        <Badge tone="review">Stale approval</Badge>
-                      </div>
-                      {isSelectedQuestionStalenessLoading ? (
-                        <p className="small muted" style={{ margin: "8px 0 0" }}>
-                          Loading stale details...
-                        </p>
-                      ) : selectedQuestionStalenessDetails ? (
-                        <div className="compact-stats-grid" style={{ marginTop: 12 }}>
-                          <CompactStatCard
-                            label="Affected citations"
-                            value={selectedQuestionStalenessDetails.affectedCitationsCount}
-                            tone="warning"
-                          />
-                          <CompactStatCard
-                            label="Changed evidence"
-                            value={selectedQuestionStalenessDetails.changedCount}
-                            tone={selectedQuestionStalenessDetails.changedCount > 0 ? "warning" : "neutral"}
-                          />
-                          <CompactStatCard
-                            label="Missing evidence"
-                            value={selectedQuestionStalenessDetails.missingCount}
-                            tone={selectedQuestionStalenessDetails.missingCount > 0 ? "danger" : "neutral"}
-                          />
-                        </div>
-                      ) : null}
-                    </Card>
-                  ) : null}
-
-                  {selectedQuestion.approvedAnswer &&
-                  (isSelectedQuestionApprovalTraceLoading || selectedQuestionApprovalTrace) ? (
-                    <Card className="card-muted">
-                      <div className="card-title-row">
-                        <h4 style={{ margin: 0 }}>Approval provenance</h4>
-                        {selectedQuestionApprovalTrace ? (
-                          <Badge tone={selectedQuestionApprovalTrace.freshness === "STALE" ? "review" : "approved"}>
-                            {selectedQuestionApprovalTrace.freshness === "STALE" ? "Stale" : "Fresh"}
-                          </Badge>
-                        ) : null}
-                      </div>
-                      {isSelectedQuestionApprovalTraceLoading ? (
-                        <p className="small muted" style={{ margin: "8px 0 0" }}>
-                          Loading approval trace...
-                        </p>
-                      ) : selectedQuestionApprovalTrace ? (
-                        <div style={{ display: "grid", gap: 8 }}>
-                          <div className="toolbar-row compact" style={{ justifyContent: "space-between" }}>
-                            <span className="small muted">Approved at</span>
-                            <span>{formatTraceTimestamp(selectedQuestionApprovalTrace.approvedAt)}</span>
-                          </div>
-                          <div className="toolbar-row compact" style={{ justifyContent: "space-between" }}>
-                            <span className="small muted">Freshness</span>
-                            <Badge tone={selectedQuestionApprovalTrace.freshness === "STALE" ? "review" : "approved"}>
-                              {selectedQuestionApprovalTrace.freshness === "STALE" ? "Stale" : "Fresh"}
-                            </Badge>
-                          </div>
-                          <div className="toolbar-row compact" style={{ justifyContent: "space-between" }}>
-                            <span className="small muted">Snapshotted citations</span>
-                            <span>{selectedQuestionApprovalTrace.snapshottedCitationsCount}</span>
-                          </div>
-                          <div className="toolbar-row compact" style={{ justifyContent: "space-between" }}>
-                            <span className="small muted">Reused</span>
-                            <span>{selectedQuestionApprovalTrace.reusedFromApprovedAnswer ? "Yes" : "No"}</span>
-                          </div>
-                          <div className="toolbar-row compact" style={{ justifyContent: "space-between" }}>
-                            <span className="small muted">Suggestion-assisted</span>
-                            <span>{selectedQuestionApprovalTrace.suggestionAssisted ? "Yes" : "No"}</span>
-                          </div>
-                        </div>
-                      ) : null}
-                    </Card>
-                  ) : null}
-
-                  {(isSelectedQuestionApprovalHistoryLoading || selectedQuestionApprovalHistory.length > 0) ? (
-                    <Card className="card-muted">
-                      <div className="card-title-row">
-                        <h4 style={{ margin: 0 }}>Approval history</h4>
-                        {selectedQuestionApprovalHistory.length > 0 ? (
-                          <Badge tone="draft">
-                            {selectedQuestionApprovalHistory.length} event
-                            {selectedQuestionApprovalHistory.length === 1 ? "" : "s"}
-                          </Badge>
-                        ) : null}
-                      </div>
-                      {isSelectedQuestionApprovalHistoryLoading ? (
-                        <p className="small muted" style={{ margin: "8px 0 0" }}>
-                          Loading approval history...
-                        </p>
-                      ) : (
-                        <div style={{ display: "grid", gap: 10 }}>
-                          {selectedQuestionApprovalHistory.map((entry, index) => (
-                            <div
-                              key={`${entry.type}-${entry.occurredAt}-${index}`}
-                              style={{
-                                display: "grid",
-                                gridTemplateColumns: "12px minmax(0, 1fr)",
-                                gap: 12,
-                                alignItems: "start"
-                              }}
-                            >
-                              <span
-                                aria-hidden="true"
-                                style={{
-                                  width: 10,
-                                  height: 10,
-                                  borderRadius: "999px",
-                                  background:
-                                    entry.type === "BECAME_STALE"
-                                      ? "#d08b16"
-                                      : entry.type === "REAPPROVED" || entry.type === "APPROVED"
-                                        ? "#157347"
-                                        : "#7a8699"
-                                }}
-                              />
-                              <div style={{ minWidth: 0 }}>
-                                <div>{approvalHistoryLabel(entry.type)}</div>
-                                <div className="small muted">{formatTraceTimestamp(entry.occurredAt)}</div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </Card>
-                  ) : null}
-
-                  <div className="card-title-row">
-                    <h4 style={{ margin: 0 }}>
-                      {selectedQuestion.approvedAnswer && !showingGeneratedComparison ? "Approved Answer" : "Generated Draft"}
-                    </h4>
-                    <div className="toolbar-row compact">
-                      {selectedQuestion.approvedAnswer ? (
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={() => setShowGeneratedDraft((value) => !value)}
-                          title={showingGeneratedComparison ? "Show approved answer" : "Show generated draft"}
-                        >
-                          {showingGeneratedComparison ? "Show Approved" : "Show Generated"}
-                        </Button>
-                      ) : null}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => setIsAnswerExpanded((value) => !value)}
-                        title={isAnswerExpanded ? "Collapse answer" : "Expand answer"}
-                      >
-                        {isAnswerExpanded ? "Collapse" : "Expand"}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() => void copyText(effectiveAnswer, "Answer copied.")}
-                        title="Copy answer text"
-                      >
-                        Copy answer
-                      </Button>
-                    </div>
-                  </div>
-                  <div className={isAnswerExpanded ? "answer-scroll" : "answer-preview"}>{effectiveAnswer}</div>
-
-                  <Card className="card-muted reuse-suggestions-card">
-                    <div className="card-title-row">
-                      <h4 style={{ margin: 0 }}>Approved Answer Suggestions</h4>
-                      <div className="toolbar-row compact">
-                        {!selectedQuestion.approvedAnswer ? (
-                          <Badge tone="draft">{reuseSuggestions.length} available</Badge>
-                        ) : null}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={() => setIsApprovedAnswerPickerOpen(true)}
-                          disabled={Boolean(selectedQuestion.approvedAnswer)}
-                          aria-haspopup="dialog"
-                        >
-                          Browse library
-                        </Button>
-                      </div>
-                    </div>
-
-                    {selectedQuestion.approvedAnswer ? (
-                      <p className="small muted" style={{ margin: 0 }}>
-                        Suggestions are available for reviewable items only. Unapprove this item first if you want to
-                        apply a different approved answer as a draft, including from the library.
-                      </p>
-                    ) : isReuseSuggestionsLoading ? (
-                      <p className="small muted" style={{ margin: 0 }}>
-                        Loading fresh approved-answer suggestions...
-                      </p>
-                    ) : reuseSuggestions.length === 0 ? (
-                      <p className="small muted" style={{ margin: 0 }}>
-                        No fresh approved-answer suggestions were found for this question.
-                      </p>
-                    ) : (
-                      <div className="reuse-suggestion-list">
-                        {reuseSuggestions.map((suggestion) => {
-                          const preview =
-                            stripLeadingQuestionEcho(suggestion.answerText, selectedQuestion.text) ||
-                            suggestion.answerText.trim();
-                          return (
-                            <div key={suggestion.approvedAnswerId} className="reuse-suggestion-item">
-                              <div className="toolbar-row compact reuse-suggestion-meta">
-                                <span className="small muted">
-                                  {Math.max(0, Math.min(100, Math.round(suggestion.similarity * 100)))}% match
-                                </span>
-                                <Badge tone="draft">
-                                  {suggestion.citationsCount} citation{suggestion.citationsCount === 1 ? "" : "s"}
-                                </Badge>
-                              </div>
-                              <div className="reuse-suggestion-preview">{preview || "Suggested answer unavailable."}</div>
-                              <div className="toolbar-row compact">
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  onClick={() => void applyReuseSuggestion(selectedQuestion, suggestion)}
-                                  disabled={
-                                    activeSuggestionId === suggestion.approvedAnswerId ||
-                                    activeQuestionActionId === selectedQuestion.id ||
-                                    isBulkApproving ||
-                                    isApprovingReusedExact
-                                  }
-                                  aria-label={`Apply suggested approved answer with ${suggestion.citationsCount} citations`}
-                                >
-                                  {activeSuggestionId === suggestion.approvedAnswerId ? "Applying..." : "Apply"}
-                                </Button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </Card>
-                </div>
-              ) : null}
-
-              {drawerTab === "EVIDENCE" ? (
-                <div className="context-section-stack">
-                  {evidenceItems.length === 0 ? (
-                    <div className="muted small">No citations available for the current question.</div>
-                  ) : (
-                    <>
-                      <div className="evidence-chip-list">
-                        {evidenceItems.map((item) => {
-                          const citationReference = `${item.docName}#${item.chunkId}`;
-                          const itemDocumentId = documentIdByName[item.docName.trim().toLowerCase()] ?? null;
-                          return (
-                            <div
-                              key={item.chunkId}
-                              className={cx("evidence-chip-item", item.chunkId === activeEvidenceChunkId && "active")}
-                            >
-                              <button
-                                type="button"
-                                className={cx(
-                                  "chip evidence-chip-trigger has-tooltip",
-                                  item.chunkId === activeEvidenceChunkId && "active"
-                                )}
-                                onClick={() => setActiveEvidenceChunkId(item.chunkId)}
-                                title={citationReference}
-                                data-tooltip={citationReference}
-                                aria-label={`Select evidence from ${citationReference}`}
-                              >
-                                <span className="evidence-chip-doc">{item.docName}</span>
-                              </button>
-                              <div className="evidence-chip-actions">
-                                {itemDocumentId ? (
-                                  <button
-                                    type="button"
-                                    className="mini-chip-icon-action has-tooltip"
-                                    onClick={() => void openDocumentModal(item.docName)}
-                                    title="Open document"
-                                    data-tooltip="Open document"
-                                    aria-label={`Open source document ${item.docName}`}
-                                  >
-                                    <OpenDocIcon />
-                                    <span className="sr-only">Open document</span>
-                                  </button>
-                                ) : null}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div className="toolbar-row compact">
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={() => void copyText(activeEvidence?.snippet ?? "", "Selected snippet copied.")}
-                          disabled={!activeEvidence?.snippet}
-                        >
-                          Copy snippet
-                        </Button>
-                        {activeEvidenceDocumentId ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            onClick={() => void openDocumentModal(activeEvidence?.docName ?? "")}
-                          >
-                            Open document
-                          </Button>
-                        ) : null}
-                      </div>
-                      <div className="snippet-scroll">
-                        {activeEvidence ? highlightedSnippetParts : "Select a citation chip to view snippet text."}
-                      </div>
-                    </>
-                  )}
-                </div>
-              ) : null}
-
-              {drawerTab === "REFERENCES" ? (
-                <div className="context-section-stack">
-                  <div className="toolbar-row">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => void copyText(citationReferenceText, "Citation references copied.")}
-                      disabled={citationReferenceRows.length === 0}
-                    >
-                      Copy all refs
-                    </Button>
-                  </div>
-                  {citationReferenceRows.length === 0 ? (
-                    <div className="muted small">No references available for the current question.</div>
-                  ) : (
-                    <div className="context-reference-list">
-                      {citationReferenceRows.map((reference) => (
-                        <div key={reference} className="context-reference-item">
-                          <span>{reference}</span>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            onClick={() => void copyText(reference, "Citation reference copied.")}
-                          >
-                            Copy ref
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : null}
+              {drawerTab === "ANSWER" ? renderAnswerTabContent() : null}
+              {drawerTab === "EVIDENCE" ? renderEvidenceTabContent() : null}
+              {drawerTab === "REFERENCES" ? renderReferencesTabContent() : null}
             </div>
 
-            <div className="context-panel-actions">
-              {isMessageError ? (
-                <div className="message-banner error" role="status" aria-live="polite">
-                  {message}
-                </div>
-              ) : null}
-              {isNotFoundAnswer(selectedQuestion.answer) ? (
-                <p className="small muted" style={{ margin: 0 }}>
-                  Approve is disabled because this question is currently marked as not found.
-                </p>
-              ) : null}
-              <div className="toolbar-row">
-                <Button
-                  type="button"
-                  variant="primary"
-                  onClick={() => void approveQuestion(selectedQuestion)}
-                  disabled={
-                    activeQuestionActionId === selectedQuestion.id ||
-                    isBulkApproving ||
-                    isApprovingReusedExact ||
-                    !selectedQuestionApprovalCandidate ||
-                    !canApproveAnswers
-                  }
-                  aria-label="Approve selected answer"
-                >
-                  {activeQuestionActionId === selectedQuestion.id ? "Working..." : "Approve"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => void updateReviewStatus(selectedQuestion.id, "NEEDS_REVIEW")}
-                  disabled={
-                    activeQuestionActionId === selectedQuestion.id ||
-                    isBulkApproving ||
-                    isApprovingReusedExact ||
-                    selectedQuestion.reviewStatus === "NEEDS_REVIEW" ||
-                    !canMarkNeedsReview
-                  }
-                  aria-label="Mark selected question as needs review"
-                >
-                  Needs review
-                </Button>
-                <Button
-                  type="button"
-                  variant="danger"
-                  onClick={() => {
-                    if (selectedQuestion.approvedAnswer) {
-                      void unapprove(selectedQuestion.approvedAnswer.id, selectedQuestion.id);
-                    }
-                  }}
-                  disabled={
-                    activeQuestionActionId === selectedQuestion.id ||
-                    isBulkApproving ||
-                    isApprovingReusedExact ||
-                    !selectedQuestion.approvedAnswer ||
-                    !canApproveAnswers
-                  }
-                  aria-label="Remove selected approval"
-                >
-                  Unapprove
-                </Button>
-                {selectedQuestion.approvedAnswer && editingQuestionId !== selectedQuestion.id ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => beginEdit(selectedQuestion)}
-                    disabled={!canEditApprovedAnswers}
-                  >
-                    Edit approved
-                  </Button>
-                ) : null}
-              </div>
-
-              {selectedQuestion.approvedAnswer && editingQuestionId === selectedQuestion.id ? (
-                <div className="context-edit-area">
-                  <TextArea rows={5} value={editAnswerText} onChange={(event) => setEditAnswerText(event.target.value)} />
-                  <p className="small muted" style={{ margin: "8px 0 0" }}>
-                    Citations are preserved from the current approved answer.
-                  </p>
-                  <div className="toolbar-row">
-                    <Button
-                      type="button"
-                      variant="primary"
-                      onClick={() => void saveEditedApproval(selectedQuestion)}
-                      disabled={
-                        activeQuestionActionId === selectedQuestion.id ||
-                        isBulkApproving ||
-                        isApprovingReusedExact ||
-                        !canEditApprovedAnswers
-                      }
-                    >
-                      Save approved edit
-                    </Button>
-                    <Button type="button" variant="ghost" onClick={cancelEdit} disabled={isBulkApproving || isApprovingReusedExact}>
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
+            <div className="context-panel-actions">{renderContextActions()}</div>
           </div>
         </div>
       ) : null}

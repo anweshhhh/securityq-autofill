@@ -32,7 +32,7 @@ async function resolveTrustQueueReviewSession(params: {
   searchParams: QuestionnairePageSearchParams;
 }): Promise<TrustQueueReviewSessionBannerProps | null> {
   const source = readSearchParam(params.searchParams.source).trim().toLowerCase();
-  if (source !== "trust-queue") {
+  if (source !== "trust-queue" && source !== "review") {
     return null;
   }
 

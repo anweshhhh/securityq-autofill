@@ -5,7 +5,6 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { useRouter } from "next/navigation";
 import { useAppAuthz } from "@/components/AppAuthzContext";
 import { CollapsibleInputSection } from "@/components/CollapsibleInputSection";
-import { CompactStatCard } from "@/components/CompactStatCard";
 import { ExportModal } from "@/components/ExportModal";
 import { Badge, Button, Card, TextInput, cx } from "@/components/ui";
 import { can, RbacAction } from "@/server/rbac";
@@ -523,15 +522,6 @@ export default function QuestionnairesPage() {
           )}
         >
           {message}
-        </div>
-      ) : null}
-
-      {hasQuestionnaires ? (
-        <div className="compact-stats-grid questionnaires-support-stats questionnaire-insight-grid">
-          <CompactStatCard label="Questionnaires" value={questionnaireSummary.totalQuestionnaires} />
-          <CompactStatCard label="Questions total" value={questionnaireSummary.totalQuestions} />
-          <CompactStatCard label="Answered" value={questionnaireSummary.totalAnswered} tone="success" />
-          <CompactStatCard label="Not found" value={questionnaireSummary.totalNotFound} tone="danger" />
         </div>
       ) : null}
 

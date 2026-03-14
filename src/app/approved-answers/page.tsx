@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { CompactStatCard } from "@/components/CompactStatCard";
 import { ApprovedAnswersLibraryTable } from "@/components/ApprovedAnswersLibraryTable";
 import { Card, Button, TextInput, cx } from "@/components/ui";
 import { getRequestContext, RequestContextError } from "@/lib/requestContext";
@@ -62,7 +61,7 @@ function buildFilterHref(query: string, freshness: "all" | "fresh" | "stale"): s
   }
 
   const next = params.toString();
-  return next ? `/approved-answers?${next}` : "/approved-answers";
+  return next ? `/review/library?${next}` : "/review/library";
 }
 
 export default async function ApprovedAnswersPage({
@@ -89,8 +88,8 @@ export default async function ApprovedAnswersPage({
       }
 
       const callbackPath = callbackParams.toString()
-        ? `/approved-answers?${callbackParams.toString()}`
-        : "/approved-answers";
+        ? `/review/library?${callbackParams.toString()}`
+        : "/review/library";
       redirect(`/login?callbackUrl=${encodeURIComponent(callbackPath)}`);
     }
 
@@ -109,8 +108,8 @@ export default async function ApprovedAnswersPage({
     <div className="page-stack">
       <Card className="hero-panel hero-panel-compact">
         <div className="hero-panel-copy">
-          <span className="eyebrow">Approved answer library</span>
-          <h2 style={{ margin: 0 }}>Turn strong reviews into a reusable library instead of repeating them.</h2>
+          <span className="eyebrow">Review library</span>
+          <h2 style={{ margin: 0 }}>Turn strong reviewer decisions into a reusable answer system.</h2>
           <p className="muted hero-panel-text" style={{ margin: 0 }}>
             Fresh approvals become the building blocks for faster future questionnaires, with provenance and reuse
             signals intact.
@@ -135,12 +134,6 @@ export default async function ApprovedAnswersPage({
         </div>
       </Card>
 
-      <section className="compact-stats-grid questionnaire-insight-grid">
-        <CompactStatCard label="Total" value={library.counts.total} />
-        <CompactStatCard label="Fresh" value={library.counts.fresh} tone="success" />
-        <CompactStatCard label="Stale" value={library.counts.stale} tone={library.counts.stale > 0 ? "danger" : "neutral"} />
-      </section>
-
       <Card className="section-shell">
         <div className="card-title-row">
           <div className="section-copy">
@@ -148,7 +141,7 @@ export default async function ApprovedAnswersPage({
             <div>
               <h3 style={{ margin: 0 }}>Library scope</h3>
               <p className="muted small" style={{ margin: "4px 0 0" }}>
-                Search the answer library or isolate stale answers that need attention.
+                Search reusable answers or isolate stale entries that need another pass.
               </p>
             </div>
           </div>
@@ -160,7 +153,7 @@ export default async function ApprovedAnswersPage({
 
           <form
             method="GET"
-            action="/approved-answers"
+            action="/review/library"
             style={{
               display: "grid",
               gap: 12
@@ -178,7 +171,7 @@ export default async function ApprovedAnswersPage({
               <Button type="submit" variant="primary">
                 Apply
               </Button>
-              <Link href="/approved-answers" className="btn btn-ghost">
+              <Link href="/review/library" className="btn btn-ghost">
                 Clear
               </Link>
             </div>
@@ -204,7 +197,7 @@ export default async function ApprovedAnswersPage({
 
       <div className="section-copy">
         <span className="section-kicker">Library entries</span>
-        <h3 style={{ margin: 0 }}>Approved answers with freshness and reuse signals</h3>
+        <h3 style={{ margin: 0 }}>Approved answers with freshness, provenance, and reuse signals</h3>
       </div>
 
       <ApprovedAnswersLibraryTable rows={library.rows} />

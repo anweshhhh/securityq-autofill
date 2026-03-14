@@ -3,7 +3,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppAuthz } from "@/components/AppAuthzContext";
 import { CollapsibleInputSection } from "@/components/CollapsibleInputSection";
-import { CompactStatCard } from "@/components/CompactStatCard";
 import { Badge, Button, Card, TextInput, cx } from "@/components/ui";
 import { can, RbacAction } from "@/server/rbac";
 
@@ -412,12 +411,6 @@ export default function DocumentsPage() {
           </div>
         </form>
       </CollapsibleInputSection>
-
-      <div className="compact-stats-grid questionnaire-insight-grid">
-        <CompactStatCard label="Visible documents" value={filteredDocuments.length} />
-        <CompactStatCard label="Embedded (chunked)" value={embeddedCount} tone="success" />
-        <CompactStatCard label="Selected" value={selectedDocumentIds.length} tone="neutral" />
-      </div>
 
       {message ? (
         <div

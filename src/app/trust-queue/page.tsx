@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { CompactStatCard } from "@/components/CompactStatCard";
 import { TrustQueueQuestionnaireGroups } from "@/components/TrustQueueQuestionnaireGroups";
 import { TrustQueueTable } from "@/components/TrustQueueTable";
 import { Button, Card, TextInput, cx } from "@/components/ui";
@@ -57,7 +56,7 @@ function buildFilterHref(query: string, filter: TrustQueueSessionFilterParam): s
   }
 
   const next = params.toString();
-  return next ? `/trust-queue?${next}` : "/trust-queue";
+  return next ? `/review/inbox?${next}` : "/review/inbox";
 }
 
 export default async function TrustQueuePage({
@@ -84,8 +83,8 @@ export default async function TrustQueuePage({
       }
 
       const callbackPath = callbackParams.toString()
-        ? `/trust-queue?${callbackParams.toString()}`
-        : "/trust-queue";
+        ? `/review/inbox?${callbackParams.toString()}`
+        : "/review/inbox";
       redirect(`/login?callbackUrl=${encodeURIComponent(callbackPath)}`);
     }
 
@@ -118,10 +117,10 @@ export default async function TrustQueuePage({
     <div className="page-stack">
       <Card className="hero-panel hero-panel-compact">
         <div className="hero-panel-copy">
-          <span className="eyebrow">Trust queue</span>
-          <h2 style={{ margin: 0 }}>Focus reviewers on the answers that could break confidence first.</h2>
+          <span className="eyebrow">Review inbox</span>
+          <h2 style={{ margin: 0 }}>Start with the answers that can break confidence or block export readiness.</h2>
           <p className="muted hero-panel-text" style={{ margin: 0 }}>
-            Stale approvals and unresolved review states surface here before they turn into export blockers.
+            Stale approvals, unresolved questions, and blocked runs surface here before they slow the team down.
           </p>
           {startReviewHref ? (
             <div className="toolbar-row hero-action-row">
@@ -150,27 +149,6 @@ export default async function TrustQueuePage({
         </div>
       </Card>
 
-      <section
-        className="compact-stats-grid questionnaire-insight-grid"
-        aria-label="Trust queue summary"
-      >
-        <CompactStatCard
-          label="Stale approvals"
-          value={queue.summary.staleApprovalsCount}
-          tone={queue.summary.staleApprovalsCount > 0 ? "danger" : "neutral"}
-        />
-        <CompactStatCard
-          label="Needs review"
-          value={queue.summary.needsReviewCount}
-          tone={queue.summary.needsReviewCount > 0 ? "warning" : "neutral"}
-        />
-        <CompactStatCard
-          label="Blocked questionnaires"
-          value={queue.summary.blockedQuestionnairesCount}
-          tone={queue.summary.blockedQuestionnairesCount > 0 ? "danger" : "neutral"}
-        />
-      </section>
-
       <Card className="section-shell">
         <div className="card-title-row">
           <div className="section-copy">
@@ -178,7 +156,7 @@ export default async function TrustQueuePage({
             <div>
               <h3 style={{ margin: 0 }}>Review scope</h3>
               <p className="muted small" style={{ margin: "4px 0 0" }}>
-                Narrow the queue before you enter the review workbench.
+                Narrow the inbox before you enter the review workbench.
               </p>
             </div>
           </div>
@@ -189,7 +167,7 @@ export default async function TrustQueuePage({
             Showing {queue.rows.length} actionable item{queue.rows.length === 1 ? "" : "s"}
           </div>
 
-          <form method="GET" action="/trust-queue" style={{ display: "grid", gap: 12 }}>
+          <form method="GET" action="/review/inbox" style={{ display: "grid", gap: 12 }}>
             <div className="toolbar-row filter-toolbar">
               <TextInput
                 type="search"
@@ -202,13 +180,13 @@ export default async function TrustQueuePage({
               <Button type="submit" variant="primary">
                 Apply
               </Button>
-              <Link href="/trust-queue" className="btn btn-ghost">
+              <Link href="/review/inbox" className="btn btn-ghost">
                 Clear
               </Link>
             </div>
           </form>
 
-          <div className="toolbar-row" aria-label="Trust queue filters">
+          <div className="toolbar-row" aria-label="Review inbox filters">
             {FILTER_OPTIONS.map((option) => {
               const active = option.value === activeFilter;
               return (
@@ -241,7 +219,7 @@ export default async function TrustQueuePage({
 
       <div className="section-copy">
         <span className="section-kicker">Actionable items</span>
-        <h3 style={{ margin: 0 }}>Priority-ordered review queue</h3>
+        <h3 style={{ margin: 0 }}>Priority-ordered reviewer inbox</h3>
       </div>
 
       <TrustQueueTable rows={queue.rows} queueFilter={activeFilter} queueQuery={query} />

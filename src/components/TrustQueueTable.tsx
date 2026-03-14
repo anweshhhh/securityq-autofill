@@ -76,9 +76,9 @@ export function TrustQueueTable({
     return (
       <Card>
         <div style={{ display: "grid", gap: 6 }}>
-          <strong>No trust blockers right now.</strong>
+          <strong>No review blockers right now.</strong>
           <span style={{ color: "var(--muted-text)" }}>
-            Stale approvals and needs-review items will appear here as work enters the queue.
+            Stale approvals and needs-review items will appear here as new work enters the inbox.
           </span>
         </div>
       </Card>
@@ -106,7 +106,7 @@ export function TrustQueueTable({
                 </Badge>
               ) : null}
               <Link href={buildReviewHref(row, queueFilter, queueQuery)} className="btn btn-secondary">
-                Review item
+                Open item
               </Link>
             </div>
           </div>

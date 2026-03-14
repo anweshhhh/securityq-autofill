@@ -64,7 +64,7 @@ export function TrustQueueQuestionnaireGroups({
                     href={buildQuestionnaireHref(group, queueFilter, queueQuery)}
                     className="btn btn-secondary"
                   >
-                    Open questionnaire
+                    Open workbench
                   </Link>
                 </div>
               </div>
