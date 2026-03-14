@@ -6,7 +6,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppAuthzProvider, type AppAuthzState } from "@/components/AppAuthzContext";
 import { Button, cx } from "@/components/ui";
-import { useFocusTrap } from "@/lib/useFocusTrap";
 import { can, RbacAction, type Role } from "@/server/rbac";
 
 type AppShellProps = {
@@ -17,7 +16,13 @@ type AppShellProps = {
 type NavItem = {
   href: string;
   label: string;
-  short: string;
+  activeWhen: (pathname: string) => boolean;
+};
+
+type PageMeta = {
+  kicker: string;
+  title: string;
+  subtitle: string;
 };
 
 type MePayload = {
@@ -51,182 +56,130 @@ type ActiveOrgSwitchPayload = {
 
 const ROLE_OPTIONS: Role[] = ["OWNER", "ADMIN", "REVIEWER", "VIEWER"];
 
-function getPageHeader(pathname: string): { title: string; subtitle: string } {
-  if (pathname === "/") {
+function isPublicRoute(pathname: string): boolean {
+  return pathname === "/" || pathname.startsWith("/login") || pathname.startsWith("/accept-invite");
+}
+
+function getPageMeta(pathname: string): PageMeta {
+  if (pathname.startsWith("/review/library")) {
     return {
-      title: "Workspace",
-      subtitle: "Evidence-first questionnaire automation."
+      kicker: "Review",
+      title: "Library",
+      subtitle: "Reusable approved answers with freshness, provenance, and reuse context."
     };
   }
 
-  if (pathname.startsWith("/documents")) {
+  if (pathname.startsWith("/review")) {
     return {
-      title: "Evidence Library",
-      subtitle: "Upload source evidence, inspect chunk status, and keep documents clean."
-    };
-  }
-
-  if (pathname.startsWith("/approved-answers")) {
-    return {
-      title: "Approved Answers",
-      subtitle: "Browse reusable claims with freshness and provenance metadata."
-    };
-  }
-
-  if (pathname.startsWith("/trust-queue")) {
-    return {
-      title: "Trust Queue",
-      subtitle: "Review stale approvals and needs-review items across the active workspace."
-    };
-  }
-
-  if (pathname === "/questionnaires") {
-    return {
-      title: "Questionnaire Pipeline",
-      subtitle: "Import CSV questionnaires, run autofill, review outcomes, and export."
+      kicker: "Review",
+      title: "Inbox",
+      subtitle: "Prioritized reviewer work across stale approvals, unresolved answers, and blocked runs."
     };
   }
 
   if (pathname.startsWith("/questionnaires/")) {
     return {
-      title: "Review Workbench",
-      subtitle: "Inspect each answer, evaluate citations, and approve confident responses."
+      kicker: "Review",
+      title: "Workbench",
+      subtitle: "Queue, answer, and evidence aligned in one focused decision surface."
+    };
+  }
+
+  if (pathname === "/questionnaires") {
+    return {
+      kicker: "Questionnaires",
+      title: "Runs",
+      subtitle: "Import, run, and export questionnaire workflows without losing operating context."
+    };
+  }
+
+  if (pathname.startsWith("/evidence") || pathname.startsWith("/documents")) {
+    return {
+      kicker: "Evidence",
+      title: "Evidence Library",
+      subtitle: "Keep source material current, healthy, and ready for grounded answer generation."
+    };
+  }
+
+  if (pathname.startsWith("/settings")) {
+    return {
+      kicker: "Settings",
+      title: "Workspace Settings",
+      subtitle: "Manage the team, governance surface, and access posture for the active workspace."
     };
   }
 
   if (pathname.startsWith("/ask")) {
     return {
-      title: "Single Question Debug",
-      subtitle: "Run one-off evidence-grounded answer checks."
-    };
-  }
-
-  if (pathname.startsWith("/settings/members")) {
-    return {
-      title: "Members",
-      subtitle: "Manage workspace members and role-scoped access."
-    };
-  }
-
-  if (pathname.startsWith("/accept-invite")) {
-    return {
-      title: "Organization Invite",
-      subtitle: "Review and accept your workspace invitation."
+      kicker: "Developer",
+      title: "Ask",
+      subtitle: "One-off grounded answer checks for debugging retrieval and prompt quality."
     };
   }
 
   return {
-    title: "SecurityQ Autofill",
-    subtitle: "Evidence-first questionnaire workflows."
+    kicker: "Attestly",
+    title: "Review-first questionnaire operations",
+    subtitle: "Evidence-backed review workflows for security teams."
   };
 }
 
 function getPrimaryAction(pathname: string, role: Role | null): { href: string; label: string } | null {
-  if (pathname === "/") {
-    return null;
-  }
-
-  if (pathname.startsWith("/documents")) {
-    if (!role || !can(role, RbacAction.UPLOAD_DOCUMENTS)) {
-      return null;
-    }
-    return {
-      href: "/documents#upload",
-      label: "Upload Evidence"
-    };
-  }
-
-  if (pathname.startsWith("/approved-answers")) {
-    return null;
-  }
-
-  if (pathname.startsWith("/trust-queue")) {
-    return null;
-  }
-
-  if (pathname.startsWith("/questionnaires/")) {
-    return null;
-  }
-
   if (pathname === "/questionnaires") {
     if (!role || !can(role, RbacAction.IMPORT_QUESTIONNAIRES)) {
       return null;
     }
+
     return {
       href: "/questionnaires#import",
-      label: "Import Questionnaire"
+      label: "Import questionnaire"
+    };
+  }
+
+  if (pathname.startsWith("/evidence") || pathname.startsWith("/documents")) {
+    if (!role || !can(role, RbacAction.UPLOAD_DOCUMENTS)) {
+      return null;
+    }
+
+    return {
+      href: "/evidence#upload",
+      label: "Upload evidence"
+    };
+  }
+
+  if (pathname.startsWith("/settings")) {
+    if (!role || !can(role, RbacAction.INVITE_MEMBERS)) {
+      return null;
+    }
+
+    return {
+      href: "/settings#invite-member",
+      label: "Invite member"
     };
   }
 
   if (pathname.startsWith("/ask")) {
     return {
       href: "/ask",
-      label: "Run Question"
+      label: "Run question"
     };
   }
 
-  if (pathname.startsWith("/settings/members")) {
-    if (!role || !can(role, RbacAction.INVITE_MEMBERS)) {
-      return null;
-    }
-    return {
-      href: "/settings/members#invite-member",
-      label: "Send Invite"
-    };
-  }
-
-  if (pathname.startsWith("/accept-invite")) {
-    return null;
-  }
-
-  return {
-    href: "/questionnaires",
-    label: "Open Questionnaires"
-  };
+  return null;
 }
 
-function getPageFocus(pathname: string): string {
-  if (pathname === "/") {
-    return "Move from evidence intake to export without losing review context.";
+function getAvatarLabel(value: string): string {
+  const normalized = value.trim();
+  if (!normalized) {
+    return "AT";
   }
 
-  if (pathname.startsWith("/documents")) {
-    return "Keep source evidence clean, current, and ready for answer generation.";
+  const parts = normalized.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) {
+    return normalized.slice(0, 2).toUpperCase();
   }
 
-  if (pathname.startsWith("/approved-answers")) {
-    return "Build a fresh, reusable library of approved security responses.";
-  }
-
-  if (pathname.startsWith("/trust-queue")) {
-    return "Resolve stale approvals before they become workflow blockers.";
-  }
-
-  if (pathname === "/questionnaires") {
-    return "Import, autofill, review, and export from one operating surface.";
-  }
-
-  if (pathname.startsWith("/questionnaires/")) {
-    return "Review every answer with the evidence, freshness, and actions in reach.";
-  }
-
-  if (pathname.startsWith("/ask")) {
-    return "Debug retrieval quality with one grounded question at a time.";
-  }
-
-  if (pathname.startsWith("/settings/members")) {
-    return "Keep the right teammates in the loop with role-scoped access.";
-  }
-
-  return "Evidence-backed operations for security questionnaire teams.";
-}
-
-function isActiveRoute(pathname: string, href: string): boolean {
-  if (href === "/") {
-    return pathname === "/";
-  }
-
-  return pathname.startsWith(href);
+  return `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}`.toUpperCase();
 }
 
 export function AppShell({ devMode, children }: AppShellProps) {
@@ -234,6 +187,7 @@ export function AppShell({ devMode, children }: AppShellProps) {
   const router = useRouter();
   const { data: session, status } = useSession();
   const devRoleSwitcherEnabled = devMode && process.env.NODE_ENV !== "production";
+  const isPublic = isPublicRoute(pathname);
   const [authzState, setAuthzState] = useState<AppAuthzState>({
     loading: true,
     userEmail: null,
@@ -244,50 +198,85 @@ export function AppShell({ devMode, children }: AppShellProps) {
   });
   const [isDevRoleSwitching, setIsDevRoleSwitching] = useState(false);
   const [isWorkspaceSwitching, setIsWorkspaceSwitching] = useState(false);
-  const [workspaceSwitchError, setWorkspaceSwitchError] = useState<string>("");
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [workspaceSwitchError, setWorkspaceSwitchError] = useState("");
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
-  const mobileSidebarRef = useRef<HTMLElement | null>(null);
   const accountMenuContainerRef = useRef<HTMLDivElement | null>(null);
   const accountMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
 
-  const navItems: NavItem[] = useMemo(() => {
+  const navItems = useMemo<NavItem[]>(() => {
     const items: NavItem[] = [
-      { href: "/", label: "Home", short: "H" },
-      { href: "/documents", label: "Documents", short: "D" },
-      { href: "/questionnaires", label: "Questionnaires", short: "Q" },
-      { href: "/approved-answers", label: "Approved Answers", short: "L" },
-      { href: "/trust-queue", label: "Trust Queue", short: "T" }
+      {
+        href: "/review/inbox",
+        label: "Review",
+        activeWhen: (route) => route.startsWith("/review") || route.startsWith("/questionnaires/")
+      },
+      {
+        href: "/questionnaires",
+        label: "Questionnaires",
+        activeWhen: (route) => route === "/questionnaires"
+      },
+      {
+        href: "/evidence",
+        label: "Evidence",
+        activeWhen: (route) => route.startsWith("/evidence") || route.startsWith("/documents")
+      },
+      {
+        href: "/settings",
+        label: "Settings",
+        activeWhen: (route) => route.startsWith("/settings")
+      }
     ];
 
-    if (authzState.role && can(authzState.role, RbacAction.INVITE_MEMBERS)) {
-      items.push({ href: "/settings/members", label: "Members", short: "M" });
-    }
-
     if (devMode) {
-      items.push({ href: "/ask", label: "Ask", short: "A" });
+      items.push({
+        href: "/ask",
+        label: "Ask",
+        activeWhen: (route) => route.startsWith("/ask")
+      });
     }
 
     return items;
-  }, [authzState.role, devMode]);
+  }, [devMode]);
 
-  const pageHeader = getPageHeader(pathname);
-  const pageFocus = getPageFocus(pathname);
+  const subnavItems = useMemo<NavItem[]>(() => {
+    if (pathname.startsWith("/review") || pathname.startsWith("/questionnaires/")) {
+      return [
+        {
+          href: "/review/inbox",
+          label: "Inbox",
+          activeWhen: (route) => route === "/review" || route.startsWith("/review/inbox") || route.startsWith("/questionnaires/")
+        },
+        {
+          href: "/review/library",
+          label: "Library",
+          activeWhen: (route) => route.startsWith("/review/library")
+        }
+      ];
+    }
+
+    if (pathname.startsWith("/settings")) {
+      return [
+        {
+          href: "/settings",
+          label: "Members",
+          activeWhen: (route) => route.startsWith("/settings")
+        }
+      ];
+    }
+
+    return [];
+  }, [pathname]);
+
+  const pageMeta = getPageMeta(pathname);
   const primaryAction = getPrimaryAction(pathname, authzState.role);
-  const canViewMembers = authzState.role ? can(authzState.role, RbacAction.VIEW_MEMBERS) : false;
   const accountEmail = session?.user?.email ?? authzState.userEmail ?? "Signed in";
   const accountOrgName = authzState.orgName ?? "Workspace";
   const accountRole = authzState.role ?? "Unknown";
-
-  useFocusTrap({
-    active: isMobileSidebarOpen,
-    containerRef: mobileSidebarRef,
-    onEscape: () => setIsMobileSidebarOpen(false)
-  });
+  const avatarLabel = getAvatarLabel(accountOrgName);
 
   const closeAccountMenu = useCallback((options?: { returnFocus?: boolean }) => {
     setIsAccountMenuOpen(false);
+
     if (options?.returnFocus) {
       window.requestAnimationFrame(() => {
         accountMenuTriggerRef.current?.focus();
@@ -423,318 +412,296 @@ export function AppShell({ devMode, children }: AppShellProps) {
     }
   }
 
-  function renderNavLinks(onNavigate?: () => void) {
-    return navItems.map((item) => {
-      const active = isActiveRoute(pathname, item.href);
-      return (
-        <Link
-          key={item.href}
-          href={item.href}
-          className={cx("sidebar-link", active && "active")}
-          onClick={onNavigate}
-          aria-label={item.label}
-        >
-          <span className="sidebar-link-short" aria-hidden>
-            {item.short}
-          </span>
-          <span className="sidebar-link-label">{item.label}</span>
-        </Link>
-      );
-    });
+  async function handleWorkspaceSwitch(nextOrgId: string) {
+    if (!nextOrgId || nextOrgId === authzState.orgId) {
+      return;
+    }
+
+    setIsWorkspaceSwitching(true);
+    setWorkspaceSwitchError("");
+
+    try {
+      const response = await fetch("/api/me/active-org", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          organizationId: nextOrgId
+        })
+      });
+
+      const payload = (await response.json().catch(() => null)) as ActiveOrgSwitchPayload | null;
+      if (!response.ok || !payload?.ok || !payload.activeOrg?.id || !payload.activeOrg?.name) {
+        throw new Error(payload?.error?.message ?? "Failed to switch workspace.");
+      }
+
+      setAuthzState((current) => ({
+        ...current,
+        orgId: payload.activeOrg?.id ?? current.orgId,
+        orgName: payload.activeOrg?.name ?? current.orgName,
+        role: payload.role ?? current.role
+      }));
+
+      closeAccountMenu();
+      router.refresh();
+      await loadAuthContext();
+    } catch (error) {
+      setWorkspaceSwitchError(error instanceof Error ? error.message : "Failed to switch workspace.");
+    } finally {
+      setIsWorkspaceSwitching(false);
+    }
+  }
+
+  const accountMenu = status === "authenticated" ? (
+    <div className="account-menu-container" ref={accountMenuContainerRef}>
+      <button
+        ref={accountMenuTriggerRef}
+        type="button"
+        className={cx("account-menu-trigger", isAccountMenuOpen && "open")}
+        aria-haspopup="dialog"
+        aria-expanded={isAccountMenuOpen}
+        aria-label="Open user and workspace menu"
+        onClick={() => {
+          setWorkspaceSwitchError("");
+          setIsAccountMenuOpen((value) => !value);
+        }}
+      >
+        <span className="account-menu-avatar" aria-hidden="true">
+          {avatarLabel}
+        </span>
+        <span className="account-menu-org" title={accountOrgName}>
+          {accountOrgName}
+        </span>
+        {authzState.role ? <span className="account-menu-role">{authzState.role}</span> : null}
+      </button>
+
+      {isAccountMenuOpen ? (
+        <div className="account-menu-popover" role="dialog" aria-label="User and workspace menu">
+          <div className="account-menu-meta">
+            <div className="account-menu-meta-label">Email</div>
+            <div className="account-menu-meta-value" title={accountEmail}>
+              {accountEmail}
+            </div>
+          </div>
+          <div className="account-menu-meta">
+            <div className="account-menu-meta-label">Workspace</div>
+            <div className="account-menu-meta-value" title={accountOrgName}>
+              {accountOrgName}
+            </div>
+          </div>
+          <div className="account-menu-meta">
+            <div className="account-menu-meta-label">Role</div>
+            <div className="account-menu-meta-value">{accountRole}</div>
+          </div>
+
+          {authzState.memberships.length > 1 ? (
+            <label className="account-menu-control">
+              <span className="account-menu-meta-label">Workspace switcher</span>
+              <select
+                className="input"
+                disabled={isWorkspaceSwitching}
+                value={authzState.orgId ?? authzState.memberships[0]?.orgId ?? ""}
+                onChange={(event) => {
+                  void handleWorkspaceSwitch(event.target.value);
+                }}
+                aria-label="Workspace switcher"
+                title="Workspace switcher"
+              >
+                {authzState.memberships.map((membership) => (
+                  <option key={membership.orgId} value={membership.orgId}>
+                    {membership.orgName}
+                    {membership.orgId === authzState.orgId ? " (Current)" : ""}
+                  </option>
+                ))}
+              </select>
+              {workspaceSwitchError ? (
+                <div className="small account-menu-error" role="alert">
+                  {workspaceSwitchError}
+                </div>
+              ) : null}
+            </label>
+          ) : null}
+
+          {devRoleSwitcherEnabled ? (
+            <label className="account-menu-control">
+              <span className="account-menu-meta-label">Dev role</span>
+              <select
+                className="input"
+                value={authzState.role ?? ""}
+                onChange={handleDevRoleChange}
+                disabled={isDevRoleSwitching || !authzState.role}
+                aria-label="Development role switcher"
+                title="Development role switcher"
+              >
+                {!authzState.role ? (
+                  <option value="" disabled>
+                    Loading
+                  </option>
+                ) : null}
+                {ROLE_OPTIONS.map((role) => (
+                  <option key={role} value={role}>
+                    {role}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
+          <div className="account-menu-actions">
+            <Link href="/settings" className="account-menu-action" onClick={() => closeAccountMenu()}>
+              Settings
+            </Link>
+            <button
+              type="button"
+              className="account-menu-action"
+              onClick={() => {
+                closeAccountMenu();
+                void signOut({ callbackUrl: "/login" });
+              }}
+              aria-label="Sign out"
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  ) : (
+    <Link href="/login" className="btn btn-secondary">
+      Sign in
+    </Link>
+  );
+
+  if (isPublic) {
+    return (
+      <div className="app-shell app-shell-public">
+        <a href="#main-content" className="skip-link">
+          Skip to main content
+        </a>
+        <header className="public-site-header">
+          <div className="shell-container public-site-header-inner">
+            <Link href="/" className="brand-lockup">
+              <span className="brand-mark" aria-hidden="true" />
+              <span className="brand-copy">
+                <strong>Attestly</strong>
+                <span>Trusted questionnaire review</span>
+              </span>
+            </Link>
+
+            {pathname === "/" ? (
+              <nav className="public-site-nav" aria-label="Public navigation">
+                <a href="#workflow">Workflow</a>
+                <a href="#control-center">Control center</a>
+                <a href="#proof">Proof</a>
+              </nav>
+            ) : (
+              <div className="public-site-nav">
+                <Link href="/">Back to overview</Link>
+              </div>
+            )}
+
+            <div className="public-site-actions">
+              {status === "authenticated" ? (
+                <Link href="/review/inbox" className="btn btn-primary">
+                  Open workspace
+                </Link>
+              ) : (
+                <>
+                  <Link href="/login" className="btn btn-secondary">
+                    Sign in
+                  </Link>
+                  <Link href="/login" className="btn btn-primary">
+                    Enter review center
+                  </Link>
+                </>
+              )}
+            </div>
+          </div>
+        </header>
+
+        <main id="main-content" className="public-main">
+          <AppAuthzProvider value={authzState}>
+            <div className="shell-container public-main-inner">{children}</div>
+          </AppAuthzProvider>
+        </main>
+      </div>
+    );
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell app-shell-private">
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
 
-      <nav
-        className={cx("shell-sidebar", isSidebarCollapsed && "collapsed")}
-        data-testid="app-sidebar"
-        aria-label="Sidebar"
-      >
-        <div className="sidebar-title-row">
-          <span className="sidebar-product">
-            <span className="sidebar-product-dot" />
-            <span className="sidebar-product-copy">
-              <span className="sidebar-product-name">SecurityQ</span>
-              <span className="sidebar-product-tag">Autofill OS</span>
+      <header className="product-site-header">
+        <div className="shell-container product-site-header-inner">
+          <Link href="/review/inbox" className="brand-lockup">
+            <span className="brand-mark" aria-hidden="true" />
+            <span className="brand-copy">
+              <strong>Attestly</strong>
+              <span>Review-first trust platform</span>
             </span>
-          </span>
-          <Button
-            type="button"
-            variant="shell"
-            className="icon-btn"
-            onClick={() => setIsSidebarCollapsed((value) => !value)}
-            title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {isSidebarCollapsed ? ">" : "<"}
-          </Button>
-        </div>
-        <div className="sidebar-nav" data-testid="app-sidebar-nav" aria-label="Sidebar links">
-          {renderNavLinks()}
-        </div>
-      </nav>
+          </Link>
 
-      {isMobileSidebarOpen ? (
-        <>
-          <button
-            type="button"
-            className="mobile-sidebar-overlay mobile-only"
-            onClick={() => setIsMobileSidebarOpen(false)}
-            aria-label="Close navigation drawer"
-          />
-          <nav
-            className="shell-sidebar mobile-sidebar mobile-only"
-            ref={mobileSidebarRef}
-            tabIndex={-1}
-            data-testid="app-sidebar-mobile"
-            aria-label="Sidebar"
-          >
-            <div className="sidebar-title-row">
-              <span className="sidebar-product">
-                <span className="sidebar-product-dot" />
-                <span className="sidebar-product-copy">
-                  <span className="sidebar-product-name">SecurityQ</span>
-                  <span className="sidebar-product-tag">Autofill OS</span>
-                </span>
-              </span>
-              <Button
-                type="button"
-                variant="shell"
-                className="icon-btn"
-                onClick={() => setIsMobileSidebarOpen(false)}
-                title="Close navigation"
-                aria-label="Close navigation"
+          <nav className="product-main-nav" aria-label="Primary">
+            {navItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cx("product-main-nav-link", item.activeWhen(pathname) && "active")}
+                aria-current={item.activeWhen(pathname) ? "page" : undefined}
               >
-                X
-              </Button>
-            </div>
-            <div className="sidebar-nav" data-testid="app-sidebar-nav-mobile" aria-label="Sidebar links">
-              {renderNavLinks(() => setIsMobileSidebarOpen(false))}
-            </div>
+                {item.label}
+              </Link>
+            ))}
           </nav>
-        </>
-      ) : null}
 
-      <div className="shell-main">
-        <header>
-          <nav className="top-nav" aria-label="Primary">
-            <Button
-              type="button"
-              variant="shell"
-              className="icon-btn mobile-only"
-              onClick={() => setIsMobileSidebarOpen(true)}
-              title="Open navigation"
-              aria-label="Open navigation"
-            >
-              =
-            </Button>
-            <div className="top-nav-brand">
-              <strong>SecurityQ</strong>
-              <span className="top-nav-sep">|</span>
-              <span>{pageHeader.title}</span>
-            </div>
+          <div className="product-site-actions">
             {primaryAction ? (
-              <Link href={primaryAction.href} className="btn btn-primary" aria-label={primaryAction.label}>
+              <Link href={primaryAction.href} className="btn btn-primary">
                 {primaryAction.label}
               </Link>
             ) : null}
-            {status === "authenticated" ? (
-              <div className="account-menu-container" ref={accountMenuContainerRef}>
-                <button
-                  ref={accountMenuTriggerRef}
-                  type="button"
-                  className={cx("account-menu-trigger", isAccountMenuOpen && "open")}
-                  aria-haspopup="dialog"
-                  aria-expanded={isAccountMenuOpen}
-                  aria-label="Open user and workspace menu"
-                  onClick={() => {
-                    setWorkspaceSwitchError("");
-                    setIsAccountMenuOpen((value) => !value);
-                  }}
-                >
-                  <span className="account-menu-avatar" aria-hidden="true">
-                    U
-                  </span>
-                  <span className="account-menu-org" title={accountOrgName}>
-                    {accountOrgName}
-                  </span>
-                  {authzState.role ? <span className="account-menu-role">{authzState.role}</span> : null}
-                  <span className="account-menu-chevron" aria-hidden="true">
-                    {isAccountMenuOpen ? "▲" : "▼"}
-                  </span>
-                </button>
+            {accountMenu}
+          </div>
+        </div>
 
-                {isAccountMenuOpen ? (
-                  <div className="account-menu-popover" role="dialog" aria-label="User and workspace menu">
-                    <div className="account-menu-meta">
-                      <div className="account-menu-meta-label">Email</div>
-                      <div className="account-menu-meta-value" title={accountEmail}>
-                        {accountEmail}
-                      </div>
-                    </div>
-                    <div className="account-menu-meta">
-                      <div className="account-menu-meta-label">Workspace</div>
-                      <div className="account-menu-meta-value" title={accountOrgName}>
-                        {accountOrgName}
-                      </div>
-                    </div>
-                    <div className="account-menu-meta">
-                      <div className="account-menu-meta-label">Role</div>
-                      <div className="account-menu-meta-value">{accountRole}</div>
-                    </div>
-
-                    {authzState.memberships.length > 1 ? (
-                      <label className="account-menu-control">
-                        <span className="account-menu-meta-label">Workspace switcher</span>
-                        <select
-                          className="input"
-                          disabled={isWorkspaceSwitching}
-                          value={authzState.orgId ?? authzState.memberships[0]?.orgId ?? ""}
-                          onChange={async (event) => {
-                            const nextOrgId = event.target.value;
-                            if (!nextOrgId || nextOrgId === authzState.orgId) {
-                              return;
-                            }
-
-                            setIsWorkspaceSwitching(true);
-                            setWorkspaceSwitchError("");
-
-                            try {
-                              const response = await fetch("/api/me/active-org", {
-                                method: "POST",
-                                headers: {
-                                  "Content-Type": "application/json"
-                                },
-                                body: JSON.stringify({
-                                  organizationId: nextOrgId
-                                })
-                              });
-
-                              const payload = (await response.json().catch(() => null)) as ActiveOrgSwitchPayload | null;
-                              if (!response.ok || !payload?.ok || !payload.activeOrg?.id || !payload.activeOrg?.name) {
-                                throw new Error(payload?.error?.message ?? "Failed to switch workspace.");
-                              }
-
-                              setAuthzState((current) => ({
-                                ...current,
-                                orgId: payload.activeOrg?.id ?? current.orgId,
-                                orgName: payload.activeOrg?.name ?? current.orgName,
-                                role: payload.role ?? current.role
-                              }));
-
-                              closeAccountMenu();
-                              router.refresh();
-                              await loadAuthContext();
-                            } catch (error) {
-                              setWorkspaceSwitchError(
-                                error instanceof Error ? error.message : "Failed to switch workspace."
-                              );
-                            } finally {
-                              setIsWorkspaceSwitching(false);
-                            }
-                          }}
-                          aria-label="Workspace switcher"
-                          title="Workspace switcher"
-                        >
-                          {authzState.memberships.map((membership) => (
-                            <option key={membership.orgId} value={membership.orgId}>
-                              {membership.orgName}
-                              {membership.orgId === authzState.orgId ? " (Current)" : ""}
-                            </option>
-                          ))}
-                        </select>
-                        {workspaceSwitchError ? (
-                          <div className="small account-menu-error" role="alert">
-                            {workspaceSwitchError}
-                          </div>
-                        ) : null}
-                      </label>
-                    ) : null}
-
-                    {devRoleSwitcherEnabled ? (
-                      <label className="account-menu-control">
-                        <span className="account-menu-meta-label">Dev role</span>
-                        <select
-                          className="input"
-                          value={authzState.role ?? ""}
-                          onChange={handleDevRoleChange}
-                          disabled={isDevRoleSwitching || !authzState.role}
-                          aria-label="Development role switcher"
-                          title="Development role switcher"
-                        >
-                          {!authzState.role ? (
-                            <option value="" disabled>
-                              Loading
-                            </option>
-                          ) : null}
-                          {ROLE_OPTIONS.map((role) => (
-                            <option key={role} value={role}>
-                              {role}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    ) : null}
-
-                    <div className="account-menu-actions">
-                      {canViewMembers ? (
-                        <Link
-                          href="/settings/members"
-                          className="account-menu-action"
-                          onClick={() => closeAccountMenu()}
-                        >
-                          Members
-                        </Link>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="account-menu-action"
-                        onClick={() => {
-                          closeAccountMenu();
-                          void signOut({ callbackUrl: "/login" });
-                        }}
-                        aria-label="Sign out"
-                      >
-                        Sign out
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              <Link href="/login" className="btn btn-secondary" aria-label="Sign in">
-                Sign in
-              </Link>
-            )}
-          </nav>
-        </header>
-
-        <main id="main-content" className="canvas-area">
-          <AppAuthzProvider value={authzState}>
-            <div className="canvas-inner">
-              <header className="page-header-band">
-                <div className="page-header-copy">
-                  <div className="page-header-kicker-row">
-                    <span className="page-header-kicker">{accountOrgName}</span>
-                    {authzState.role ? <span className="page-header-meta-pill">{accountRole}</span> : null}
-                  </div>
-                  <h1 id="page-title">{pageHeader.title}</h1>
-                  <p>{pageHeader.subtitle}</p>
-                </div>
-                <div className="page-header-accent">
-                  <span className="page-header-accent-label">Focus</span>
-                  <strong>{pageFocus}</strong>
-                </div>
-              </header>
-              <div className="page-content-stack">{children}</div>
+        {subnavItems.length > 0 ? (
+          <div className="product-subnav-shell">
+            <div className="shell-container product-subnav-inner">
+              <nav className="product-subnav" aria-label="Section">
+                {subnavItems.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cx("product-subnav-link", item.activeWhen(pathname) && "active")}
+                    aria-current={item.activeWhen(pathname) ? "page" : undefined}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </nav>
             </div>
-          </AppAuthzProvider>
-        </main>
-      </div>
+          </div>
+        ) : null}
+      </header>
+
+      <main id="main-content" className="product-main">
+        <AppAuthzProvider value={authzState}>
+          <div className="shell-container product-main-inner">
+            <header className="product-page-intro">
+              <span className="product-page-kicker">{pageMeta.kicker}</span>
+              <div className="product-page-copy">
+                <h1>{pageMeta.title}</h1>
+                <p>{pageMeta.subtitle}</p>
+              </div>
+            </header>
+            <div className="page-content-stack">{children}</div>
+          </div>
+        </AppAuthzProvider>
+      </main>
     </div>
   );
 }

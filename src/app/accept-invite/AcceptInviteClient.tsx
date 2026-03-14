@@ -60,8 +60,8 @@ export function AcceptInviteClient({ token }: { token: string }) {
           throw new Error(payload?.error?.message ?? "Failed to accept invite.");
         }
 
-        setStatusText("Invite accepted. Redirecting to questionnaires...");
-        router.replace("/questionnaires");
+        setStatusText("Invite accepted. Redirecting to review inbox...");
+        router.replace("/review/inbox");
       } catch (requestError) {
         setError(requestError instanceof Error ? requestError.message : "Failed to accept invite.");
         setStatusText("Unable to accept invite.");
@@ -70,11 +70,17 @@ export function AcceptInviteClient({ token }: { token: string }) {
   }, [router, status, token]);
 
   return (
-    <div className="page-stack">
-      <Card>
+    <div className="auth-stage auth-stage-compact">
+      <section className="auth-stage-copy">
+        <span className="landing-kicker">Workspace invite</span>
+        <h1>Joining your workspace.</h1>
+        <p>{statusText}</p>
+      </section>
+
+      <Card className="auth-card">
         <h2 style={{ marginBottom: 8 }}>Accept Organization Invite</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          {statusText}
+          You will be dropped into the review inbox after the invite is processed.
         </p>
         {error ? <div className="message-banner error">{error}</div> : null}
       </Card>

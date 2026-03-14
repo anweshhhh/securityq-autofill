@@ -9,15 +9,28 @@ export default function LoginPage() {
   const router = useRouter();
   const { status } = useSession();
   const [email, setEmail] = useState("");
-  const [callbackUrl, setCallbackUrl] = useState("/questionnaires");
+  const [callbackUrl, setCallbackUrl] = useState("/review/inbox");
+  const [authError, setAuthError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
   useEffect(() => {
-    const rawCallbackUrl = new URLSearchParams(window.location.search).get("callbackUrl");
+    const params = new URLSearchParams(window.location.search);
+    const rawCallbackUrl = params.get("callbackUrl");
     if (rawCallbackUrl?.startsWith("/")) {
       setCallbackUrl(rawCallbackUrl);
+    }
+
+    const authErrorCode = (params.get("error") ?? "").trim();
+    if (authErrorCode) {
+      const errorMessage =
+        authErrorCode === "Verification"
+          ? "Magic link is invalid or already used. Request a new sign-in link."
+          : authErrorCode === "AccessDenied"
+            ? "Sign-in was denied. Check server logs for auth diagnostics."
+            : `Sign-in failed (${authErrorCode}). Check server logs for details.`;
+      setAuthError(errorMessage);
     }
   }, []);
 
@@ -67,12 +80,22 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="page-stack">
-      <Card>
-        <h2 style={{ marginBottom: 6 }}>Sign in</h2>
-        <p className="muted" style={{ marginTop: 0 }}>
-          Enter your email to receive a magic sign-in link.
+    <div className="auth-stage">
+      <section className="auth-stage-copy">
+        <span className="landing-kicker">Sign in</span>
+        <h1>Enter the review center with one magic link.</h1>
+        <p>
+          Use your workspace email to jump straight into the inbox, existing evidence, and current questionnaire runs.
         </p>
+      </section>
+
+      <Card className="auth-card">
+        <div className="auth-card-header">
+          <h2 style={{ marginBottom: 6 }}>Magic link sign-in</h2>
+          <p className="muted" style={{ marginTop: 0 }}>
+            Enter your email to receive a secure sign-in link.
+          </p>
+        </div>
 
         <form onSubmit={(event) => void handleSubmit(event)} className="form-grid" style={{ marginTop: 10 }}>
           <TextInput
@@ -89,9 +112,18 @@ export default function LoginPage() {
           </Button>
         </form>
 
+        <p className="small muted" style={{ marginBottom: 0 }}>
+          In development, the magic link is also printed to the server console.
+        </p>
+
         {success ? (
           <div className="message-banner success" style={{ marginTop: 12 }}>
             {success}
+          </div>
+        ) : null}
+        {authError ? (
+          <div className="message-banner error" style={{ marginTop: 12 }}>
+            {authError}
           </div>
         ) : null}
         {error ? (
