@@ -11,7 +11,7 @@ export function cx(...parts: Array<string | false | null | undefined>) {
 }
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "primary" | "secondary" | "ghost" | "danger" | "shell";
+  variant?: "primary" | "secondary" | "ghost" | "danger";
 };
 
 function deriveAriaLabel(children: ButtonProps["children"]): string | undefined {

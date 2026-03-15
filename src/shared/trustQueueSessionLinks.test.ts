@@ -29,7 +29,7 @@ describe("buildTrustQueueSessionHref", () => {
         queueQuery: "Vendor Alpha"
       })
     ).toBe(
-      "/questionnaires/questionnaire-1?itemId=question-9&filter=stale&source=trust-queue&queueFilter=all&queueQuery=Vendor+Alpha"
+      "/questionnaires/questionnaire-1?itemId=question-9&filter=stale&source=review&queueFilter=all&queueQuery=Vendor+Alpha"
     );
   });
 
@@ -43,7 +43,7 @@ describe("buildTrustQueueSessionHref", () => {
         queueQuery: "   "
       })
     ).toBe(
-      "/questionnaires/questionnaire-1?itemId=question-9&filter=needs-review&source=trust-queue&queueFilter=needs-review"
+      "/questionnaires/questionnaire-1?itemId=question-9&filter=needs-review&source=review&queueFilter=needs-review"
     );
   });
 });
