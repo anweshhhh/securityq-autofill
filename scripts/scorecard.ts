@@ -1,10 +1,9 @@
-import { appendFileSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import Papa from "papaparse";
 
 const NOT_FOUND_TEMPLATE = "Not found in provided documents.";
 const PARTIAL_TEMPLATE = "Not specified in provided documents.";
-const BUILD_LOG_PATH = path.join(process.cwd(), "docs", "build-log.md");
 
 type ScoreStatus = "FOUND" | "PARTIAL" | "NOT_FOUND";
 
@@ -43,10 +42,6 @@ function ensureRequiredColumns(headers: string[]) {
       throw new Error(`Missing required column: ${column}`);
     }
   }
-}
-
-function formatDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
 }
 
 function parseCsvRows(text: string): Array<Record<string, string>> {
@@ -162,17 +157,6 @@ function run() {
 
   const output = outputLines.join("\n");
   console.log(output);
-
-  const datedEntry = [
-    "",
-    `## ${formatDate(new Date())} - scorecard (${path.basename(resolvedCsvPath)})`,
-    "",
-    "```text",
-    output,
-    "```"
-  ].join("\n");
-
-  appendFileSync(BUILD_LOG_PATH, datedEntry);
 }
 
 run();

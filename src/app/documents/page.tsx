@@ -208,9 +208,6 @@ export default function DocumentsPage() {
         body: formData
       });
       const contentType = response.headers.get("content-type") ?? "";
-      if (process.env.NODE_ENV !== "production") {
-        console.info("[documents/upload]", { status: response.status, contentType });
-      }
 
       let payload: UploadResponsePayload | null = null;
       if (contentType.toLowerCase().includes("application/json")) {
